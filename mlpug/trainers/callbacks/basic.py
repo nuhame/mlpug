@@ -2,10 +2,10 @@ import sys
 
 import datetime
 
-from trainers.callbacks.callback import Callback
+from mlpug.trainers.callbacks.callback import Callback
+from mlpug.utils import get_value_at
 
 import basics.base_utils as _
-from utils import get_value_at
 
 
 class LogProgress(Callback):

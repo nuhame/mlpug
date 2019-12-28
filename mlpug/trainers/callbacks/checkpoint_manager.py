@@ -6,8 +6,8 @@ import abc
 
 from shutil import copyfile
 
-from utils import get_value_at
-from trainers.callbacks.callback import Callback
+from mlpug.utils import get_value_at
+from mlpug.trainers.callbacks.callback import Callback
 
 import basics.base_utils as _
 

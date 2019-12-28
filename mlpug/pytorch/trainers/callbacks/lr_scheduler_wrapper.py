@@ -1,4 +1,4 @@
-from trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapperBase
+from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapperBase
 
 from statistics import mean
 

@@ -11,13 +11,13 @@ from torch import optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as PT_DDP
 
-from reference.chatbot_tutorial.model_data_generation import \
+from mlpug.reference.chatbot_tutorial.model_data_generation import \
     IndexedSentencePairsDataset, \
     create_sentence_pairs_collate_fn
 
-from reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
-from reference.chatbot_tutorial.training import Seq2SeqTrainModel
-from reference.chatbot_tutorial.loss import masked_average_loss
+from mlpug.reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from mlpug.reference.chatbot_tutorial.training import Seq2SeqTrainModel
+from mlpug.reference.chatbot_tutorial.loss import masked_average_loss
 
 import mlpug.pytorch as mlp
 

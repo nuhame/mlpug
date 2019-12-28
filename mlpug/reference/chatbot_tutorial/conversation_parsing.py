@@ -8,7 +8,7 @@ import unicodedata
 import csv
 import codecs
 
-from reference.chatbot_tutorial.voc import Voc
+from mlpug.reference.chatbot_tutorial.voc import Voc
 
 MOVIE_LINES_FIELDS = ["lineID", "characterID", "movieID", "character", "text"]
 MOVIE_CONVERSATIONS_FIELDS = ["character1ID", "character2ID", "movieID", "utteranceIDs"]

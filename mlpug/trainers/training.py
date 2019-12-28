@@ -6,7 +6,7 @@ import time
 from basics.base import Base
 import basics.base_utils as _
 
-from utils import convert_to_dict, get_value_at, has_key
+from mlpug.utils import convert_to_dict, get_value_at, has_key
 
 from mlpug_exceptions import TrainerInvalidException
 

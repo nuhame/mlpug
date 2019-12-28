@@ -1,6 +1,6 @@
 import torch
 
-from trainers.callbacks.checkpoint_manager import CheckpointManagerBase
+from mlpug.trainers.callbacks.checkpoint_manager import CheckpointManagerBase
 
 import basics.base_utils as _
 

@@ -1,6 +1,6 @@
 from mlpug.trainers.training import *
 
-from mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
 class PTTrainerMixin():

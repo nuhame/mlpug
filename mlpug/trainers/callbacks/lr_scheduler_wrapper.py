@@ -1,7 +1,7 @@
 import abc
 
-from utils import get_value_at, convert_to_dict
-from trainers.callbacks.callback import Callback
+from mlpug.utils import get_value_at, convert_to_dict
+from mlpug.trainers.callbacks.callback import Callback
 
 import basics.base_utils as _
 
