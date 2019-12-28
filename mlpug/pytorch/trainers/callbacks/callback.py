@@ -1,1 +1,1 @@
-from trainers.callbacks.callback import *
+from mlpug.trainers.callbacks.callback import *

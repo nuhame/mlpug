@@ -1,1 +1,1 @@
-from trainers.callbacks.metrics_logger import *
+from mlpug.trainers.callbacks.metrics_logger import *

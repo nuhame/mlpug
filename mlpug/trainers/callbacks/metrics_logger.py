@@ -2,10 +2,10 @@ import math
 
 import numpy as np
 
-from trainers.callbacks.callback import Callback
+from mlpug.trainers.callbacks.callback import Callback
+from mlpug.utils import has_key, SlidingWindow
 
 import basics.base_utils as _
-from utils import has_key, SlidingWindow
 
 
 class MetricsLoggerBase(Callback):

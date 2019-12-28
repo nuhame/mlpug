@@ -6,8 +6,8 @@ import time
 import torch
 import torch.nn as nn
 
-from reference.chatbot_tutorial.loss import cross_entropy, masked_average_loss
-from reference.chatbot_tutorial.model_data_generation import batch2TrainData
+from mlpug.reference.chatbot_tutorial.loss import cross_entropy, masked_average_loss
+from mlpug.reference.chatbot_tutorial.model_data_generation import batch2TrainData
 
 # NVIDIA Automatic Mixed Precision Module
 # Only imported when needed

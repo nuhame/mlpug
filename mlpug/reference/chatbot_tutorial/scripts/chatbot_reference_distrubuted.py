@@ -19,13 +19,13 @@ from reference.chatbot_tutorial.conversation_parsing import \
     loadPrepareData, \
     trimRareWords
 
-from reference.chatbot_tutorial.model_data_generation import batch2TrainData
+from mlpug.reference.chatbot_tutorial.model_data_generation import batch2TrainData
 
-from reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from mlpug.reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
 
-from reference.chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
+from mlpug.reference.chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
 
-from reference.chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
+from mlpug.reference.chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
 
 # import pydevd
 # pydevd.settrace('192.168.178.8', port=57491, stdoutToServer=True, stderrToServer=True)

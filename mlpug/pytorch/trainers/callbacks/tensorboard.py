@@ -1,1 +1,1 @@
-from trainers.callbacks.tensorboard import *
+from mlpug.trainers.callbacks.tensorboard import *

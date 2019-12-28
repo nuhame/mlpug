@@ -1,8 +1,6 @@
 import itertools
 import torch
 
-import math
-
 
 def indexesFromSentence(voc, sentence, EOS_token):
     return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_token]

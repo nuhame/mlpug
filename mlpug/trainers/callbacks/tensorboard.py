@@ -2,10 +2,11 @@
 import os
 from torch.utils.tensorboard import SummaryWriter
 
-from trainers.callbacks.callback import Callback
+from mlpug.trainers.callbacks.callback import Callback
+from mlpug.utils import get_value_at as get_value_at_func
 
 import basics.base_utils as _
-from utils import get_value_at as get_value_at_func
+
 
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'

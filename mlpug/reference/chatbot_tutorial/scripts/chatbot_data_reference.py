@@ -13,7 +13,7 @@ import argparse
 
 import pickle
 
-from reference.chatbot_tutorial.conversation_parsing import \
+from mlpug.reference.chatbot_tutorial.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \
