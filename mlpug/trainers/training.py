@@ -8,7 +8,7 @@ import basics.base_utils as _
 
 from mlpug.utils import convert_to_dict, get_value_at, has_key
 
-from mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
