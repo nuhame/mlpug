@@ -1,6 +1,6 @@
-from trainers.training import *
+from mlpug.trainers.training import *
 
-from nuhame_exceptions import TrainerInvalidException
+from mlpug_exceptions import TrainerInvalidException
 
 
 class PTTrainerMixin():
