@@ -3,7 +3,7 @@ import sys
 import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
-from mlpug.utils import get_value_at
+from mlpug.utils import get_value_at, is_chunkable
 
 import basics.base_utils as _
 
@@ -171,7 +171,8 @@ class BatchSizeLogger(Callback):
         :return: success (True or False)
         """
 
-        logs['batch_size'] = training_batch[0].size(self._batch_dimension)
+        logs['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
+            training_batch[0].size(self._batch_dimension)
 
         return True
 

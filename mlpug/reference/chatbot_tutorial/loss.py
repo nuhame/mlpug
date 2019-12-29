@@ -15,18 +15,18 @@ def cross_entropy(inp, target):
     return -torch.log(torch.gather(inp, 1, target.view(-1, 1)).squeeze())
 
 
-def masked_average_loss(per_sample_loss, mask):
+def masked_loss(per_sample_loss, mask, average_loss=True):
     """
 
     :param per_sample_loss: (seq_length, batch_size)
     :param mask: (seq_length, batch_size)
+    :param average_loss: If True, calculates the average loss over the samples, else sums the sample losses
 
-    :return: loss, total_elements
+    :return: loss
 
-    loss: scalar (as tensor): average loss over all samples
-    total_elements: scalar (as tensor): number of samples used based on mask
+    loss: scalar (as tensor): average, or summed, loss over all samples
 
     """
-    loss = per_sample_loss.masked_select(mask).mean()
+    loss = per_sample_loss.masked_select(mask)
 
-    return loss
+    return loss.mean() if average_loss else loss.sum()
