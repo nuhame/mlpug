@@ -61,3 +61,8 @@ def has_key(o, key):
     """
     return hasattr(o, '__iter__') and (key in o)
 
+
+def is_chunkable(batch):
+    return (batch is not None) and \
+           hasattr(batch, "__len__") and callable(batch.__len__) and \
+           hasattr(batch, "__getitem__") and callable(batch.__getitem__)

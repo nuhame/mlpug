@@ -3,12 +3,14 @@ import abc
 import math
 import time
 
+from functools import reduce
+
 from basics.base import Base
 import basics.base_utils as _
 
-from mlpug.utils import convert_to_dict, get_value_at, has_key
+from mlpug.utils import convert_to_dict, get_value_at, has_key, is_chunkable
 
-from mlpug.mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
@@ -399,6 +401,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         :param model_components: dict with model components
         :param optimizers: dict with optimizers
+
         """
         super(TrainerBase, self).__init__()
 
@@ -630,18 +633,35 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
 class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
-    def __init__(self, optimizers, model_components=None):
+    def __init__(self, optimizers, model_components=None, batch_chunk_size=None):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
 
         :param optimizers: dict or list with optimizer(s), or a single optimizer instance
         :param model_components: dict or list with model components(s), or a single model instance
+        :param batch_chunk_size: optional batch chunk size (int)
+                                 If given, batches are processed in chunks of size `batch_chunk_size` samples to
+                                 calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
+                                 there is not an exact multiple that is equal to the `batch_data` size
+
+                                 Note 1.
+                                 Chunked processing of a batch only works when the `batch_data` object, received
+                                 by the `train_on` method, implements the `__len__` and `__getitem__` methods.
+                                 Here the `__getitem__` method must be able to deal with slices.
+
+                                 Note 2.
+                                 When using chunked batch processing, the default implementation assumes that the
+                                 loss, calculated over a chunk, is the average of the sample losses
         """
 
         model_components = convert_to_dict("model", model_components)
         optimizers = convert_to_dict("optimizer", optimizers)
 
         super().__init__(model_components, optimizers)
+
+        self.batch_chunk_size = batch_chunk_size
+        if self.batch_chunk_size is not None:
+            self._log.info(f"Will train on batches by slicing the batch is chunks of {batch_chunk_size} samples.")
 
         self.training_model = None
 
@@ -659,6 +679,24 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
+
+    def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
+        """
+
+        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
+        :param inference_mode: If True the loss will be evaluated in inference mode (e.g. no Dropout).
+                               If False the loss will be evaluated in training mode
+        :param evaluate_settings: optional evaluate_settings object (usually dict)
+
+        :return: loss, auxiliary_results
+
+        loss : Tensor
+        auxiliary_results : can be anything, e.g dict or list with values or data items
+        """
+
+        self._activate_inference_mode(inference_mode)
+
+        return self._evaluate_loss(batch_data, evaluate_settings)
 
     def _validate_model(self):
         # TODO : this is framework dependent
