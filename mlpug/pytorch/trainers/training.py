@@ -138,7 +138,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             # loss is assumed to be the average over the sample loss for the chunk
             # Divide through batch size to factor in that this loss is part of a larger batch.
-            self._back_propagate_from(chunk_len*loss/batch_size)
+            last_chunk = chunk_idx == (num_chunks-1)
+            self._back_propagate_from(chunk_len*loss/batch_size, last_chunk=last_chunk)
 
             chunk_losses += [loss]
             chunk_aux_results += [aux_results]
@@ -158,7 +159,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
         return loss, chunk_aux_results
 
-    def _back_propagate_from(self, loss):
+    def _back_propagate_from(self, loss, last_chunk=False):
         loss.backward()
 
     def _prepare_update_model_parameters(self):
