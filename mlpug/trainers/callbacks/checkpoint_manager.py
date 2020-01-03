@@ -116,11 +116,15 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         return self._monitor('global_iter', logs)
 
     def on_epoch_completed(self, logs):
-        if self._batch_level:
-            self._log.debug("Epoch completed : creating training checkpoint ... ")
-            return self._create_training_checkpoint()
+        force = False
+        iter_name = 'epoch'
 
-        return self._monitor('epoch', logs)
+        if self._batch_level:
+            self._log.debug("Epoch completed : checking if model improved and creating checkpoints ... ")
+            iter_name = 'global_iter'
+            force = True
+
+        return self._monitor(iter_name, logs, force=force)
 
     def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
         if abs(self._best_model_quality) == float('Inf') or self._best_model_iter is None:
@@ -165,7 +169,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
     def _get_model_quality(self, logs):
         return get_value_at(self._metric_to_monitor, logs)
 
-    def _monitor(self, iter_name, logs):
+    def _monitor(self, iter_name, logs, force=False):
         training_iter = logs[iter_name]
 
         if training_iter == 0:
@@ -173,7 +177,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
 
         best_model_fname = None
         success = True
-        if (self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0):
+        if force or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
             model_quality = self._get_model_quality(logs)
 
             if model_quality is not None:
@@ -204,7 +208,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                 f"skipping ...")
                 success = False
 
-        if (self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0):
+        if force or ((self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0)):
             # Just copy best model if available
             latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
             success &= (latest_model_fname is not None)
