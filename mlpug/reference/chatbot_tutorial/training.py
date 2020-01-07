@@ -6,7 +6,7 @@ import time
 import torch
 import torch.nn as nn
 
-from mlpug.reference.chatbot_tutorial.loss import cross_entropy, masked_average_loss
+from mlpug.reference.chatbot_tutorial.loss import cross_entropy, masked_loss
 from mlpug.reference.chatbot_tutorial.model_data_generation import batch2TrainData
 
 # NVIDIA Automatic Mixed Precision Module
@@ -79,7 +79,7 @@ def train(input_variable, lengths, init_decoder_input, max_output_len, target_va
     per_sample_loss = train_model(input_variable, lengths, init_decoder_input, max_output_len,
                                   target_variable, use_teacher_forcing)
 
-    loss = masked_average_loss(per_sample_loss, mask)
+    loss = masked_loss(per_sample_loss, mask)
 
     # Perform back propagation
     if use_mixed_precision:
