@@ -17,7 +17,7 @@ from mlpug.reference.chatbot_tutorial.model_data_generation import \
 
 from mlpug.reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
 from mlpug.reference.chatbot_tutorial.training import Seq2SeqTrainModel
-from mlpug.reference.chatbot_tutorial.loss import masked_average_loss
+from mlpug.reference.chatbot_tutorial.loss import masked_loss
 
 import mlpug.pytorch as mlp
 
@@ -448,7 +448,7 @@ class ChatbotTrainer(mlp.trainers.DefaultTrainer):
         per_sample_loss = self.training_model(padded_input_batch, input_lengths, init_decoder_input, max_output_len,
                                               output_batch, use_teacher_forcing)
 
-        loss = masked_average_loss(per_sample_loss, output_mask)
+        loss = masked_loss(per_sample_loss, output_mask)
 
         return loss, None
 
