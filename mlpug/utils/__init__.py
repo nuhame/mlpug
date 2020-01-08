@@ -1,2 +1,2 @@
-from mlpug.utils.utils import *
-from mlpug.utils.sliding_window import SlidingWindow
+from .utils import *
+from .sliding_window import SlidingWindow
