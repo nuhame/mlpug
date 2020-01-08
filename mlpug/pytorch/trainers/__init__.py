@@ -1,1 +1,1 @@
-from mlpug.pytorch.trainers.training import Trainer, DefaultTrainer, TrainingManager
+from .training import Trainer, DefaultTrainer, TrainingManager
