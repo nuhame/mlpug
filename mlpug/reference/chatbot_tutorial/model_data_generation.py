@@ -80,7 +80,18 @@ class IndexedSentencePairsDataset(torch.utils.data.Dataset):
         return indexesFromSentence(self.voc, sentence, self.EOS_token)
 
 
-def create_sentence_pairs_collate_fn(PAD_token):
+def create_sentence_pairs_collate_fn(PAD_token, fixed_sequence_length=None):
+    """
+
+    `fixed_sequence_length` is important when training on TPU
+
+    :param PAD_token:
+    :type PAD_token:
+    :param fixed_sequence_length:
+    :type fixed_sequence_length:
+    :return:
+    :rtype:
+    """
 
     def collate_fn(indexed_sentence_pairs):
         # Why is the sort required?
@@ -94,24 +105,38 @@ def create_sentence_pairs_collate_fn(PAD_token):
             input_batch.append(pair[0])
             output_batch.append(pair[1])
 
-        ############## PROCESS INPUT BATCH #############
+        # ############# PROCESS INPUT BATCH #############
         input_lengths = torch.tensor([len(indexed_sentence) for indexed_sentence in input_batch], dtype=torch.short)
         # Batch dimension should be second (in order to partition over multiple GPUs)
         input_lengths = input_lengths.unsqueeze(0)
 
-        padded_input_batch = zeroPadding(input_batch, PAD_token)
-        padded_input_batch = torch.LongTensor(padded_input_batch)
+        if fixed_sequence_length:
+            padded_input_batch = torch.ones(fixed_sequence_length, len(input_batch), dtype=torch.long) * PAD_token
+            for idx, indexed_sentence in enumerate(input_batch):
+                padded_input_batch[0:len(indexed_sentence), idx] = indexed_sentence
+        else:
+            padded_input_batch = zeroPadding(input_batch, PAD_token)
+            padded_input_batch = torch.LongTensor(padded_input_batch)
+
         ################################################
 
-        ############## PROCESS OUTPUT BATCH ############
-        max_output_len = max([len(indexed_sentence) for indexed_sentence in output_batch])
+        # ############# PROCESS OUTPUT BATCH ############
+        if fixed_sequence_length:
+            max_output_len = fixed_sequence_length
+            padded_output_batch = torch.ones(fixed_sequence_length, len(output_batch), dtype=torch.long) * PAD_token
+            for idx, indexed_sentence in enumerate(output_batch):
+                padded_output_batch[0:len(indexed_sentence), idx] = indexed_sentence
+            output_mask = padded_output_batch == PAD_token
+        else:
+            max_output_len = max([len(indexed_sentence) for indexed_sentence in output_batch])
+            padded_output_batch = zeroPadding(output_batch, PAD_token)
 
-        output_batch = zeroPadding(output_batch, PAD_token)
-        output_mask = binaryMatrix(output_batch, PAD_token)
-        output_mask = torch.BoolTensor(output_mask)
-        output_batch = torch.LongTensor(output_batch)
+            output_mask = binaryMatrix(padded_output_batch, PAD_token)
+            output_mask = torch.BoolTensor(output_mask)
+
+            padded_output_batch = torch.LongTensor(padded_output_batch)
         ################################################
 
-        return padded_input_batch, input_lengths, output_batch, output_mask, max_output_len
+        return padded_input_batch, input_lengths, padded_output_batch, output_mask, max_output_len
 
     return collate_fn
