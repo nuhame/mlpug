@@ -535,7 +535,7 @@ if is_first_worker:
                                   metric_names=metric_names,
                                   ignore_missing_metrics=True)]
 
-manager = mlp.callbacks.TrainingManager(trainer,
+manager = mlp.trainers.TrainingManager(trainer,
                                         train_dataset_loader,
                                         num_epochs=num_epochs,
                                         callbacks=callbacks,
