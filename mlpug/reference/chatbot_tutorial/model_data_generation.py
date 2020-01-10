@@ -135,7 +135,7 @@ def create_sentence_pairs_collate_fn(PAD_token, fixed_sequence_length=None):
             padded_output_batch = torch.ones(fixed_sequence_length, len(output_batch), dtype=torch.long) * PAD_token
             for idx, indexed_sentence in enumerate(output_batch):
                 padded_output_batch[0:len(indexed_sentence), idx] = torch.LongTensor(indexed_sentence)
-            output_mask = padded_output_batch == PAD_token
+            output_mask = padded_output_batch != PAD_token
         else:
             max_output_len = max([len(indexed_sentence) for indexed_sentence in output_batch])
             padded_output_batch = zeroPadding(output_batch, PAD_token)

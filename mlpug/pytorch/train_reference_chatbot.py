@@ -21,7 +21,7 @@ from mlpug.reference.chatbot_tutorial.loss import masked_loss
 
 import mlpug.pytorch as mlp
 
-from utils import get_value_at
+from mlpug.utils import get_value_at
 
 from basics.logging import get_logger
 
@@ -327,7 +327,8 @@ logger.debug(f"Number of sentence pairs in validation set: {len(validation_datas
 training_dataset = IndexedSentencePairsDataset(training_dataset, voc, EOS_token)
 validation_dataset = IndexedSentencePairsDataset(validation_dataset, voc, EOS_token)
 
-collate_sentence_pairs = create_sentence_pairs_collate_fn(PAD_token)
+collate_sentence_pairs = create_sentence_pairs_collate_fn(PAD_token, fixed_sequence_length=40)
+# collate_sentence_pairs = create_sentence_pairs_collate_fn(PAD_token)
 
 training_sampler = None
 validation_sampler = None
