@@ -269,7 +269,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             summed_loss = 0
             num_batches_processed = 0
-            for training_batch in iter(self.training_dataset):
+            training_dataset = self._prepare_training_dataset()
+            for training_batch in iter(training_dataset):
                 batch_training_start_time = time.time()
 
                 if self._stop_training:
@@ -366,6 +367,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 success = False
 
         return success
+
+    def _prepare_training_dataset(self):
+        return self.training_dataset
 
     def _assess_num_batches_per_epoch(self):
         if self.num_batches_per_epoch:
