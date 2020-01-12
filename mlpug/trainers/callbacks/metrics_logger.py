@@ -49,12 +49,9 @@ class MetricsLoggerBase(Callback):
             self._log.error('Given state is invalid, unable to set state')
             return False
 
-        def create_sliding_window(ws):
-            return SlidingWindow(ws["length"], init_window_values=ws["window"])
-
         self._batch_averaging_window = state["batch_averaging_window"]
         self._metric_averages = state["metric_averages"]
-        self._metric_windows = {metric_name: create_sliding_window(window_state)
+        self._metric_windows = {metric_name: SlidingWindow(state=window_state)
                                 for metric_name, window_state in state["metric_windows"].items()}
 
         return True
@@ -99,7 +96,7 @@ class MetricsLoggerBase(Callback):
 
         for metric_name in self._metrics.keys():
             if metric_name not in self._metric_windows:
-                self._metric_windows[metric_name] = SlidingWindow(window_length)
+                self._metric_windows[metric_name] = SlidingWindow(length=window_length)
                 self._metric_averages[metric_name] = None
 
         return True

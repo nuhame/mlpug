@@ -79,7 +79,7 @@ class LogProgress(Callback):
         eta_str = None
         try:
             average_batch_duration = logs["duration"]["mean"]["batch"]
-            if average_batch_duration > 0:
+            if average_batch_duration and average_batch_duration > 0:
                 batch_step = logs["batch_step"]
                 final_batch_step = logs["final_batch_step"]
                 num_batches_to_go = final_batch_step - batch_step + 1
@@ -95,14 +95,12 @@ class LogProgress(Callback):
         return eta_str
 
     def _get_average_batch_duration(self, logs):
-        duration_str = None
+        duration_str = "[UNKNOWN]"
         try:
             duration = logs["duration"]["mean"]["batch"]
-            if duration > 0.0:
+            if duration and duration > 0.0:
                 duration = int(duration*1000)
                 duration_str = f"{duration}ms"
-            else:
-                duration_str = "[UNKNOWN]"
         except Exception as e:
             _.log_exception(self._log, "Unable to get average batch duration", e)
 
