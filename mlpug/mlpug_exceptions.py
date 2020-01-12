@@ -24,3 +24,21 @@ class BatchNotChunkableException(MLPugException):
             err_msg += f" : {message}"
 
         super().__init__(err_msg)
+
+
+class StateInvalidException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "State invalid, unable to set state."
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
+
+
+class InvalidParametersException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Invalid parameter(s)."
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
