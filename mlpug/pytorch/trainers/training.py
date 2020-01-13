@@ -1,6 +1,8 @@
+from functools import reduce
 from mlpug.trainers.training import *
 
-from mlpug.mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException
+from mlpug.utils import is_chunkable
 
 
 class PTTrainerMixin():
