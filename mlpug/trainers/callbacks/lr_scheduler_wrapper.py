@@ -26,7 +26,7 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         """
         super().__init__(name=name)
 
-        schedulers = convert_to_dict("optimizer", schedulers)
+        schedulers = convert_to_dict("scheduler", schedulers)
 
         self._schedulers = schedulers
         self._batch_level = batch_level
