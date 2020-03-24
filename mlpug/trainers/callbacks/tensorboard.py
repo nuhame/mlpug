@@ -197,6 +197,9 @@ class Tensorboard(Callback):
 
         return self._valid
 
+    def get_dataset_name(self):
+        return self._dataset_name
+
     def on_training_start(self,
                           num_epochs,
                           num_batches_per_epoch,
