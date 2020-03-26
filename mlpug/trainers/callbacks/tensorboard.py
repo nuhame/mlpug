@@ -10,7 +10,7 @@ import basics.base_utils as _
 
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'
-METRIC_MEANS_WRITER = 'metric_means'
+METRIC_MEANS_WRITER = 'metric-means'
 
 
 def get_value_at(path, obj):
@@ -23,6 +23,7 @@ class Tensorboard(Callback):
                  metric_paths,
                  experiment_name=None,
                  dataset_name=None,
+                 label_name=None,
                  batch_level=True,
                  metrics_are_averages=False,
                  metric_names=None,
@@ -56,6 +57,11 @@ class Tensorboard(Callback):
         ```
         Will show a figure with the batch duration and the batch size for each batch.
 
+
+
+
+        ## Using `dataset_name`
+
         If `dataset_name` is given, it looks for the given `metric_paths` in the path with `dataset_name` first.
         Only, if the a given path is not available within the `dataset_name` path, we try to retrieve it as is.
 
@@ -63,6 +69,11 @@ class Tensorboard(Callback):
         ```
         {
             ...
+            'training': {
+                'mean': {
+                    'loss': 0.201
+                }
+            },
             'validation': {
                 'mean': {
                     'loss': 0.234
@@ -82,8 +93,75 @@ class Tensorboard(Callback):
         ```
         Will display a figure with `validation.mean.loss`, because `mean.loss`is available in `validation`.
 
-        If `metrics_are_averages=True` the metrics are written
-        to Tensorboard using another writer, such that a metric and its average can be shown in one figure.
+
+        ### Showing metrics for different datasets in one graph using `dataset_name`
+
+        By creating multiple `Tensorboard` instances with different data set names, using `dataset_name`, a metric
+        path, defined in all instances will be shown in one graph.
+
+        ```
+        t_train = Tensorboard(['mean.loss'], 'experiment1', 'training')
+        t_val = Tensorboard(['mean.loss'], 'experiment1', 'validation')
+        ```
+
+        Registering the above tensorboards will plot the mean Loss for the training set and validation set in one graph
+
+
+
+
+        ## Using `label_name` and `metric_names`
+
+        Using `label_name`, in combination with `metric_names`, allows us to combine multiple plots for the
+        same metric, but for different categories or labels, in one figure.
+
+        for instance, if we have the following data in a log object:
+        {
+            ...
+           'training': {
+                'recall': {
+                    'hamburger' : 0.646
+                    'hotdog': 0.873
+                },
+                'precision': {
+                    'hamburger' : 0.931
+                    'hotdog': 0.829
+                }
+            },
+            ...
+        }
+
+        ```
+        metric_names = {
+            'recall.hamburger': 'Recall',
+            'recall.hotdog': 'Recall',
+            'precision.hamburger': 'Precision',
+            'precision.hotdog': 'Precision'
+        }
+        ```
+
+        we can create the following tensorboard callbacks
+        ```
+        t_hamburger = Tensorboard(['recall.hamburger', 'precision.hamburger'],
+                                   experiment_name = 'experiment1',
+                                   dataset_name = 'training',
+                                   label_name = 'hamburger',
+                                   metric_names = metric_names)
+        t_hotdog = Tensorboard(['recall.hotdog', 'precision.hotdog'],
+                                   experiment_name = 'experiment1',
+                                   dataset_name = 'training',
+                                   label_name = 'hotdog',
+                                   metric_names = metric_names)
+        ```
+
+        When registering these boards the `hamburger` and `hotdog` recall plots will be combined in one recall plot.
+        Further, the `hamburger` and `hotdog` precision plots will be combined in one precision plot.
+
+
+
+        ## Using `metrics_are_averages` and `metric_names`
+
+        If `metrics_are_averages=True` the metrics are written to Tensorboard using another writer, such that
+        a metric and its average can be shown in one figure.
 
         For instance,
 
@@ -102,7 +180,11 @@ class Tensorboard(Callback):
         Tensorboard([mean.loss], 'experiment1', 'validation', metric_names = metric_names, metrics_are_averages=True)
         ```
 
-        Adds the `validation.mean.loss` averages to the batch-level `cross_entropy` figure.
+        Adds the `validation.mean.loss` averages to the same batch-level `cross_entropy` figure.
+
+
+
+
 
         To show the Tensorboard start is as follows:
 
@@ -120,6 +202,8 @@ class Tensorboard(Callback):
 
         :param dataset_name:    See log_dir. Further, when provided, the callback will look for metrics in the
                                 <dataset_name>.* path first of the logs object provided by the training manager.
+
+        :param dataset_name:    See log_dir. Further, when provided
 
         :param batch_level:     {boolean} If True, the given metrics will be logged per batch, else per epoch
 
@@ -146,14 +230,12 @@ class Tensorboard(Callback):
                                     Optional dictionary with options that need to be used when instantiating the
                                     Tensorboard writers.
 
-        :param log_dir:         Logging directory. When experiment_name and dataset_name are provided, the final
-                                logging directory will be:
+        :param log_dir:         Logging directory. When `experiment_name`, `dataset_name` and `label_name` are
+                                provided, the final logging directory will be:
 
-                                log_dir/experiment_name/dataset_name
+                                log_dir/<experiment_name>/<label_name>-<dataset-name>-[metric or metric-means]
 
-                                When only the dataset_name is given:
-
-                                log_dir/dataset_name
+                                Any parameters not provided will not be used to build up the log_dir
 
         :param ignore_missing_metrics {Boolean}
 
@@ -166,6 +248,7 @@ class Tensorboard(Callback):
 
         self._experiment_name = experiment_name
         self._dataset_name = dataset_name
+        self._label_name = label_name
 
         self._batch_level = batch_level
         self._metrics_are_averages = metrics_are_averages
@@ -251,12 +334,18 @@ class Tensorboard(Callback):
         if self._experiment_name:
             paths.append(self._experiment_name)
 
-        subpath = ""
-        if self._dataset_name:
-            subpath = f'{self._dataset_name}_'
+        writer_name = []
+        if self._label_name:
+            writer_name.append(self._label_name)
 
-        subpath += writer_type
-        paths.append(subpath)
+        if self._dataset_name:
+            writer_name.append(self._dataset_name)
+
+        writer_name.append(writer_type)
+
+        writer_name = '-'.join(writer_name)
+
+        paths.append(writer_name)
 
         tensorboard_log_dir = os.path.join(*paths)
 
@@ -310,7 +399,7 @@ class Tensorboard(Callback):
         metrics = {}
 
         def _try_add_metric(metric_path, metric):
-            if not metric:
+            if metric is None:
                 return None
 
             tag = self._get_tag(metric_path)
@@ -323,7 +412,7 @@ class Tensorboard(Callback):
                 set_metric_path = f'{self._dataset_name}.{metric_path}'
                 metric = get_value_at(set_metric_path, logs)
 
-                if _try_add_metric(metric_path, metric):
+                if _try_add_metric(metric_path, metric) is not None:
                     continue
 
             metric = get_value_at(metric_path, logs)
