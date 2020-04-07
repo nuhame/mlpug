@@ -5,7 +5,7 @@ from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableExc
 from mlpug.utils import is_chunkable
 
 
-class PTTrainerMixin():
+class PTTrainerMixin:
 
     def _activate_inference_mode(self, inference_mode):
         is_training = self.training_model.training
@@ -69,23 +69,6 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         self._prepare_update_model_parameters()
 
         self._update_model_parameters()
-
-        return loss, auxiliary_results
-
-    def _evaluate_loss(self, batch_data, evaluate_settings=None):
-        """
-
-        Evaluates the given training model on the  given batch_data, using the optional training_settings
-
-        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
-        :param evaluate_settings: optional evaluate_settings object (usually dict)
-
-        :return: loss, auxiliary_results
-
-        loss : Tensor
-        auxiliary_results : can be anything, e.g dict or list with values or data items
-        """
-        loss, auxiliary_results = self.training_model(batch_data, evaluate_settings)
 
         return loss, auxiliary_results
 

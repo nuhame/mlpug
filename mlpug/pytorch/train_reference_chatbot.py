@@ -312,8 +312,6 @@ def dataset_path_for(subset):
 
 
 # ############## SETUP DATASETS ###################
-
-
 logger.info('Setup data sets ...')
 
 logger.info('Loading training set ...')
@@ -537,10 +535,10 @@ if is_first_worker:
                                   ignore_missing_metrics=True)]
 
 manager = mlp.trainers.TrainingManager(trainer,
-                                        train_dataset_loader,
-                                        num_epochs=num_epochs,
-                                        callbacks=callbacks,
-                                        experiment_data=args)
+                                       train_dataset_loader,
+                                       num_epochs=num_epochs,
+                                       callbacks=callbacks,
+                                       experiment_data=args)
 
 tc_file = args.training_checkpoint
 if tc_file:
