@@ -739,12 +739,12 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
 
-    def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
+    def _evaluate_loss(self, batch_data, evaluate_settings=None):
         """
 
+        Evaluates the given training model on the  given batch_data, using the optional training_settings
+
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
-        :param inference_mode: If True the loss will be evaluated in inference mode (e.g. no Dropout).
-                               If False the loss will be evaluated in training mode
         :param evaluate_settings: optional evaluate_settings object (usually dict)
 
         :return: loss, auxiliary_results
@@ -752,10 +752,9 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         loss : Tensor
         auxiliary_results : can be anything, e.g dict or list with values or data items
         """
+        loss, auxiliary_results = self.training_model(batch_data, evaluate_settings)
 
-        self._activate_inference_mode(inference_mode)
-
-        return self._evaluate_loss(batch_data, evaluate_settings)
+        return loss, auxiliary_results
 
     def _validate_model(self):
         # TODO : this is framework dependent
