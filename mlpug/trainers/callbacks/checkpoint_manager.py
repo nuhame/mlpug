@@ -307,6 +307,10 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         return True
 
     def _check_settings(self):
+        if not os.path.exists(self._checkpoints_path):
+            self._log.info(f"Creating checkpoint directory : {self._checkpoints_path}")
+            os.makedirs(self._checkpoints_path)
+
         if (self._create_checkpoint_every < 0) and (self._archive_last_model_checkpoint_every > 0):
             self._log.error("archive_last_model_checkpoint_every can't be > 0 while _create_checkpoint_every < 0, "
                             "disabling archiving ... ")
