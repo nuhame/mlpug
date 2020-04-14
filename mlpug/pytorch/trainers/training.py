@@ -1,3 +1,5 @@
+import torch
+
 from functools import reduce
 from mlpug.trainers.training import *
 

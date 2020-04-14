@@ -675,14 +675,24 @@ class AutoTensorboard(Callback):
     def _get_all_metrics_from(self, base_path, logs, batch_level):
         dataset_metrics = get_value_at(base_path, logs)
 
+        # TODO : Make this a library level constant
+        skip_metric_names = {"mean", "auxiliary_results"}
+
         metrics = {}
 
-        def _add_metrics(m):
+        def _add_metrics(m, base_path=None):
             for metric_name, metric in m.items():
+                if metric_name in skip_metric_names:
+                    continue
+
                 if metric is None:
                     continue
 
+                if base_path is not None:
+                    metric_name = f"{base_path}.{metric_name}"
+
                 if _.is_dict(metric):
+                    _add_metrics(metric, metric_name)
                     continue
 
                 tag = self._get_tag(metric_name, batch_level)
@@ -705,6 +715,7 @@ class AutoTensorboard(Callback):
         prefix = 'batch' if batch_level else 'epoch'
 
         tag = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
+        tag = tag.replace('.', '_')
         tag = f"{prefix}_{tag}"
 
         return tag

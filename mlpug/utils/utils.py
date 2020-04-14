@@ -52,6 +52,49 @@ def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
     return value
 
 
+def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, base_path=None):
+    """
+    Safe way to set value in nested data structure (e.g. nested dict) based on a key path
+
+    TODO migrate to PyBase
+
+    :param key_path:
+    :param value:
+    :param nested_data:
+    :param warn_on_path_unavailable:
+
+    :param base_path: Don't use, only used for recursion
+
+    :return:
+    """
+
+    if not can_get_and_set_values(nested_data):
+        raise Exception(f"Invalid path {base_path}, can't get or set keys for provided nested data variable")
+
+    keys = key_path.split(".")
+    root_key = keys[0]
+
+    is_final_key = len(keys) == 1
+
+    if not is_final_key:
+        if base_path is None:
+            base_path = root_key
+        else:
+            base_path += f".{root_key}"
+
+        if not has_key(nested_data, root_key):
+            nested_data[root_key] = {}
+
+            if warn_on_path_unavailable:
+                logger.warn(f"Key path {base_path} not available, creating path")
+
+        nested_data = nested_data[root_key]
+
+        set_value_at('.'.join(keys[1:]), nested_data, value, warn_on_path_unavailable, base_path)
+    else:
+        nested_data[root_key] = value
+
+
 def has_key(o, key):
     """
     TODO migrate to PyBase
@@ -60,6 +103,12 @@ def has_key(o, key):
     :return:
     """
     return hasattr(o, '__iter__') and (key in o)
+
+
+def can_get_and_set_values(o):
+    return (o is not None) and \
+        hasattr(o, "__getitem__") and callable(o.__getitem__) and \
+        hasattr(o, "__setitem__") and callable(o.__setitem__)
 
 
 def is_chunkable(batch):

@@ -1,3 +1,4 @@
+import abc
 import math
 
 import numpy as np
@@ -7,21 +8,72 @@ from mlpug.utils import has_key, SlidingWindow
 
 import basics.base_utils as _
 
+from mlpug.utils import get_value_at, set_value_at
 
-class MetricsLoggerBase(Callback):
+
+class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  dataset_name,
-                 metrics,
+                 metric_funcs,
+                 evaluate_settings=None,
                  batch_averaging_window=None,
+                 get_loss_and_aux_from_logs=False,
                  name="MetricsLoggerBase"):
+        """
+
+        :param dataset_name:
+        :type dataset_name:
+        :param metric_funcs: A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
+                             the corresponding values are functions to calculate the metric value
+                             The functions will be called as follows:
+
+                             metric_func(**kwargs)
+
+                             Where kwargs will contain the following keys:
+                             batch, loss, auxiliary_results, evaluate_settings
+
+                             Example metric_funcs dict:
+
+                                 def get_loss(loss, **kwargs):
+                                    return loss
+
+                                 metric_funcs = {
+                                    'loss': get_loss
+                                 }
+
+                             The function can also return a dict with metrics. For instance:
+
+                                 def calc_metrics(loss, **kwargs):
+                                    return {
+                                        "loss": loss,
+                                        "perplexity": math.exp(loss)
+                                    }
+
+                                 metric_funcs = {
+                                    'metrics': calc_metrics
+                                 }
+
+        :type metric_funcs:
+        :param evaluate_settings:
+        :type evaluate_settings:
+        :param batch_averaging_window:
+        :type batch_averaging_window:
+        :param get_loss_and_aux_from_logs: If true, the model loss and the auxiliary results are retrieved from the logs
+        :type get_loss_and_aux_from_logs:
+        :param name:
+        :type name:
+        """
         super().__init__(name=f"{dataset_name} dataset {name}")
 
-        self._metrics = metrics
+        self._metric_funcs = metric_funcs
+        self._evaluate_settings = evaluate_settings
 
         self._dataset_name = dataset_name
 
         self._batch_averaging_window = batch_averaging_window
+
+        self._get_loss_and_aux_from_logs = get_loss_and_aux_from_logs
 
         self._metric_averages = None
         self._metric_windows = None
@@ -34,8 +86,8 @@ class MetricsLoggerBase(Callback):
         return {
                     "batch_averaging_window": self._batch_averaging_window,
                     "metric_averages": self._metric_averages,
-                    "metric_windows": {metric_name: window.get_state()
-                                       for metric_name, window in self._metric_windows.items()}
+                    "metric_windows": {metric_path: window.get_state()
+                                       for metric_path, window in self._metric_windows.items()}
                }, True
 
     def set_state(self, state):
@@ -51,8 +103,8 @@ class MetricsLoggerBase(Callback):
 
         self._batch_averaging_window = state["batch_averaging_window"]
         self._metric_averages = state["metric_averages"]
-        self._metric_windows = {metric_name: SlidingWindow(state=window_state)
-                                for metric_name, window_state in state["metric_windows"].items()}
+        self._metric_windows = {metric_path: SlidingWindow(state=window_state)
+                                for metric_path, window_state in state["metric_windows"].items()}
 
         return True
 
@@ -74,19 +126,22 @@ class MetricsLoggerBase(Callback):
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
-        if not self._calc_metrics_on(dataset_batch, logs[self._dataset_name]):
+        dataset_logs = logs[self._dataset_name]
+
+        if not self._calc_metrics_on(dataset_batch, dataset_logs, logs):
             return False
 
-        metric_names = self._metrics.keys()
-        if not self._update_metrics_windows_for(metric_names, logs[self._dataset_name]):
+        metric_names = list(self._metric_funcs.keys())
+        metric_paths = self._get_metric_paths(dataset_logs, metric_names=metric_names)
+        if not self._update_metrics_windows_for(metric_paths, dataset_logs):
             return False
 
-        if not self._calc_metric_window_averages(metric_names, logs[self._dataset_name]["mean"]):
+        if not self._calc_metric_window_averages(metric_paths, dataset_logs["mean"]):
             return False
 
         return True
 
-    def _setup_metrics_averaging(self, window_length, reset=False):
+    def _init_metrics_averaging(self, reset=False):
         if reset:
             self._metric_averages = {}
             self._metric_windows = {}
@@ -94,19 +149,55 @@ class MetricsLoggerBase(Callback):
         self._metric_averages = self._metric_averages or {}
         self._metric_windows = self._metric_windows or {}
 
-        for metric_name in self._metrics.keys():
-            if metric_name not in self._metric_windows:
-                self._metric_windows[metric_name] = SlidingWindow(length=window_length)
-                self._metric_averages[metric_name] = None
-
         return True
 
-    def _calc_metrics_on(self, batch, metrics):
+    def _get_metric_paths(self, metrics, metric_names=None, base_path=None):
+
+        if metric_names is None:
+            metric_names = list(metrics.keys())
+
+        metric_paths = []
+        for name in metric_names:
+            value = metrics[name]
+
+            if base_path is not None:
+                current_path = f"{base_path}.{name}"
+            else:
+                current_path = name
+
+            if type(value) is dict:
+                path_list = self._get_metric_paths(value, base_path=current_path)
+            else:
+                path_list = [current_path]
+
+            metric_paths += path_list
+
+        return metric_paths
+
+    def _calc_metrics_on(self, batch, metrics, logs):
         success = True
 
-        for metric_name, metric_func in self._metrics.items():
+        # Use custom settings if available, else use default settings
+        evaluate_settings = get_value_at('evaluate_settings', logs, warn_on_failure=False)
+        if evaluate_settings is None:
+            evaluate_settings = self._evaluate_settings
+
+        if self._get_loss_and_aux_from_logs:
+            loss = get_value_at(f"{self._dataset_name}.loss", logs)
+            auxiliary_results = get_value_at(f"{self._dataset_name}.auxiliary_results", logs, warn_on_failure=False)
+        else:
+            loss, auxiliary_results = self._evaluate_loss(batch, evaluate_settings)
+
+        metric_func_args = {
+            'batch': batch,
+            'loss': loss,
+            'auxiliary_results': auxiliary_results,
+            'evaluate_settings': evaluate_settings
+        }
+
+        for metric_name, metric_func in self._metric_funcs.items():
             try:
-                metrics[metric_name] = metric_func(batch)
+                metrics[metric_name] = metric_func(**metric_func_args)
             except Exception as e:
                 _.log_exception(self._log, f"Exception occurred calculating {metric_name} on "
                                            f"{self._dataset_name} batch", e)
@@ -114,30 +205,49 @@ class MetricsLoggerBase(Callback):
 
         return success
 
-    def _update_metrics_windows_for(self, metric_names, batch_metric_values):
+    @abc.abstractmethod
+    def _evaluate_loss(self, batch, evaluate_settings=None):
+        """
+        Always returns loss, auxiliary_results tuple
+        :param batch:
+        :type batch:
+        :param evaluate_settings:
+        :type evaluate_settings:
+        :return: loss, auxiliary_results
+        :rtype: tuple
+        """
+        pass
+
+    def _update_metrics_windows_for(self, metric_paths, batch_metric_values):
         success = True
 
-        for metric_name in metric_names:
+        for metric_path in metric_paths:
             try:
-                metric_value = batch_metric_values[metric_name]
-                self._metric_windows[metric_name].slide(metric_value)
+                metric_value = get_value_at(metric_path, batch_metric_values)
+
+                sliding_window = get_value_at(metric_path, self._metric_windows, warn_on_failure=False)
+                if sliding_window is None:
+                    sliding_window = SlidingWindow(length=self._batch_averaging_window)
+                    self._metric_windows[metric_path] = sliding_window
+
+                sliding_window.slide(metric_value)
             except Exception as e:
                 _.log_exception(self._log, f"Exception occurred updating sliding averaging window for "
-                                           f"{self._dataset_name} batch {metric_name}", e)
+                                           f"{self._dataset_name} batch {metric_path}", e)
                 success = False
 
         return success
 
-    def _calc_metric_window_averages(self, metric_names, metrics_averages):
+    def _calc_metric_window_averages(self, metric_paths, metrics_averages):
         success = True
 
-        for metric_name in metric_names:
+        for metric_path in metric_paths:
             try:
-                window_data = self._metric_windows[metric_name].window
-                metrics_averages[metric_name] = np.mean(np.array(window_data))
+                window_data = self._metric_windows[metric_path].window
+                set_value_at(metric_path, metrics_averages, np.mean(np.array(window_data)))
             except Exception as e:
                 _.log_exception(self._log, f"Exception occurred calculating sliding window average for "
-                                           f"{self._dataset_name} batch {metric_name}", e)
+                                           f"{self._dataset_name} batch {metric_path}", e)
                 success = False
 
         return success
@@ -154,11 +264,15 @@ class MetricsLoggerBase(Callback):
 
 
 class TrainingMetricsLogger(MetricsLoggerBase):
+    """
+    By default, gets already calculated loss and auxiliary results from logs
+    """
 
-    def __init__(self, metrics, batch_averaging_window, name="MetricsLogger"):
+    def __init__(self, metric_funcs, batch_averaging_window, name="MetricsLogger"):
         super().__init__(dataset_name='training',
-                         metrics=metrics,
+                         metric_funcs=metric_funcs,
                          batch_averaging_window=batch_averaging_window,
+                         get_loss_and_aux_from_logs=True,
                          name=name)
 
     def on_training_start(self,
@@ -182,22 +296,35 @@ class TrainingMetricsLogger(MetricsLoggerBase):
             self._valid = False
             return False
 
-        return self._setup_metrics_averaging(self._batch_averaging_window)
+        return self._init_metrics_averaging()
+
+    def _evaluate_loss(self, batch, evaluate_settings=None):
+        """
+        No implementation required, because loss and auxilairy results are usually available for the training set
+        """
+        pass
 
 
-class TestMetricsLogger(MetricsLoggerBase):
+class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
+    """
+    Child class must implement _evaluate_loss method
+    """
 
     def __init__(self,
                  dataset,
                  dataset_name,
-                 metrics,
+                 metric_funcs,
+                 evaluate_settings=None,
                  batch_level=True,
                  batch_assessment_period=1,
                  batch_averaging_window=None,
+                 get_loss_and_aux_from_logs=False,
                  name="MetricsLogger"):
         super().__init__(dataset_name=dataset_name,
-                         metrics=metrics,
+                         metric_funcs=metric_funcs,
+                         evaluate_settings=evaluate_settings,
                          batch_averaging_window=batch_averaging_window,
+                         get_loss_and_aux_from_logs=get_loss_and_aux_from_logs,
                          name=name)
 
         self._dataset = dataset
@@ -232,7 +359,7 @@ class TestMetricsLogger(MetricsLoggerBase):
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
-        return self._setup_metrics_averaging(self._batch_averaging_window)
+        return self._init_metrics_averaging()
 
     def on_epoch_start(self, logs):
         """
@@ -284,19 +411,23 @@ class TestMetricsLogger(MetricsLoggerBase):
 
         self._dataset_iterator = iter(self._dataset)
 
-        self._setup_metrics_averaging(self._batch_averaging_window, reset=True)
+        self._init_metrics_averaging(reset=True)
 
-        metric_names = self._metrics.keys()
+        metric_names = list(self._metric_funcs.keys())
+        metric_paths = None
         # Loop over all dataset batches, this will fill the sliding windows, finally calculate the averages
         for dataset_batch in self._dataset_iterator:
             batch_metrics = {}
-            if not self._calc_metrics_on(dataset_batch, batch_metrics):
+            if not self._calc_metrics_on(dataset_batch, batch_metrics, logs):
                 return False
 
-            if not self._update_metrics_windows_for(metric_names, batch_metrics):
+            if metric_paths is None:
+                metric_paths = self._get_metric_paths(batch_metrics, metric_names=metric_names)
+
+            if not self._update_metrics_windows_for(metric_paths, batch_metrics):
                 return False
 
-        return self._calc_metric_window_averages(metric_names, logs[self._dataset_name]["mean"])
+        return self._calc_metric_window_averages(metric_paths, logs[self._dataset_name]["mean"])
 
     def _validate(self):
         self._valid = True
