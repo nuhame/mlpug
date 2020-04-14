@@ -317,7 +317,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 try:
                     training_settings = logs["training_settings"] if has_key(logs, "training_settings") else None
-                    logs["training"]["loss"], logs["auxiliary_results"] = self.trainer.train_on(training_batch,
+                    logs["training"]["loss"], logs["training"]["auxiliary_results"] = self.trainer.train_on(training_batch,
                                                                                                 training_settings)
 
                     self._update_window("training_loss_window", logs["training"]["loss"])

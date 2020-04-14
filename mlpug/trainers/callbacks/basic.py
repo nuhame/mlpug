@@ -130,23 +130,30 @@ class LogProgress(Callback):
 
         return metrics_log
 
-    def _create_log_for(self, metrics):
+    def _create_log_for(self, metrics, base_metric=None):
         if not _.is_dict(metrics):
             return None
 
-        metrics = metrics.copy()
-        if 'mean' in metrics:
-            del metrics['mean']
+        metric_names = set(metrics.keys())
+        # TODO : Make this a library level constant
+        skip_metric_names = {"mean", "auxiliary_results"}
 
-        num_metrics = len(metrics)
+        num_metrics = len(metric_names-skip_metric_names)
 
         log_format = "{:s} {:.3f}"
         log = ""
         for c, (metric, value) in enumerate(metrics.items()):
-            if metric == "mean":
+            if metric in skip_metric_names:
                 continue
 
-            log += log_format.format(metric, value)
+            if type(value) is dict:
+                log += self._create_log_for(value, metric)
+            else:
+                if base_metric is not None:
+                    metric = f"{base_metric}.{metric}"
+
+                log += log_format.format(metric, value)
+
             if c < num_metrics - 1:
                 log += ', '
 
