@@ -1,3 +1,5 @@
+import sys
+
 import abc
 import math
 
@@ -225,8 +227,10 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
             try:
                 metric_value = get_value_at(metric_path, batch_metric_values)
 
-                sliding_window = get_value_at(metric_path, self._metric_windows, warn_on_failure=False)
+                sliding_window = self._metric_windows[metric_path] if metric_path in self._metric_windows else None
                 if sliding_window is None:
+                    self._log.debug(f"Creating sliding window for {metric_path}")
+
                     sliding_window = SlidingWindow(length=self._batch_averaging_window)
                     self._metric_windows[metric_path] = sliding_window
 
@@ -409,6 +413,8 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
         if self._batch_level:
             return True
 
+        self._log.info(f"Calculating metrics on {self._dataset_name} dataset")
+
         self._dataset_iterator = iter(self._dataset)
 
         self._init_metrics_averaging(reset=True)
@@ -426,6 +432,12 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
 
             if not self._update_metrics_windows_for(metric_paths, batch_metrics):
                 return False
+
+            sys.stdout.write('#')
+            sys.stdout.flush()
+
+        sys.stdout.write('\n')
+        sys.stdout.flush()
 
         return self._calc_metric_window_averages(metric_paths, logs[self._dataset_name]["mean"])
 

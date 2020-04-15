@@ -4,7 +4,7 @@ from mlpug.mlpug_exceptions import StateInvalidException, InvalidParametersExcep
 
 class SlidingWindow(Base):
 
-    def __init__(self, length=None, init_window_values=None, state=None, **kwargs):
+    def __init__(self, length=None, init_window_values=None, state=None, warn=False, **kwargs):
         """
 
         Can raise StateInvalidException or InvalidParametersException
@@ -30,7 +30,7 @@ class SlidingWindow(Base):
         if not length:
             raise InvalidParametersException("No length value given, unable to instantiate SlidingWindow object.")
 
-        if length % 2 != 1:
+        if length % 2 != 1 and warn:
             self._log.warn("Given window length is even, centre will not be exact")
 
         self.length = length
