@@ -120,14 +120,9 @@ class LogProgress(Callback):
         key_path = set_name
         if mean_metrics:
             key_path += '.mean'
-        metrics = get_value_at(key_path, logs)
+        metrics = get_value_at(key_path, logs, warn_on_failure=False)
 
         metrics_log = self._create_log_for(metrics)
-        if metrics_log is None:
-            self._log.error(f'No {"mean" if mean_metrics else ""} metrics data available for {key_path}, '
-                            f'unable to create log for these set metrics')
-            return None
-
         return metrics_log
 
     def _create_log_for(self, metrics, base_metric=None):
@@ -140,7 +135,6 @@ class LogProgress(Callback):
 
         num_metrics = len(metric_names-skip_metric_names)
 
-        log_format = "{:s} {:.3f}"
         log = ""
         for c, (metric, value) in enumerate(metrics.items()):
             if metric in skip_metric_names:
@@ -152,12 +146,21 @@ class LogProgress(Callback):
                 if base_metric is not None:
                     metric = f"{base_metric}.{metric}"
 
+                log_format = self._get_log_format(value)
                 log += log_format.format(metric, value)
 
             if c < num_metrics - 1:
                 log += ', '
 
         return log
+
+    def _get_log_format(self, value):
+        if abs(value) < 0.01:
+            log_format = "{:s} {:.3e}"
+        else:
+            log_format = "{:s} {:.3f}"
+
+        return log_format
 
 
 class BatchSizeLogger(Callback):
