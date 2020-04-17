@@ -200,6 +200,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                     if best_model_fname:
                         self._best_model_quality = model_quality
                         self._best_model_iter = training_iter
+                        self._log.debug("Best model saved.")
                     else:
                         self._log.error("Unable to save improved model checkpoint")
                         success = False
@@ -211,12 +212,23 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         if force or ((self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0)):
             # Just copy best model if available
             latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
-            success &= (latest_model_fname is not None)
+
+            latest_model_saved = (latest_model_fname is not None)
+            success &= latest_model_saved
+
+            if latest_model_saved:
+                self._log.debug("Checkpoint of last model saved.")
 
             if (self._archive_last_model_checkpoint_every > 0) and \
                     (training_iter % self._archive_last_model_checkpoint_every == 0):
                 if latest_model_fname is not None:
-                    success &= self._copy(latest_model_fname, self.current_model_file_name(training_iter))
+                    copy_success = self._copy(latest_model_fname, self.current_model_file_name(training_iter))
+
+                    success &= copy_success
+
+                    if copy_success:
+                        self._log.debug("Checkpoint of last model archived.")
+
                 else:
                     self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
                     success = False
