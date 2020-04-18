@@ -10,13 +10,10 @@ from mlpug.utils import is_chunkable
 class PTTrainerMixin:
 
     def _activate_inference_mode(self, inference_mode):
-        is_training = self.training_model.training
         if inference_mode:
-            if is_training:
-                self.training_model.eval()
+            self.training_model.eval()
         else:
-            if not is_training:
-                self.training_model.train()
+            self.training_model.train()
 
     def _get_model_state(self, model, model_name=None):
         return model.state_dict()
