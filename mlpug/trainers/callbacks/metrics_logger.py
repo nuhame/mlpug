@@ -20,6 +20,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                  metric_funcs,
                  evaluate_settings=None,
                  batch_averaging_window=None,
+                 metric_averaging_funcs=None,
+                 average_only=False,
                  get_loss_and_aux_from_logs=False,
                  name="MetricsLoggerBase"):
         """
@@ -27,7 +29,10 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         :param dataset_name:
         :type dataset_name:
         :param metric_funcs: A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
-                             the corresponding values are functions to calculate the metric value
+                             the corresponding values are functions to calculate the metric value, or to gather
+                             information to calculated a combined/averaged metric value over a window,
+                             also see metric_averaging_funcs and batch_averaging_window
+
                              The functions will be called as follows:
 
                              metric_func(**kwargs)
@@ -56,11 +61,59 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                                     'metrics': calc_metrics
                                  }
 
+                             Last, the function can also gather data, to be used by the corresponding
+                             metric_averaging_func, e.g.:
+
+                                 def get_target_and_predicted(batch, auxiliary_results, **kwargs):
+                                        target = batch[1]
+                                        predicted = auxiliary_results[0]
+
+                                        return target, predicted
+
+                                 metric_funcs = {
+                                    'recall': get_target_and_predicted
+                                 }
+
+                                 The corresponding metric_averaging_func could be:
+
+                                def calc_recall(window):
+                                    target = []
+                                    predicted = []
+                                    # append all batch-level data
+                                    for t, p in window:
+                                        target.append(t)
+                                        predicted.append(p)
+
+                                    return recall_score(t, p)
+
+                                 metric_averaging_funcs = {
+                                    'recall': calc_recall
+                                 }
+
         :type metric_funcs:
         :param evaluate_settings:
         :type evaluate_settings:
-        :param batch_averaging_window:
-        :type batch_averaging_window:
+        :param batch_averaging_window: Window length in batches, over which the average metric must be calculated
+        :type batch_averaging_window: Int
+        :param metric_averaging_funcs:
+                             An optional dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
+                             the corresponding values are functions to calculate the average metric value,
+                             based on metrics, or other data, gathered per batch, also see metric_funcs and
+                             batch_averaging_window
+
+                             The functions will be called as follows:
+
+                             metric_averaging_func(window), where window is a list with metrics or other data
+                             gathered per batch.
+
+                             See `metric_funcs` for example.
+
+                             The default functions assumes the window to be a list of floats and will average the
+                             values in this list
+
+        :type metric_averaging_funcs:
+        :param average_only: If True, only results of the metric_averaging_funcs will be logged, default is false
+        :type average_only: Boolean
         :param get_loss_and_aux_from_logs: If true, the model loss and the auxiliary results are retrieved from the logs
         :type get_loss_and_aux_from_logs:
         :param name:
@@ -74,6 +127,14 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         self._dataset_name = dataset_name
 
         self._batch_averaging_window = batch_averaging_window
+
+        self._metric_averaging_funcs = metric_averaging_funcs or {}
+        self._average_only = average_only
+
+        # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
+        for metric_name in self._metric_funcs.keys():
+            if metric_name not in self._metric_averaging_funcs:
+                self._metric_averaging_funcs[metric_name] = lambda window: np.nanmean(np.array(window))
 
         self._get_loss_and_aux_from_logs = get_loss_and_aux_from_logs
 
@@ -128,10 +189,15 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
-        dataset_logs = logs[self._dataset_name]
+        batch_metrics = {}
 
-        if not self._calc_metrics_on(dataset_batch, dataset_logs, logs):
+        #dataset_logs = logs[self._dataset_name]
+
+        if not self._calc_metrics_on(dataset_batch, batch_metrics, logs):
             return False
+
+        if not self._average_only:
+            logs[self._dataset_name] = {**logs[self._dataset_name], **batch_metrics}
 
         metric_names = list(self._metric_funcs.keys())
         metric_paths = self._get_metric_paths(dataset_logs, metric_names=metric_names)
@@ -248,7 +314,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         for metric_path in metric_paths:
             try:
                 window_data = self._metric_windows[metric_path].window
-                set_value_at(metric_path, metrics_averages, np.mean(np.array(window_data)))
+                metric_averaging_func = get_value_at(metric_path, self._metric_averaging_funcs)
+                set_value_at(metric_path, metrics_averages, metric_averaging_func(window_data))
             except Exception as e:
                 _.log_exception(self._log, f"Exception occurred calculating sliding window average for "
                                            f"{self._dataset_name} batch {metric_path}", e)
@@ -272,12 +339,13 @@ class TrainingMetricsLogger(MetricsLoggerBase):
     By default, gets already calculated loss and auxiliary results from logs
     """
 
-    def __init__(self, metric_funcs, batch_averaging_window, name="MetricsLogger"):
+    def __init__(self, metric_funcs, batch_averaging_window, name="MetricsLogger", **kwargs):
         super().__init__(dataset_name='training',
                          metric_funcs=metric_funcs,
                          batch_averaging_window=batch_averaging_window,
                          get_loss_and_aux_from_logs=True,
-                         name=name)
+                         name=name,
+                         **kwargs)
 
     def on_training_start(self,
                           num_epochs,
@@ -318,24 +386,19 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
                  dataset,
                  dataset_name,
                  metric_funcs,
-                 evaluate_settings=None,
                  batch_level=True,
                  batch_assessment_period=1,
-                 batch_averaging_window=None,
-                 get_loss_and_aux_from_logs=False,
-                 name="MetricsLogger"):
+                 name="MetricsLogger",
+                 **kwargs):
         super().__init__(dataset_name=dataset_name,
                          metric_funcs=metric_funcs,
-                         evaluate_settings=evaluate_settings,
-                         batch_averaging_window=batch_averaging_window,
-                         get_loss_and_aux_from_logs=get_loss_and_aux_from_logs,
-                         name=name)
+                         name=name,
+                         **kwargs)
 
         self._dataset = dataset
 
         self._batch_level = batch_level
         self._batch_assessment_period = batch_assessment_period
-        self._batch_averaging_window = batch_averaging_window
 
         self._dataset_iterator = None
 
