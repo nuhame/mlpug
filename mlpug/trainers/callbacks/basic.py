@@ -33,6 +33,7 @@ class LogProgress(Callback):
                                                                            logs["batch_step"],
                                                                            logs["final_batch_step"],
                                                                            average_duration))
+            # TODO : this can be simplified by directly applying _create_log_for recursively
             sys.stdout.write('Batch:\n')
             for set_name in self.set_names:
                 metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=False)
@@ -40,8 +41,9 @@ class LogProgress(Callback):
                     success = False
                     continue
 
-                sys.stdout.write(f'{set_name}:\t{metrics_log}.\n')
+                sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
 
+            # TODO : this can be simplified by directly applying _create_log_for recursively
             sys.stdout.write('\nMoving average:\n')
             for set_name in self.set_names:
                 metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=True)
@@ -49,7 +51,7 @@ class LogProgress(Callback):
                     success = False
                     continue
 
-                sys.stdout.write(f'{set_name}:\t{metrics_log}.\n')
+                sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
 
             sys.stdout.write(f'\n\n')
 
@@ -62,13 +64,14 @@ class LogProgress(Callback):
                                                                            duration))
         success = True
         sys.stdout.write('Average:\n')
+        # TODO : this can be simplified by directly applying _create_log_for recursively
         for set_name in self.set_names:
             metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=True)
             if metrics_log is None:
                 success = False
                 continue
 
-            sys.stdout.write(f'{set_name}:\t{metrics_log}.\n')
+            sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
 
         sys.stdout.write(f'\n')
 
@@ -125,7 +128,7 @@ class LogProgress(Callback):
         metrics_log = self._create_log_for(metrics)
         return metrics_log
 
-    def _create_log_for(self, metrics, base_metric=None):
+    def _create_log_for(self, metrics, base_metric=None, log_depth=0):
         if not _.is_dict(metrics):
             return None
 
@@ -135,17 +138,17 @@ class LogProgress(Callback):
 
         num_metrics = len(metric_names-skip_metric_names)
 
-        log = ""
+        log = "\t"*log_depth
+        if base_metric is not None:
+            log += f"{base_metric:<15}: "
+
         for c, (metric, value) in enumerate(metrics.items()):
             if metric in skip_metric_names:
                 continue
 
             if type(value) is dict:
-                log += self._create_log_for(value, metric)
+                log += "\n" + self._create_log_for(value, metric, log_depth+1)
             else:
-                if base_metric is not None:
-                    metric = f"{base_metric}.{metric}"
-
                 log_format = self._get_log_format(value)
                 log += log_format.format(metric, value)
 
@@ -156,9 +159,9 @@ class LogProgress(Callback):
 
     def _get_log_format(self, value):
         if abs(value) < 0.01:
-            log_format = "{:s} {:.3e}"
+            log_format = "{:<9s} {:.3e}"
         else:
-            log_format = "{:s} {:.3f}"
+            log_format = "{:<9s} {:>9.3f}"
 
         return log_format
 
