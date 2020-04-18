@@ -163,8 +163,10 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         self._log.info(f"Metric monitor period : {self._metric_monitor_period}")
 
         time_scale = 'batches' if self._batch_level else 'epochs'
-        self._log.info(f"Create last training & model checkpoints every {self._archive_last_model_checkpoint_every} {time_scale}")
-        self._log.info(f"Archive last model checkpoint every {self._archive_last_model_checkpoint_every} {time_scale}")
+        self._log.info(f"Create last training & model checkpoints every "
+                       f"{self._archive_last_model_checkpoint_every} {time_scale}")
+        self._log.info(f"Archive last model checkpoint every "
+                       f"{self._archive_last_model_checkpoint_every} {time_scale}")
 
     def _get_model_quality(self, logs):
         return get_value_at(self._metric_to_monitor, logs)
