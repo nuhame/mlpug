@@ -150,6 +150,19 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return state, success
 
+    def get_state_for_model_checkpoint(self):
+
+        if not self.instance_valid():
+            self._log.error('TrainingManager is not valid, unable to get training manager state for model checkpoint')
+            return None, False
+
+        return {
+                   "epoch": self.epoch,
+                   "batch_step": self.batch_step,
+                   "global_iter": self.global_iter,
+                   "logs": self.logs,
+               }, True
+
     def set_state(self, state):
         """
         WARNING: the start batch_step in the state only controls how many batches will be trained on in the
