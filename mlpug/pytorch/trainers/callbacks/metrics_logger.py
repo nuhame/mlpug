@@ -7,6 +7,9 @@ from mlpug.utils import is_chunkable
 
 class TestMetricsLogger(TestMetricsLoggerBase):
 
+    def __init__(self, *args, name="TestMetricsLogger", **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+
     def _evaluate_loss(self, batch, evaluate_settings=None):
         if is_chunkable(batch):
             # Get raw batch
