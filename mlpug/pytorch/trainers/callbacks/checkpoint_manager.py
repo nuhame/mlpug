@@ -59,6 +59,21 @@ class CheckpointManager(CheckpointManagerBase):
                     success = False
 
             try:
+                manager_state, manager_state_success = self.training_manager.get_state_for_model_checkpoint()
+
+                if manager_state_success:
+                    state['manager_state'] = manager_state
+                else:
+                    self._log.warn("Getting the manager state for the model checkpoint was not successful, "
+                                   "will continue any way without this data ...")
+                    success = False
+
+            except Exception as e:
+                _.log_exception(self._log, "Unable to add manager state to model checkpoint, "
+                                           "trying to save the checkpoint anyway ...", e)
+                success = False
+
+            try:
                 self._log.debug(f"Saving model checkpoint : {filename}")
                 torch.save(state, filename)
             except Exception as e:
