@@ -18,7 +18,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                  model_hyper_parameters=None,
                  checkpoints_path="../trained-models/",
                  batch_level=True,
-                 metric_to_monitor="validation.mean.perplexity",
+                 metric_to_monitor="validation.window_average.perplexity",
                  metric_opt_mode='min',
                  metric_monitor_period=200,  # batches or epochs
                  create_checkpoint_every=200,  # batches or epochs
@@ -35,7 +35,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         :param checkpoints_path:
         :param batch_level: True if monitoring happens on the scale of batches. If False, monitoring is done
                             on the epoch level
-        :param metric_to_monitor: key path to metric value in the log object, e.g. `validation.mean_batch_perplexity`
+        :param metric_to_monitor: key path to metric value in the log object, e.g. `validation.batch.perplexity`
         :param metric_opt_mode: 'max', 'min'
         :param metric_monitor_period: The period between checks for model quality improvement.
                                       This is in number of batches if `batch_level = True`, else it is a
@@ -168,11 +168,13 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         self._log.info(f"Archive last model checkpoint every "
                        f"{self._archive_last_model_checkpoint_every} {time_scale}")
 
-    def _get_model_quality(self, logs):
-        return get_value_at(self._metric_to_monitor, logs)
+    def _get_model_quality(self, current_logs):
+        return get_value_at(self._metric_to_monitor, current_logs)
 
     def _monitor(self, iter_name, logs, force=False):
-        training_iter = logs[iter_name]
+        current = self._get_logs_base(logs)
+
+        training_iter = current[iter_name]
 
         if training_iter == 0:
             return True
@@ -180,7 +182,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         best_model_fname = None
         success = True
         if force or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
-            model_quality = self._get_model_quality(logs)
+            model_quality = self._get_model_quality(current)
 
             if model_quality is not None:
                 model_improved = ((self._metric_opt_mode == 'min') and (model_quality < self._best_model_quality)) or \
@@ -195,17 +197,20 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                             (iter_name == 'epoch') and \
                             (training_iter < self._best_model_iter):
                         self._log.warn(f"Inconsistency: according to the current training iter ({training_iter}), "
-                                       f"current best model training iter. ({self._best_model_iter}) is in the future. "
+                                       f"current best model training iter ({self._best_model_iter}) is in the future. "
                                        f"Was the right training checkpoint loaded?")
 
                     best_model_fname = self._save_current_model_as_best()
                     if best_model_fname:
                         self._best_model_quality = model_quality
                         self._best_model_iter = training_iter
+
                         self._log.debug("Best model saved.")
                     else:
                         self._log.error("Unable to save improved model checkpoint")
                         success = False
+
+                self._update_logs(model_improved, logs, current)
             else:
                 self._log.error(f"No model quality available, unable to check if we need to save a checkpoint, "
                                 f"skipping ...")
@@ -258,6 +263,12 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
             return None
 
         return model_fn
+
+    def _update_logs(self, model_improved, logs, current):
+        if model_improved:
+            logs["best"] = current.copy()
+
+        current["is_best"] = model_improved
 
     def _create_model_checkpoint(self, file_to_copy=None):
         model_fn = self.latest_model_file_name()

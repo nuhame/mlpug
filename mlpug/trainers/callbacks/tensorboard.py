@@ -10,7 +10,7 @@ import basics.base_utils as _
 
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'
-METRIC_MEANS_WRITER = 'metric-means'
+WINDOW_AVERAGED_METRICS_WRITER = 'window-averaged-metrics'
 
 
 def get_value_at(path, obj):
@@ -70,18 +70,18 @@ class Tensorboard(Callback):
         {
             ...
             'training': {
-                'mean': {
+                'window_average': {
                     'loss': 0.201
                 }
             },
             'validation': {
-                'mean': {
+                'window_average': {
                     'loss': 0.234
                 }
             },
             'duration': {
                 'batch': 0.534,
-                'mean' : {
+                'window_average' : {
                     'batch' : 0.531
                 }
             }
@@ -89,9 +89,10 @@ class Tensorboard(Callback):
         ```
         The following `Tensorboard`
         ```
-        Tensorboard(['mean.loss', 'duration.mean.batch'], 'experiment1', 'validation')
+        Tensorboard(['window_average.loss', 'duration.window_average.batch'], 'experiment1', 'validation')
         ```
-        Will display a figure with `validation.mean.loss`, because `mean.loss`is available in `validation`.
+        Will display a figure with `validation.window_average.loss`, because `window_average.loss` is
+        available in `validation`.
 
 
         ### Showing metrics for different datasets in one graph using `dataset_name`
@@ -100,11 +101,12 @@ class Tensorboard(Callback):
         path, defined in all instances will be shown in one graph.
 
         ```
-        t_train = Tensorboard(['mean.loss'], 'experiment1', 'training')
-        t_val = Tensorboard(['mean.loss'], 'experiment1', 'validation')
+        t_train = Tensorboard(['window_average.loss'], 'experiment1', 'training')
+        t_val = Tensorboard(['window_average.loss'], 'experiment1', 'validation')
         ```
 
-        Registering the above tensorboards will plot the mean Loss for the training set and validation set in one graph
+        Registering the above tensorboards will plot the window_average Loss for the training set and validation set in
+        one graph
 
 
 
@@ -167,20 +169,24 @@ class Tensorboard(Callback):
 
         ```
         metric_names = {
-            'loss': 'cross_entropy',
-            'mean.loss': 'cross_entropy'
+            'batch.loss': 'cross_entropy',
+            'window_average.loss': 'cross_entropy'
         }
 
         Tensorboard([loss], 'experiment1', 'validation', metric_names = metric_names)
         ```
-        Displays a figure with the `validation.loss` at every batch as `cross_entropy`
+        Displays a figure with the `validation.batch.loss` at every batch as `cross_entropy`
 
         When also adding the following `Tensorboard`:
         ```
-        Tensorboard([mean.loss], 'experiment1', 'validation', metric_names = metric_names, metrics_are_averages=True)
+        Tensorboard([window_average.loss],
+                    'experiment1',
+                    'validation',
+                    metric_names = metric_names,
+                    metrics_are_averages=True)
         ```
 
-        Adds the `validation.mean.loss` averages to the same batch-level `cross_entropy` figure.
+        Adds the `validation.window_average.loss` averages to the same batch-level `cross_entropy` figure.
 
 
 
@@ -209,7 +215,7 @@ class Tensorboard(Callback):
 
         :param metrics_are_averages: {boolean}
                                      If True, the given metrics are written by a separate writer dedicated
-                                     to metrics means
+                                     to metrics window averages
 
         :param metric_names:    {dict}
                                 Dict mapping metric paths (keys), to metric names for the metrics (values).
@@ -233,7 +239,7 @@ class Tensorboard(Callback):
         :param log_dir:         Logging directory. When `experiment_name`, `dataset_name` and `label_name` are
                                 provided, the final logging directory will be:
 
-                                log_dir/<experiment_name>/<label_name>-<dataset-name>-[metric or metric-means]
+                                log_dir/<experiment_name>/<label_name>-<dataset-name>-[metric or metric-window-averages]
 
                                 Any parameters not provided will not be used to build up the log_dir
 
@@ -265,7 +271,7 @@ class Tensorboard(Callback):
 
         self._ignore_missing_metrics = ignore_missing_metrics
 
-        self._writer_type = METRIC_MEANS_WRITER if self._metrics_are_averages else METRIC_WRITER
+        self._writer_type = WINDOW_AVERAGED_METRICS_WRITER if self._metrics_are_averages else METRIC_WRITER
 
         self._writer = None
 
@@ -300,12 +306,13 @@ class Tensorboard(Callback):
         if not self._batch_level:
             return True
 
-        global_iter = logs['global_iter']
+        current = self._get_logs_base(logs)
+        global_iter = current['global_iter']
 
         if global_iter > 0 and (global_iter % self._batch_log_period != 0):
             return True
 
-        return self._write(logs, global_iter)
+        return self._write(current, global_iter)
 
     def on_epoch_completed(self, logs):
         if not self.instance_valid():
@@ -315,9 +322,10 @@ class Tensorboard(Callback):
         if self._batch_level:
             return True
 
-        epoch = logs['epoch']
+        current = self._get_logs_base(logs)
+        epoch = current['epoch']
 
-        return self._write(logs, epoch)
+        return self._write(current, epoch)
 
     def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
         self._writer.close()
@@ -376,8 +384,8 @@ class Tensorboard(Callback):
 
         return True
 
-    def _write(self, logs, training_iter):
-        metrics, success = self._get_metrics_from(logs)
+    def _write(self, current_logs, training_iter):
+        metrics, success = self._get_metrics_from(current_logs)
 
         for tag, metric in metrics.items():
             self._writer.add_scalar(tag, metric, global_step=training_iter)
@@ -387,14 +395,14 @@ class Tensorboard(Callback):
 
         return success
 
-    def _get_metrics_from(self, logs):
+    def _get_metrics_from(self, current_logs):
         if not _.is_sequence(self._metric_paths) or len(self._metric_paths) == 0:
             self._log.error(f'No valid metrics to show, nothing to get')
             return None, False
 
-        return self._get_specific_metrics_from(logs, self._metric_paths)
+        return self._get_specific_metrics_from(current_logs, self._metric_paths)
 
-    def _get_specific_metrics_from(self, logs, metric_paths):
+    def _get_specific_metrics_from(self, current_logs, metric_paths):
         success = True
         metrics = {}
 
@@ -410,12 +418,12 @@ class Tensorboard(Callback):
         for metric_path in metric_paths:
             if self._dataset_name:
                 set_metric_path = f'{self._dataset_name}.{metric_path}'
-                metric = get_value_at(set_metric_path, logs)
+                metric = get_value_at(set_metric_path, current_logs)
 
                 if _try_add_metric(metric_path, metric) is not None:
                     continue
 
-            metric = get_value_at(metric_path, logs)
+            metric = get_value_at(metric_path, current_logs)
 
             if not _try_add_metric(metric_path, metric) and not self._ignore_missing_metrics:
                 self._log.error(f'Unable to find metric for metric path {metric_path}')
@@ -438,7 +446,7 @@ class AutoTensorboard(Callback):
                  dataset_name,
                  experiment_name=None,
                  show_batch_level=True,
-                 show_batch_means=True,
+                 show_batch_window_averages=True,
                  show_epoch_level=True,
                  metric_names=None,
                  batch_log_period=1,
@@ -459,8 +467,10 @@ class AutoTensorboard(Callback):
             ...
 
             'validation': {
-                            'loss': 0.65,
-                            'mean': {
+                            'batch': {
+                                'loss': 0.65,
+                            },
+                            'window_average': {
                                       'loss': 0.63
                                     }
                            }
@@ -470,11 +480,12 @@ class AutoTensorboard(Callback):
         When `show_batch_level` is True, then `validation.loss` will be shown in
         the batch-level `loss` figure.
 
-        When `show_batch_means` is True, then `validation.mean.loss` will be shown in
+        When `show_batch_window_averages` is True, then `validation.window_averages.loss` will be shown in
         the batch-level `loss` figure.
 
-        When `show_epoch_level` is True, then `validation.mean.loss` will be shown in
-        the epoch-level `loss` figure.
+        When `show_epoch_level` is True, then `validation.dataset.loss` will be shown in
+        the epoch-level `loss` figure. Further, if `validation.dataset.loss` is not available,
+        `validation.window_average.loss` will be tried
 
 
         To show the Tensorboard start is as follows:
@@ -493,7 +504,7 @@ class AutoTensorboard(Callback):
                                 <dataset_name>.* path first of the logs object provided by the training manager.
 
         :param show_batch_level: {Boolean} If True, batch-level metrics will be logged to Tensorboard
-        :param show_batch_means: {Boolean} If True, (sliding-window) averaged batch-level metrics will be logged
+        :param show_batch_window_averages: {Boolean} If True, (sliding-window) averaged batch-level metrics will be logged
                                            to Tensorboard
         :param show_epoch_level: {Boolean} If True, epoch-level metrics will be logged to Tensorboard
 
@@ -506,7 +517,8 @@ class AutoTensorboard(Callback):
                                     'special.my_metric': 'my_awesome_metrics'
                                 }
 
-                                In this case `validation.loss` and `validation.mean.loss` are named 'cross_entropy'
+                                In this case `validation.loss` and `validation.window_average.loss` are
+                                named 'cross_entropy'
 
         :param batch_log_period: {int}
                                  period in batch iterations, after which the `batch_metrics` are logged
@@ -535,7 +547,7 @@ class AutoTensorboard(Callback):
         self._dataset_name = dataset_name
 
         self._show_batch_level = show_batch_level
-        self._show_batch_means = show_batch_means
+        self._show_batch_window_averages = show_batch_window_averages
         self._show_epoch_level = show_epoch_level
 
         self._metric_names = metric_names
@@ -556,8 +568,8 @@ class AutoTensorboard(Callback):
             # Metrics writer is used for batch level and epoch level
             success = self._setup_writer_for(METRIC_WRITER)
 
-            if self._show_batch_level and self._show_batch_means:
-                success &= self._setup_writer_for(METRIC_MEANS_WRITER)
+            if self._show_batch_level and self._show_batch_window_averages:
+                success &= self._setup_writer_for(WINDOW_AVERAGED_METRICS_WRITER)
 
         except Exception as e:
             _.log_exception(self._log, "An exception occurred setting up the Tensorboard callback", e)
@@ -581,17 +593,18 @@ class AutoTensorboard(Callback):
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
-        global_iter = logs['global_iter']
+        current = self._get_logs_base(logs)
+        global_iter = current['global_iter']
 
         if global_iter > 0 and (global_iter % self._batch_log_period != 0):
             return True
 
         success = True
         if self._show_batch_level:
-            success &= self._write(logs, global_iter, writer_type=METRIC_WRITER, batch_level=True)
+            success &= self._write(current, global_iter, writer_type=METRIC_WRITER, batch_level=True)
 
-        if self._show_batch_means:
-            success &= self._write(logs, global_iter, writer_type=METRIC_MEANS_WRITER, batch_level=True)
+        if self._show_batch_window_averages:
+            success &= self._write(current, global_iter, writer_type=WINDOW_AVERAGED_METRICS_WRITER, batch_level=True)
 
         return success
 
@@ -604,9 +617,10 @@ class AutoTensorboard(Callback):
         if not self._show_epoch_level:
             return
 
-        epoch = logs['epoch']
+        current = self._get_logs_base(logs)
+        epoch = current['epoch']
 
-        return self._write(logs, epoch, writer_type=METRIC_WRITER, batch_level=False)
+        return self._write(current, epoch, writer_type=METRIC_WRITER, batch_level=False)
 
     def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
         for writer in self._writers.values():
@@ -648,8 +662,8 @@ class AutoTensorboard(Callback):
 
         return True
 
-    def _write(self, logs, training_iter, writer_type, batch_level):
-        metrics, success = self._get_metrics_from(logs, writer_type, batch_level)
+    def _write(self, current_logs, training_iter, writer_type, batch_level):
+        metrics, success = self._get_metrics_from(current_logs, writer_type, batch_level)
 
         for tag, metric in metrics.items():
             self._writers[writer_type].add_scalar(tag, metric, global_step=training_iter)
@@ -659,24 +673,47 @@ class AutoTensorboard(Callback):
 
         return success
 
-    def _get_metrics_from(self, logs, writer_type, batch_level):
+    def _get_metrics_from(self, current_logs, writer_type, batch_level):
         # Get all metrics available
         if self._dataset_name:
-            base_path = self._dataset_name
-            if (writer_type == METRIC_MEANS_WRITER) or (not batch_level):
-                base_path += '.mean'
+            alt_base_path = None
+            if batch_level:
+                if writer_type != WINDOW_AVERAGED_METRICS_WRITER:
+                    base_path = f"{self._dataset_name}.batch"
+                else:
+                    base_path = f"{self._dataset_name}.window_average"
+            else:
+                base_path = f"{self._dataset_name}.dataset"
 
-            return self._get_all_metrics_from(base_path, logs, batch_level)
+                # for epoch-level fall back on window averages
+                alt_base_path = f"{self._dataset_name}.window_average"
+
+            metrics, success = self._get_all_metrics_from(base_path, current_logs, batch_level)
+            if alt_base_path is not None:
+                self._log.warn(f'Trying alternate metrics path {alt_base_path} ...')
+                alt_metrics, alt_success = self._get_all_metrics_from(alt_base_path, current_logs, batch_level)
+
+                if alt_success:
+                    metrics = metrics or {}
+                    for metric_path, alt_metric in alt_metrics.items():
+                        if metric_path in metrics:
+                            continue
+
+                        metrics[metric_path] = alt_metric
+
+                    success = len(metrics) > 0
+
+            return metrics, success
         else:
             self._log.error(f'Don\'t know how to get metrics to log without a dataset name or '
                             f'a list of metrics to show')
             return None, False
 
-    def _get_all_metrics_from(self, base_path, logs, batch_level):
-        dataset_metrics = get_value_at(base_path, logs)
+    def _get_all_metrics_from(self, base_path, current_logs, batch_level):
+        dataset_metrics = get_value_at(base_path, current_logs)
 
         # TODO : Make this a library level constant
-        skip_metric_names = {"mean", "auxiliary_results"}
+        skip_metric_names = {"auxiliary_results"}
 
         metrics = {}
 
@@ -705,7 +742,7 @@ class AutoTensorboard(Callback):
             if len(metrics) > 0:
                 return metrics, True
             else:
-                self._log.error(f'No metrics found at {base_path}')
+                self._log.warn(f'No metrics found at {base_path}')
                 return metrics, False
         else:
             self._log.error(f'No valid metrics found for {base_path}')
