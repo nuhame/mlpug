@@ -39,8 +39,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                  batch_averaging_window=None,
                  batch_metric_reducer_funcs=None,
                  log_condition_func=None,
-                 window_averaging_path="mean",
-                 name="MetricsLoggerBase"):
+                 name="MetricsLoggerBase",
+                 **kwargs):
         """
 
         Different modes of operation:
@@ -153,7 +153,7 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         :param name:
         :type name:
         """
-        super().__init__(name=f"{dataset_name} dataset {name}")
+        super().__init__(name=f"{dataset_name} dataset {name}", **kwargs)
 
         self._dataset = dataset
         self._dataset_name = dataset_name
@@ -170,8 +170,6 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         self._batch_metric_reducer_funcs = batch_metric_reducer_funcs or {}
 
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
-
-        self._window_averaging_path = window_averaging_path
 
         self._name = name
 
@@ -225,20 +223,6 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
         return True
 
-    def on_epoch_start(self, logs):
-        if not self.instance_valid():
-            self._log.error(f"{self} is not valid, skipping this hook ... ")
-            return False
-
-        if self._dataset_name not in logs:
-            logs[self._dataset_name] = {}
-
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
-            if self._window_averaging_path not in logs[self._dataset_name]:
-                logs[self._dataset_name][self._window_averaging_path] = {}
-
-        return True
-
     def on_batch_training_completed(self, dataset_batch, logs):
         if not self.instance_valid():
             self._log.error(f"{self} is not valid, skipping this hook ... ")
@@ -250,27 +234,31 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         if not self._log_condition_func(logs=logs, dataset_batch=dataset_batch):
             return True
 
+        self._init_logs(logs)
+
         if self._logging_mode is MetricsLoggingMode.WHOLE_DATASET_METRICS:
-            return self._calc_whole_dataset_metrics(logs, self._dataset_name)
+            return self._calc_whole_dataset_metrics(logs, f"{self._dataset_name}.dataset")
         else:
+            current = self._get_logs_base(logs)
+
             batch_metrics = {}
             if not self._calc_batch_metric_data_from(dataset_batch, batch_metrics, logs):
                 return False
 
+            dataset_batch_logs = current[self._dataset_name]['batch']
             if self._logging_mode is MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS:
                 # Merge in new batch level results
-                logs[self._dataset_name] = {**logs[self._dataset_name], **batch_metrics}
-
-            dataset_logs = logs[self._dataset_name]
+                dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
+                current[self._dataset_name]['batch'] = dataset_batch_logs
 
             metric_names = list(self._batch_metric_funcs.keys())
-            metric_paths = self._get_metric_paths(dataset_logs, metric_names=metric_names)
+            metric_paths = self._get_metric_paths(dataset_batch_logs, metric_names=metric_names)
 
-            self._update_metrics_windows_for(metric_paths, dataset_logs)
+            self._update_metrics_windows_for(metric_paths, dataset_batch_logs)
 
             # gather all window data
             batch_metrics_lists = {p: s.window for p, s in self._metric_windows.items()}
-            if not self._reduce(batch_metrics_lists, dataset_logs[self._window_averaging_path]):
+            if not self._reduce(batch_metrics_lists, current[self._dataset_name]['window_average']):
                 return False
 
             return True
@@ -286,7 +274,17 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         if not self._log_condition_func(logs=logs, dataset_batch=None):
             return True
 
-        return self._calc_whole_dataset_metrics(logs, f"{self._dataset_name}.{self._window_averaging_path}")
+        return self._calc_whole_dataset_metrics(logs, f"{self._dataset_name}.dataset")
+
+    def _init_logs(self, logs):
+        current = self._get_logs_base(logs)
+        if self._dataset_name not in current:
+            current[self._dataset_name] = {}
+
+        dataset_metrics = current[self._dataset_name]
+        for type in ['batch', 'window_average', 'dataset']:
+            if type not in dataset_metrics:
+                dataset_metrics[type] = {}
 
     def _calc_whole_dataset_metrics(self, logs, log_path):
         metric_names = list(self._batch_metric_funcs.keys())
@@ -325,7 +323,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         sys.stdout.write('\n')
         sys.stdout.flush()
 
-        reduced_metrics_log = get_value_at(log_path, logs)
+        current = self._get_logs_base(logs)
+        reduced_metrics_log = get_value_at(log_path, current)
 
         return self._reduce(batch_metric_data_lists, reduced_metrics_log)
 
@@ -370,8 +369,11 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
             evaluate_settings = self._evaluate_settings
 
         if self._dataset is None:
-            loss = get_value_at(f"{self._dataset_name}.loss", logs)
-            auxiliary_results = get_value_at(f"{self._dataset_name}.auxiliary_results", logs, warn_on_failure=False)
+            current = self._get_logs_base(logs)
+            loss = get_value_at(f"{self._dataset_name}.batch.loss", current)
+            auxiliary_results = get_value_at(f"{self._dataset_name}.batch.auxiliary_results",
+                                             current,
+                                             warn_on_failure=False)
         else:
             loss, auxiliary_results = self._evaluate_loss(batch, evaluate_settings)
 
@@ -498,10 +500,6 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                             f"metric logging mode ({self._logging_mode}, the {self} will not function")
             self._valid = False
 
-        if self._window_averaging_path is None:
-            self._log.error(f"No valid window averaging log path provided: {self._window_averaging_path}\n"
-                            f"the {self} will not function")
-
 
 class TrainingMetricsLogger(MetricsLoggerBase):
     """
@@ -601,7 +599,8 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
         return True
 
     def on_batch_training_completed(self, training_batch, logs):
-        training_iter = logs["global_iter"]
+        current = self._get_logs_base(logs)
+        training_iter = current["global_iter"]
 
         if self._logging_mode is MetricsLoggingMode.WHOLE_DATASET_METRICS:
             return super().on_batch_training_completed(training_batch, logs)

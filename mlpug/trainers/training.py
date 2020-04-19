@@ -64,6 +64,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.init_logs = None
         self.logs = {}
 
+        self._previous_batch_duration = None
+
         self.training_loss_window = None
         self.batch_duration_window = None
 
@@ -286,35 +288,28 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
                 self.init_logs = None
             else:
-                self.logs = {
-                    "epoch": epoch,
-                    "final_epoch": self.num_epochs-1,
-                    "batch_step": self.batch_step,
-                    "final_batch_step": self.num_batches_per_epoch-1,
-                    "global_iter": self.global_iter,
-                    "training": {
-                        "mean": {
-                            "loss": self._calc_window_average("training_loss_window")
-                        }
-                    },
-                    "duration": {
-                        "batch": None,
-                        "epoch": 0,
-                        "mean": {
-                            "batch": self._calc_window_average("batch_duration_window")
-                        }
-                    },
+                # Keep anything in the logs from the previous epoch that is non-standard
+                self.logs = self.logs or {}
+                self.logs = {**self.logs, **{
+                    "final_epoch": self.num_epochs - 1,
+                    "final_batch_step": self.num_batches_per_epoch - 1,
+
+                    "current": None,
+
                     "cb_calls_success": cb_calls_success
-                }
+                }}
 
             # It's a bit shorter
             logs = self.logs
 
             logs["cb_calls_success"] &= self._call_callbacks('on_epoch_start', logs)
 
+            epoch_start = True
             epoch_stopped_early = False
 
             training_dataset = self._prepare_training_dataset()
+            current = None
+            ctl = None
             for training_batch in iter(training_dataset):
                 batch_training_start_time = time.time()
 
@@ -324,18 +319,20 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     self._log.warn("Training epoch stopped early")
                     break
 
-                logs["batch_step"] = self.batch_step
-                logs["global_iter"] = self.global_iter
+                logs["current"] = self._init_current_logs()
+
                 logs["cb_calls_success"] &= self._call_callbacks('on_batch_training_start', training_batch, logs)
+
+                current = logs["current"]
+                ctl = current["training"]
 
                 try:
                     training_settings = logs["training_settings"] if has_key(logs, "training_settings") else None
-                    logs["training"]["loss"], \
-                        logs["training"]["auxiliary_results"] = self.trainer.train_on(training_batch,
-                                                                                      training_settings)
+                    ctl["batch"]["loss"], ctl["batch"]["auxiliary_results"] = self.trainer.train_on(training_batch,
+                                                                                                    training_settings)
 
-                    self._update_window("training_loss_window", logs["training"]["loss"])
-                    logs["training"]["mean"]["loss"] = self._calc_window_average("training_loss_window")
+                    self._update_window("training_loss_window", ctl["batch"]["loss"])
+                    ctl["window_average"]["loss"] = self._calc_window_average("training_loss_window")
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -359,11 +356,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 batch_training_end_time = time.time()
 
-                logs["duration"]["batch"] = batch_training_end_time - batch_training_start_time
-                logs["duration"]["epoch"] += logs["duration"]["batch"]
+                batch_duration = batch_training_end_time - batch_training_start_time
+                self._update_window("batch_duration_window", batch_duration)
 
-                self._update_window("batch_duration_window", logs["duration"]["batch"])
-                logs["duration"]["mean"]["batch"] = self._calc_window_average("batch_duration_window")
+                self._previous_batch_duration = batch_duration
 
                 # Situation 1: When the start_batch given was > 0, go to next epoch when epoch finished
                 # Situation 2: When num_batches_per_epoch was given to simulate epochs in an
@@ -372,6 +368,11 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     break
 
             if not (epoch_stopped_early or training_stopped_on_error):
+                ctpl = current["training_params"]
+
+                ctpl["duration"]["window_average"] = self._calc_window_average("batch_duration_window")
+                ctpl["duration"]["dataset"] = self._calc_window_sum("batch_duration_window")
+
                 logs["cb_calls_success"] &= self._call_callbacks('on_epoch_completed', logs)
 
             cb_calls_success &= logs["cb_calls_success"]
@@ -394,6 +395,29 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                                "What's up with that? 🧐")
         else:
             self._log.warn("Training stopped on error. 🥺️")
+
+    def _init_current_logs(self):
+        return {
+            "epoch": self.epoch,
+            "batch_step": self.batch_step,
+            "global_iter": self.global_iter,
+
+            "training": {
+                "batch": {},
+                "window_average": {
+                    "loss": self._calc_window_average("training_loss_window")
+                },
+                "dataset": {},
+            },
+
+            "training_params": {
+                "duration": {
+                    "batch": self._previous_batch_duration,
+                    "dataset": None,
+                    "window_average": self._calc_window_average("batch_duration_window")
+                }
+            }
+        }
 
     def _call_callbacks(self, event, *args, **kwargs):
         success = True
@@ -433,6 +457,18 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             window_data = getattr(self, window_name).window
             return mean(window_data) if len(window_data) > 0 else None
+        except Exception as e:
+            _.log_exception(self._log, f"Exception occurred calculating sliding window average for {window_name}.", e)
+            return None
+
+    def _calc_window_sum(self, window_name):
+        try:
+            window_obj = getattr(self, window_name)
+            if not window_obj:
+                return None
+
+            window_data = getattr(self, window_name).window
+            return sum(window_data) if len(window_data) > 0 else 0
         except Exception as e:
             _.log_exception(self._log, f"Exception occurred calculating sliding window average for {window_name}.", e)
             return None

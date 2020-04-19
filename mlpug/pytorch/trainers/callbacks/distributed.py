@@ -31,7 +31,7 @@ class DistributedSamplerManager(Callback):
         :return: success (True or False)
         """
 
-        self._set_epoch(logs["epoch"])
+        self._set_epoch(logs["current"]["epoch"])
 
         return True
 

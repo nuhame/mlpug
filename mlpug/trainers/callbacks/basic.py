@@ -10,33 +10,36 @@ import basics.base_utils as _
 
 class LogProgress(Callback):
 
-    def __init__(self, log_period=200, set_names=None, batch_level=True, name="LogProgress"):
+    def __init__(self, log_period=200, set_names=None, batch_level=True, logs_base_path="current", name="LogProgress"):
         super(LogProgress, self).__init__(name=name)
 
         self.log_period = log_period
         self.set_names = set_names or ["training"]
         self.batch_level = batch_level
+        self.logs_base_path = logs_base_path
 
     def on_batch_training_completed(self, training_batch, logs):
         if not self.batch_level:
             return True
 
         success = True
-        batch_step = logs["batch_step"]
+        current = self._get_logs_base(logs)
+        batch_step = current["batch_step"]
         if batch_step == 0 or batch_step % self.log_period == 0:
             eta = self._calc_eta(logs)
             average_duration = self._get_average_batch_duration(logs)
+
             sys.stdout.write('Epoch {:d}/{:d} - ETA: {:s}\tBatch {:d}/{:d} '
-                             'Average batch training time {:s}\n'.format(logs["epoch"],
-                                                                           logs["final_epoch"],
-                                                                           eta,
-                                                                           logs["batch_step"],
-                                                                           logs["final_batch_step"],
-                                                                           average_duration))
+                             'Average batch training time {:s}\n'.format(current["epoch"],
+                                                                         logs["final_epoch"],
+                                                                         eta,
+                                                                         current["batch_step"],
+                                                                         logs["final_batch_step"],
+                                                                         average_duration))
             # TODO : this can be simplified by directly applying _create_log_for recursively
             sys.stdout.write('Batch:\n')
             for set_name in self.set_names:
-                metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=False)
+                metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=False)
                 if metrics_log is None:
                     success = False
                     continue
@@ -46,7 +49,7 @@ class LogProgress(Callback):
             # TODO : this can be simplified by directly applying _create_log_for recursively
             sys.stdout.write('\nMoving average:\n')
             for set_name in self.set_names:
-                metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=True)
+                metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=True)
                 if metrics_log is None:
                     success = False
                     continue
@@ -58,15 +61,16 @@ class LogProgress(Callback):
         return success
 
     def on_epoch_completed(self, logs):
+        current = self._get_logs_base(logs)
         duration = self._get_epoch_duration(logs)
-        sys.stdout.write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(logs["epoch"],
+        sys.stdout.write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
         sys.stdout.write('Average:\n')
         # TODO : this can be simplified by directly applying _create_log_for recursively
         for set_name in self.set_names:
-            metrics_log = self._create_set_metrics_log_for(set_name, logs, mean_metrics=True)
+            metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=True)
             if metrics_log is None:
                 success = False
                 continue
@@ -79,11 +83,15 @@ class LogProgress(Callback):
 
     def _calc_eta(self, logs):
 
+        current = self._get_logs_base(logs)
+
         eta_str = None
         try:
-            average_batch_duration = logs["duration"]["mean"]["batch"]
+            training_params = current["training_params"]
+
+            average_batch_duration = training_params["duration"]["window_average"]
             if average_batch_duration and average_batch_duration > 0:
-                batch_step = logs["batch_step"]
+                batch_step = current["batch_step"]
                 final_batch_step = logs["final_batch_step"]
                 num_batches_to_go = final_batch_step - batch_step + 1
 
@@ -98,9 +106,11 @@ class LogProgress(Callback):
         return eta_str
 
     def _get_average_batch_duration(self, logs):
+        current = self._get_logs_base(logs)
+
         duration_str = "[UNKNOWN]"
         try:
-            duration = logs["duration"]["mean"]["batch"]
+            duration = current["training_params"]["duration"]["window_average"]
             if duration and duration > 0.0:
                 duration = int(duration*1000)
                 duration_str = f"{duration}ms"
@@ -110,20 +120,27 @@ class LogProgress(Callback):
         return duration_str
 
     def _get_epoch_duration(self, logs):
+        current = self._get_logs_base(logs)
+
         duration_str = None
         try:
-            epoch_duration = int(round(logs["duration"]["epoch"]))
+            epoch_duration = int(round(current["training_params"]["duration"]["dataset"]))
             duration_str = str(datetime.timedelta(seconds=epoch_duration))
         except Exception as e:
             _.log_exception(self._log, "Unable to get epoch duration", e)
 
         return duration_str
 
-    def _create_set_metrics_log_for(self, set_name, logs, mean_metrics):
+    def _create_set_metrics_log_for(self, set_name, logs, window_averaged):
+        current = self._get_logs_base(logs)
+
         key_path = set_name
-        if mean_metrics:
-            key_path += '.mean'
-        metrics = get_value_at(key_path, logs, warn_on_failure=False)
+        if window_averaged:
+            key_path += '.window_average'
+        else:
+            key_path += '.batch'
+
+        metrics = get_value_at(key_path, current, warn_on_failure=False)
 
         metrics_log = self._create_log_for(metrics)
         return metrics_log
@@ -134,7 +151,7 @@ class LogProgress(Callback):
 
         metric_names = set(metrics.keys())
         # TODO : Make this a library level constant
-        skip_metric_names = {"mean", "auxiliary_results"}
+        skip_metric_names = {"auxiliary_results"}
 
         num_metrics = len(metric_names-skip_metric_names)
 
@@ -182,7 +199,9 @@ class BatchSizeLogger(Callback):
         :return: success (True or False)
         """
 
-        logs['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
+        current = self._get_logs_base(logs)
+
+        current['training_params']['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
             training_batch[0].size(self._batch_dimension)
 
         return True

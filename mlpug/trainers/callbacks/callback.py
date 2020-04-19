@@ -2,13 +2,17 @@ import abc
 
 from basics.base import Base
 
+from mlpug.utils.utils import get_value_at
+
 
 class Callback(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, name):
+    def __init__(self, name, base_logs_path="current"):
         super(Callback, self).__init__()
 
         self.name = name
+
+        self.base_log_path = base_logs_path
 
         self.training_manager = None
         self.trainer = None
@@ -117,6 +121,12 @@ class Callback(Base, metaclass=abc.ABCMeta):
         :return: success (True or False)
         """
         return True
+
+    def _get_logs_base(self, logs):
+        if self.base_log_path is None:
+            return logs
+        else:
+            return get_value_at(self.base_log_path, logs)
 
     def __str__(self):
         return self.get_name()

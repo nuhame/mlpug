@@ -20,9 +20,9 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
 
         :param schedulers: A single scheduler instance or a dict or list of schedulers
         :param batch_level: True if the LR schedulers should be updated after every batch, else after every epoch
-        :param metric_to_monitor: key path to metric value in the log object, e.g. `validation.mean_batch_perplexity`,
-                                used by the schedulers. If None, it is assumed that the schedulers don't monitor any
-                                metric.
+        :param metric_to_monitor: key path to metric value in the log object,
+                                  e.g. `validation.window_average.perplexity`, used by the schedulers. If None, it is
+                                  assumed that the schedulers don't monitor any metric.
         """
         super().__init__(name=name)
 
@@ -65,8 +65,10 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         return self._update_lr(logs, 'epoch')
 
     def _update_lr(self, logs, iter_name):
-        model_quality = self._get_model_quality(logs)
-        training_iter = logs[iter_name]
+        current = self._get_logs_base(logs)
+
+        model_quality = self._get_model_quality(current)
+        training_iter = current[iter_name]
 
         success = False
         try:
@@ -80,8 +82,8 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         try:
             current_lr = self._get_current_lr()
 
-            lr = get_value_at('lr', logs, warn_on_failure=False) or {}
-            logs['lr'] = {**lr, **current_lr}
+            lr = get_value_at('lr', current, warn_on_failure=False) or {}
+            current['lr'] = {**lr, **current_lr}
         except Exception as e:
             _.log_exception(self._log, "An unexpected error occurred, "
                                        "unable to add current learning rate values to the logs object", e)
@@ -89,11 +91,11 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
 
         return success
 
-    def _get_model_quality(self, logs):
+    def _get_model_quality(self, current_logs):
         if not self._metric_to_monitor:
             return None
 
-        return get_value_at(self._metric_to_monitor, logs)
+        return get_value_at(self._metric_to_monitor, current_logs)
 
     @abc.abstractmethod
     def _exec_schedulers(self, training_iter, model_quality=None):
