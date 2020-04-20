@@ -176,7 +176,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
 
         training_iter = current[iter_name]
 
-        if training_iter == 0:
+        if not force and training_iter == 0:
             return True
 
         best_model_fname = None
