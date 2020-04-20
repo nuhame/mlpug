@@ -274,6 +274,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         if not self._log_condition_func(logs=logs, dataset_batch=None):
             return True
 
+        self._init_logs(logs)
+
         return self._calc_whole_dataset_metrics(logs, f"{self._dataset_name}.dataset")
 
     def _init_logs(self, logs):
@@ -428,7 +430,7 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                 reducer_func = get_value_at(metric_path, self._batch_metric_reducer_funcs)
                 set_value_at(metric_path, reduced_metrics, reducer_func(batch_metric_data_list))
             except Exception as e:
-                _.log_exception(self._log, f"Exception occurred reducing {metric_path} for {self._dataset_name} dataset"
+                _.log_exception(self._log, f"Exception occurred reducing {metric_path} for {self._dataset_name} dataset "
                                            f"batch metric data", e)
                 success = False
 
