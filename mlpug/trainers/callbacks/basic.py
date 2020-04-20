@@ -18,6 +18,13 @@ class LogProgress(Callback):
         self.batch_level = batch_level
         self.logs_base_path = logs_base_path
 
+        self.type_names = {
+            'batch': 'Batch',
+            'window_average': "Moving average",
+            'dataset': "Computed over dataset",
+            'epoch': "Epoch"
+        }
+
     def on_batch_training_completed(self, training_batch, logs):
         if not self.batch_level:
             return True
@@ -36,27 +43,12 @@ class LogProgress(Callback):
                                                                          current["batch_step"],
                                                                          logs["final_batch_step"],
                                                                          average_duration))
-            # TODO : this can be simplified by directly applying _create_log_for recursively
-            sys.stdout.write('Batch:\n')
-            for set_name in self.set_names:
-                metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=False)
-                if metrics_log is None:
-                    success = False
-                    continue
 
-                sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
+            for type in ['batch', 'window_average', 'dataset', 'epoch']:
+                self._write_metric_logs(type, logs)
+                sys.stdout.write(f'\n')
 
-            # TODO : this can be simplified by directly applying _create_log_for recursively
-            sys.stdout.write('\nMoving average:\n')
-            for set_name in self.set_names:
-                metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=True)
-                if metrics_log is None:
-                    success = False
-                    continue
-
-                sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
-
-            sys.stdout.write(f'\n\n')
+            sys.stdout.write(f'\n')
 
         return success
 
@@ -67,15 +59,9 @@ class LogProgress(Callback):
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
-        sys.stdout.write('Average:\n')
-        # TODO : this can be simplified by directly applying _create_log_for recursively
-        for set_name in self.set_names:
-            metrics_log = self._create_set_metrics_log_for(set_name, logs, window_averaged=True)
-            if metrics_log is None:
-                success = False
-                continue
-
-            sys.stdout.write(f'{set_name:<15}: {metrics_log}.\n')
+        for type in ['window_average', 'dataset', 'epoch']:
+            self._write_metric_logs(type, logs)
+            sys.stdout.write(f'\n')
 
         sys.stdout.write(f'\n')
 
@@ -131,19 +117,25 @@ class LogProgress(Callback):
 
         return duration_str
 
-    def _create_set_metrics_log_for(self, set_name, logs, window_averaged):
+    def _write_metric_logs(self, type, logs):
+        metrics_log = ''
+        for set_name in self.set_names:
+            set_metrics_log = self._create_set_metrics_log_for(set_name, type, logs)
+            if set_metrics_log is None:
+                continue
+
+            metrics_log += f'{set_name:<15}: {set_metrics_log}.\n'
+
+        if len(metrics_log) > 0:
+            sys.stdout.write(f'{self.type_names[type]}:\n')
+            sys.stdout.write(metrics_log)
+
+    def _create_set_metrics_log_for(self, set_name, type, logs):
         current = self._get_logs_base(logs)
 
-        key_path = set_name
-        if window_averaged:
-            key_path += '.window_average'
-        else:
-            key_path += '.batch'
-
+        key_path = f"{set_name}.{type}"
         metrics = get_value_at(key_path, current, warn_on_failure=False)
-
-        metrics_log = self._create_log_for(metrics)
-        return metrics_log
+        return self._create_log_for(metrics)
 
     def _create_log_for(self, metrics, base_metric=None, log_depth=0):
         if not _.is_dict(metrics):
@@ -154,6 +146,8 @@ class LogProgress(Callback):
         skip_metric_names = {"auxiliary_results"}
 
         num_metrics = len(metric_names-skip_metric_names)
+        if num_metrics < 1:
+            return None
 
         log = "\t"*log_depth
         if base_metric is not None:
