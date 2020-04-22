@@ -18,7 +18,7 @@ class LogProgress(Callback):
         self.batch_level = batch_level
         self.logs_base_path = logs_base_path
 
-        self.type_names = {
+        self.metric_level_names = {
             'batch': 'Batch',
             'window_average': "Moving average",
             'dataset': "Computed over dataset",
@@ -32,7 +32,16 @@ class LogProgress(Callback):
         success = True
         current = self._get_logs_base(logs)
         batch_step = current["batch_step"]
-        if batch_step == 0 or batch_step % self.log_period == 0:
+
+        has_dataset_level_metrics = False
+        for set_name in self.set_names:
+            dataset_metrics = get_value_at(f"{set_name}.dataset", current, warn_on_failure=False)
+            has_dataset_level_metrics |= type(dataset_metrics) is dict and len(dataset_metrics) > 0
+
+            if has_dataset_level_metrics:
+                break
+
+        if batch_step == 0 or batch_step % self.log_period == 0 or has_dataset_level_metrics:
             eta = self._calc_eta(logs)
             average_duration = self._get_average_batch_duration(logs)
 
@@ -44,8 +53,8 @@ class LogProgress(Callback):
                                                                          logs["final_batch_step"],
                                                                          average_duration))
 
-            for type in ['batch', 'window_average', 'dataset', 'epoch']:
-                self._write_metric_logs(type, logs)
+            for metric_level in ['batch', 'window_average', 'dataset', 'epoch']:
+                self._write_metric_logs(metric_level, logs)
                 sys.stdout.write(f'\n')
 
             sys.stdout.write(f'\n')
@@ -59,8 +68,8 @@ class LogProgress(Callback):
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
-        for type in ['window_average', 'dataset', 'epoch']:
-            self._write_metric_logs(type, logs)
+        for metric_level in ['window_average', 'dataset', 'epoch']:
+            self._write_metric_logs(metric_level, logs)
             sys.stdout.write(f'\n')
 
         sys.stdout.write(f'\n')
@@ -117,23 +126,23 @@ class LogProgress(Callback):
 
         return duration_str
 
-    def _write_metric_logs(self, type, logs):
+    def _write_metric_logs(self, metric_level, logs):
         metrics_log = ''
         for set_name in self.set_names:
-            set_metrics_log = self._create_set_metrics_log_for(set_name, type, logs)
+            set_metrics_log = self._create_set_metrics_log_for(set_name, metric_level, logs)
             if set_metrics_log is None:
                 continue
 
             metrics_log += f'{set_name:<15}: {set_metrics_log}.\n'
 
         if len(metrics_log) > 0:
-            sys.stdout.write(f'{self.type_names[type]}:\n')
+            sys.stdout.write(f'{self.metric_level_names[metric_level]}:\n')
             sys.stdout.write(metrics_log)
 
-    def _create_set_metrics_log_for(self, set_name, type, logs):
+    def _create_set_metrics_log_for(self, set_name, metric_level, logs):
         current = self._get_logs_base(logs)
 
-        key_path = f"{set_name}.{type}"
+        key_path = f"{set_name}.{metric_level}"
         metrics = get_value_at(key_path, current, warn_on_failure=False)
         return self._create_log_for(metrics)
 
@@ -169,7 +178,7 @@ class LogProgress(Callback):
         return log
 
     def _get_log_format(self, value):
-        if abs(value) < 0.01:
+        if abs(value) < 0.1:
             log_format = "{:<9s} {:.3e}"
         else:
             log_format = "{:<9s} {:>9.3f}"
