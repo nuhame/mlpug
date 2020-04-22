@@ -181,6 +181,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
 
         best_model_fname = None
         success = True
+        data_saved = False
         if force or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
             model_quality = self._get_model_quality(current)
 
@@ -205,7 +206,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                         self._best_model_quality = model_quality
                         self._best_model_iter = training_iter
 
-                        self._log.debug("Best model saved.")
+                        data_saved = True
                     else:
                         self._log.error("Unable to save improved model checkpoint")
                         success = False
@@ -223,24 +224,27 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
             latest_model_saved = (latest_model_fname is not None)
             success &= latest_model_saved
 
-            if latest_model_saved:
-                self._log.debug("Checkpoint of last model saved.")
+            data_saved |= latest_model_saved
 
             if (self._archive_last_model_checkpoint_every > 0) and \
                     (training_iter % self._archive_last_model_checkpoint_every == 0):
-                if latest_model_fname is not None:
+                if latest_model_saved:
                     copy_success = self._copy(latest_model_fname, self.current_model_file_name(training_iter))
 
                     success &= copy_success
 
-                    if copy_success:
-                        self._log.debug("Checkpoint of last model archived.")
-
+                    data_saved |= copy_success
                 else:
                     self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
                     success = False
 
-            success &= self._create_training_checkpoint()
+            training_checkpoint_success = self._create_training_checkpoint()
+            data_saved |= training_checkpoint_success
+
+            success &= training_checkpoint_success
+
+        if data_saved:
+            self._log.debug("Saving of data done.\n\n")
 
         return success
 
