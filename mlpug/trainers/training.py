@@ -294,6 +294,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     "final_epoch": self.num_epochs - 1,
                     "final_batch_step": self.num_batches_per_epoch - 1,
 
+                    "epoch": self.epoch,
+
                     "current": None,
 
                     "cb_calls_success": cb_calls_success
