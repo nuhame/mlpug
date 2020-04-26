@@ -23,10 +23,12 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                  metric_monitor_period=200,  # batches or epochs
                  create_checkpoint_every=200,  # batches or epochs
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
+                 force_monitoring_on_epoch=True,
                  base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
                  model_checkpoint_filename_ext="model",
                  training_checkpoint_filename_ext="state",
                  backup_before_override=True,
+                 disable_saving_checkpoints=False,
                  name="CheckpointManager"):
         """
 
@@ -44,6 +46,8 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                         (will be overridden after each period)
         :param archive_last_model_checkpoint_every: period before the last available model checkpoint is archived.
                                                     Period must be multiple of create_checkpoint_every period
+        :param force_monitoring_on_epoch: When True, the given metric will also be monitored on every epoch
+                                          in the case that monitoring level is batch level
         :param base_checkpoint_filename:
         :param model_checkpoint_filename_ext:
         :param training_checkpoint_filename_ext:
@@ -51,7 +55,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                        overridden by a new version. If backing up fails, no new version will be written
                                        to disk. This gives the user a chance to fix a problem, e.g. disk full, without
                                        interruption of the training process.
-
+        :param disable_saving_checkpoints: When True no checkpoints at all will be saved, e.g. for testing training
 
         """
         super().__init__(name=name)
@@ -71,6 +75,10 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         self._metric_monitor_period = metric_monitor_period
         self._create_checkpoint_every = create_checkpoint_every
         self._archive_last_model_checkpoint_every = archive_last_model_checkpoint_every
+
+        self._disable_saving_checkpoints = disable_saving_checkpoints
+
+        self._force_monitoring_on_epoch = force_monitoring_on_epoch
 
         self._best_model_quality = float('Inf') if self._metric_opt_mode == 'min' else -float('Inf')
         self._best_model_iter = None
@@ -119,12 +127,16 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         force = False
         iter_name = 'epoch'
 
+        force_monitoring = False
         if self._batch_level:
-            self._log.debug("Epoch completed : checking if model improved and creating checkpoints ... ")
-            iter_name = 'global_iter'
-            force = True
+            if self._force_monitoring_on_epoch:
+                self._log.debug("Epoch completed : checking if model improved and creating checkpoints ... ")
+                iter_name = 'global_iter'
+                force_monitoring = True
+            else:
+                return True
 
-        return self._monitor(iter_name, logs, force=force)
+        return self._monitor(iter_name, logs, force_monitoring=force_monitoring)
 
     def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
         if abs(self._best_model_quality) == float('Inf') or self._best_model_iter is None:
@@ -171,18 +183,19 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
     def _get_model_quality(self, current_logs):
         return get_value_at(self._metric_to_monitor, current_logs)
 
-    def _monitor(self, iter_name, logs, force=False):
+    # TODO : it would maybe be better to split the monitoring and the checkpointing in to two separated methods
+    def _monitor(self, iter_name, logs, force_monitoring=False):
         current = self._get_logs_base(logs)
 
         training_iter = current[iter_name]
 
-        if not force and training_iter == 0:
+        if not force_monitoring and training_iter == 0:
             return True
 
         best_model_fname = None
         success = True
         data_saved = False
-        if force or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
+        if force_monitoring or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
             model_quality = self._get_model_quality(current)
 
             if model_quality is not None:
@@ -201,12 +214,12 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                        f"current best model training iter ({self._best_model_iter}) is in the future. "
                                        f"Was the right training checkpoint loaded?")
 
-                    best_model_fname = self._save_current_model_as_best()
+                    best_model_fname = self._disable_saving_checkpoints or self._save_current_model_as_best()
                     if best_model_fname:
                         self._best_model_quality = model_quality
                         self._best_model_iter = training_iter
 
-                        data_saved = True
+                        data_saved = not self._disable_saving_checkpoints
                     else:
                         self._log.error("Unable to save improved model checkpoint")
                         success = False
@@ -217,7 +230,9 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                 f"skipping ...")
                 success = False
 
-        if force or ((self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0)):
+        if not self._disable_saving_checkpoints and \
+                (self._create_checkpoint_every > 0) and \
+                (training_iter % self._create_checkpoint_every == 0):
             # Just copy best model if available
             latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
 
