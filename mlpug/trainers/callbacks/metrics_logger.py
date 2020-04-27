@@ -39,6 +39,7 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                  batch_averaging_window=None,
                  batch_metric_reducer_funcs=None,
                  log_condition_func=None,
+                 show_dataset_evaluation_progress=False,
                  name="MetricsLoggerBase",
                  **kwargs):
         """
@@ -150,6 +151,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         :type average_only: Boolean
         :param get_loss_and_aux_from_logs: If true, the model loss and the auxiliary results are retrieved from the logs
         :type get_loss_and_aux_from_logs:
+        :param show_dataset_evaluation_progress
+        :type show_dataset_evaluation_progress
         :param name:
         :type name:
         """
@@ -170,6 +173,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         self._batch_metric_reducer_funcs = batch_metric_reducer_funcs or {}
 
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
+
+        self._show_dataset_evaluation_progress = show_dataset_evaluation_progress
 
         self._name = name
 
@@ -291,7 +296,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
     def _calc_whole_dataset_metrics(self, logs, log_path):
         metric_names = list(self._batch_metric_funcs.keys())
 
-        self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) on whole {self._dataset_name} dataset")
+        if self._show_dataset_evaluation_progress:
+            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) on whole {self._dataset_name} dataset")
 
         self._dataset_iterator = iter(self._dataset)
 
@@ -319,11 +325,13 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
                 batch_metric_data_list += [batch_metric_data]
 
-            sys.stdout.write('#')
-            sys.stdout.flush()
+            if self._show_dataset_evaluation_progress:
+                sys.stdout.write('#')
+                sys.stdout.flush()
 
-        sys.stdout.write('\n')
-        sys.stdout.flush()
+        if self._show_dataset_evaluation_progress:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
 
         current = self._get_logs_base(logs)
         reduced_metrics_log = get_value_at(log_path, current)
