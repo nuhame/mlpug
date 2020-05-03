@@ -45,7 +45,7 @@ class LogProgress(Callback):
             eta = self._calc_eta(logs)
             average_duration = self._get_average_batch_duration(logs)
 
-            sys.stdout.write('Epoch {:d}/{:d} - ETA: {:s}\tBatch {:d}/{:d} '
+            sys.stdout.write('\nEpoch {:d}/{:d} - ETA: {:s}\tBatch {:d}/{:d} '
                              'Average batch training time {:s}\n'.format(current["epoch"],
                                                                          logs["final_epoch"],
                                                                          eta,
@@ -64,7 +64,7 @@ class LogProgress(Callback):
     def on_epoch_completed(self, logs):
         current = self._get_logs_base(logs)
         duration = self._get_epoch_duration(logs)
-        sys.stdout.write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
+        sys.stdout.write('\nEpoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
@@ -84,7 +84,7 @@ class LogProgress(Callback):
         try:
             training_params = current["training_params"]
 
-            average_batch_duration = training_params["duration"]["window_average"]
+            average_batch_duration = training_params["window_average"]["duration"]
             if average_batch_duration and average_batch_duration > 0:
                 batch_step = current["batch_step"]
                 final_batch_step = logs["final_batch_step"]
@@ -105,7 +105,7 @@ class LogProgress(Callback):
 
         duration_str = "[UNKNOWN]"
         try:
-            duration = current["training_params"]["duration"]["window_average"]
+            duration = current["training_params"]["window_average"]["duration"]
             if duration and duration > 0.0:
                 duration = int(duration*1000)
                 duration_str = f"{duration}ms"
@@ -119,7 +119,7 @@ class LogProgress(Callback):
 
         duration_str = None
         try:
-            epoch_duration = int(round(current["training_params"]["duration"]["dataset"]))
+            epoch_duration = int(round(current["training_params"]["epoch"]["duration"]))
             duration_str = str(datetime.timedelta(seconds=epoch_duration))
         except Exception as e:
             _.log_exception(self._log, "Unable to get epoch duration", e)
@@ -152,13 +152,13 @@ class LogProgress(Callback):
 
         metric_names = set(metrics.keys())
         # TODO : Make this a library level constant
-        skip_metric_names = {"auxiliary_results"}
+        skip_metric_names = {"auxiliary_results", "duration"}
 
         num_metrics = len(metric_names-skip_metric_names)
         if num_metrics < 1:
             return None
 
-        log = "\t"*log_depth
+        log = "\n"*int(log_depth > 0) + "\t"*log_depth
         if base_metric is not None:
             log += f"{base_metric:<15}: "
 
@@ -168,9 +168,11 @@ class LogProgress(Callback):
 
             if type(value) is dict:
                 log += "\n" + self._create_log_for(value, metric, log_depth+1)
-            else:
+            elif isinstance(value, (float, int)):
                 log_format = self._get_log_format(value)
                 log += log_format.format(metric, value)
+            else:
+                log += "[UNKNOWN]"
 
             if c < num_metrics - 1:
                 log += ', '
@@ -204,7 +206,7 @@ class BatchSizeLogger(Callback):
 
         current = self._get_logs_base(logs)
 
-        current['training_params']['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
+        current['training_params']['batch']['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
             training_batch[0].size(self._batch_dimension)
 
         return True
