@@ -112,6 +112,7 @@ def can_get_and_set_values(o):
 
 
 def is_chunkable(batch):
-    return (batch is not None) and \
+    return batch is not None and \
+           not isinstance(batch, (tuple, list)) and \
            hasattr(batch, "__len__") and callable(batch.__len__) and \
            hasattr(batch, "__getitem__") and callable(batch.__getitem__)
