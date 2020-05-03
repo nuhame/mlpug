@@ -306,7 +306,6 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             logs["cb_calls_success"] &= self._call_callbacks('on_epoch_start', logs)
 
-            epoch_start = True
             epoch_stopped_early = False
 
             training_dataset = self._prepare_training_dataset()
@@ -372,8 +371,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             if not (epoch_stopped_early or training_stopped_on_error):
                 ctpl = current["training_params"]
 
-                ctpl["duration"]["window_average"] = self._calc_window_average("batch_duration_window")
-                ctpl["duration"]["dataset"] = self._calc_window_sum("batch_duration_window")
+                ctpl["window_average"]["duration"] = self._calc_window_average("batch_duration_window")
+                ctpl["epoch"]["duration"] = self._calc_window_sum("batch_duration_window")
 
                 logs["cb_calls_success"] &= self._call_callbacks('on_epoch_completed', logs)
 
@@ -413,10 +412,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             },
 
             "training_params": {
-                "duration": {
-                    "batch": self._previous_batch_duration,
-                    "dataset": None,
-                    "window_average": self._calc_window_average("batch_duration_window")
+                "batch": {
+                    "duration": self._previous_batch_duration,
+                },
+                "window_average": {
+                    "duration": self._calc_window_average("batch_duration_window")
+                },
+                "epoch": {
+                    "duration": self._calc_window_sum("batch_duration_window")
                 }
             }
         }
