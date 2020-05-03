@@ -72,12 +72,19 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         return 'batch' if self._batch_level else 'epoch'
 
     def _init_logs(self, logs):
+        schedule_level = self._get_schedule_level()
+
         current = self._get_logs_base(logs)
-        if 'lr' not in current:
-            current['lr'] = {}
+        ctp = current['training_params'][schedule_level]
+
+        if 'lr' not in ctp:
+            ctp['lr'] = {}
 
     def _update_lr(self, logs, iter_name):
+        schedule_level = self._get_schedule_level()
+
         current = self._get_logs_base(logs)
+        ctp = current['training_params'][schedule_level]
 
         model_quality = self._get_model_quality(current)
         training_iter = current[iter_name]
@@ -94,10 +101,9 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         try:
             current_lr = self._get_current_lr()
 
-            lr = get_value_at('lr', current, warn_on_failure=False) or {}
+            lr = get_value_at('lr', ctp, warn_on_failure=False) or {}
 
-            schedule_level = self._get_schedule_level()
-            current['lr'][schedule_level] = {**lr, **current_lr}
+            ctp['lr'] = {**lr, **current_lr}
         except Exception as e:
             _.log_exception(self._log, "An unexpected error occurred, "
                                        "unable to add current learning rate values to the logs object", e)
