@@ -181,10 +181,22 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             self._log.error("Invalid state object, unable to set state")
             return False
 
+        self.init_logs = state["manager"]["logs"]
+
         self.epoch = state["manager"]["epoch"]
         self.batch_step = state["manager"]["batch_step"]
         self.global_iter = state["manager"]["global_iter"]
-        self.init_logs = state["manager"]["logs"]
+
+        # start at next iteration
+        self.global_iter += 1
+        self.batch_step += 1
+        if self.batch_step > self.num_batches_per_epoch-1:
+            self.epoch += 1
+            self.batch_step = 0
+
+        self.init_logs["epoch"] = self.epoch
+        self.init_logs["batch_step"] = self.batch_step
+        self.init_logs["global_iter"] = self.global_iter
 
         success = self._set_window_state(state, "training_loss_window")
         success &= self._set_window_state(state, "batch_duration_window")
