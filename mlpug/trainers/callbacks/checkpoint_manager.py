@@ -21,6 +21,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                  metric_to_monitor="validation.window_average.perplexity",
                  metric_opt_mode='min',
                  metric_monitor_period=200,  # batches or epochs
+                 metric_checkpoint_threshold=None,
                  create_checkpoint_every=200,  # batches or epochs
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
                  force_monitoring_on_epoch=True,
@@ -42,6 +43,10 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         :param metric_monitor_period: The period between checks for model quality improvement.
                                       This is in number of batches if `batch_level = True`, else it is a
                                       number of epochs.
+        :param metric_checkpoint_threshold: when given, the model quality must be below (or above, depending on
+                                            metric_opt_mode) this threshold before a new best model checkpoint can be
+                                            saved
+
         :param create_checkpoint_every: period before saving next training/model checkpoint
                                         (will be overridden after each period)
         :param archive_last_model_checkpoint_every: period before the last available model checkpoint is archived.
@@ -73,6 +78,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         self._metric_opt_mode = metric_opt_mode
 
         self._metric_monitor_period = metric_monitor_period
+        self._metric_checkpoint_threshold = metric_checkpoint_threshold
         self._create_checkpoint_every = create_checkpoint_every
         self._archive_last_model_checkpoint_every = archive_last_model_checkpoint_every
 
@@ -198,7 +204,20 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         if force_monitoring or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
             model_quality = self._get_model_quality(current)
 
-            if model_quality is not None:
+            model_quality_valid = model_quality is not None
+            model_quality_good_enough = True
+            if model_quality_valid and self._metric_checkpoint_threshold is not None:
+                if self._metric_opt_mode == 'min':
+                    model_quality_good_enough = model_quality <= self._metric_checkpoint_threshold
+                elif self._metric_opt_mode == 'max':
+                    model_quality_good_enough = model_quality >= self._metric_checkpoint_threshold
+
+            if not model_quality_good_enough:
+                self._log.debug("Iter : %s : model quality not good enough : %s : %3e " % (training_iter,
+                                                                                           self._metric_to_monitor,
+                                                                                           model_quality))
+
+            if model_quality_valid and model_quality_good_enough:
                 model_improved = ((self._metric_opt_mode == 'min') and (model_quality < self._best_model_quality)) or \
                                  ((self._metric_opt_mode == 'max') and (model_quality > self._best_model_quality))
 
@@ -225,7 +244,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                         success = False
 
                 self._update_logs(model_improved, logs, current)
-            else:
+            elif not model_quality_valid:
                 self._log.error(f"No model quality available, unable to check if we need to save a checkpoint, "
                                 f"skipping ...")
                 success = False
