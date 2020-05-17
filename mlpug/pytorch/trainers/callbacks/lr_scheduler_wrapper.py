@@ -36,9 +36,9 @@ class LRSchedulerWrapper(LRSchedulerWrapperBase):
     def _exec_schedulers(self, training_iter, model_quality=None):
         for name, scheduler in self._schedulers.items():
             if self._metric_to_monitor:
-                scheduler.step(model_quality, training_iter)
+                scheduler.step(model_quality)
             else:
-                scheduler.step(training_iter)
+                scheduler.step()
 
         return True
 
