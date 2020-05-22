@@ -432,10 +432,11 @@ class Tensorboard(Callback):
         return metrics, success
 
     def _get_tag(self, metric_name):
-        prefix = 'batch' if self._batch_level else 'epoch'
+        iter_level = 'batch' if self._batch_level else 'epoch'
 
         tag = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
-        tag = f"{prefix}_{tag}"
+        tag = tag.replace('.', '_')
+        tag = f"{tag} - per {iter_level}"
 
         return tag
 
@@ -477,7 +478,7 @@ class AutoTensorboard(Callback):
             ...
         }
 
-        When `show_batch_level` is True, then `validation.loss` will be shown in
+        When `show_batch_level` is True, then `validation.batch.loss` will be shown in
         the batch-level `loss` figure.
 
         When `show_batch_window_averages` is True, then `validation.window_averages.loss` will be shown in
@@ -749,10 +750,10 @@ class AutoTensorboard(Callback):
             return None, False
 
     def _get_tag(self, metric_name, batch_level):
-        prefix = 'batch' if batch_level else 'epoch'
+        iter_level = 'batch' if batch_level else 'epoch'
 
         tag = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
         tag = tag.replace('.', '_')
-        tag = f"{prefix}_{tag}"
+        tag = f"{tag} - per {iter_level}"
 
         return tag
