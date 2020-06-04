@@ -68,7 +68,7 @@ def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, b
     :return:
     """
 
-    if not can_get_and_set_values(nested_data):
+    if not can_get_and_set_items(nested_data):
         raise Exception(f"Invalid path {base_path}, can't get or set keys for provided nested data variable")
 
     keys = key_path.split(".")
@@ -95,6 +95,59 @@ def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, b
         nested_data[root_key] = value
 
 
+def get_key_paths(data_dict, keys_to_consider=None, root_path=None):
+    """
+
+    Example:
+    get_key_paths({
+        'a' : {
+            'b': 1
+        },
+        'c' : 2
+    })
+
+    returns:
+    ['a.b', 'c']
+
+    :param data_dict: (Nested) dict with metrics
+    :type data_dict: dict
+
+    :param keys_to_consider: list with (root) key names to focus
+    :type keys_to_consider: list
+
+    :param root_path: root path to prepend.
+    :type root_path: string
+
+    :return: list with key metric path strings
+
+    :rtype:
+    """
+    if keys_to_consider is None:
+        keys_to_consider = list(data_dict.keys())
+
+    key_paths = []
+    for key in keys_to_consider:
+        value = data_dict[key]
+
+        if root_path is not None:
+            current_path = f"{root_path}.{key}"
+        else:
+            current_path = key
+
+        if type(value) is dict:
+            path_list = get_key_paths(value, root_path=current_path)
+        else:
+            path_list = [current_path]
+
+        key_paths += path_list
+
+    return key_paths
+
+
+def is_empty(o):
+    return o is None or (hasattr(o, "__len__") and callable(o.__len__) and len(o) == 0)
+
+
 def has_key(o, key):
     """
     TODO migrate to PyBase
@@ -105,7 +158,11 @@ def has_key(o, key):
     return hasattr(o, '__iter__') and (key in o)
 
 
-def can_get_and_set_values(o):
+def can_get_items(o):
+    return (o is not None) and hasattr(o, "__getitem__") and callable(o.__getitem__)
+
+
+def can_get_and_set_items(o):
     return (o is not None) and \
         hasattr(o, "__getitem__") and callable(o.__getitem__) and \
         hasattr(o, "__setitem__") and callable(o.__setitem__)
@@ -116,3 +173,9 @@ def is_chunkable(batch):
            not isinstance(batch, (tuple, list)) and \
            hasattr(batch, "__len__") and callable(batch.__len__) and \
            hasattr(batch, "__getitem__") and callable(batch.__getitem__)
+
+
+def has_method(o, method_name):
+    return o is not None and \
+        hasattr(o, method_name) and \
+        callable(getattr(o, method_name))
