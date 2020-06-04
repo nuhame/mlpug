@@ -3,7 +3,7 @@ import torch
 from functools import reduce
 from mlpug.trainers.training import *
 
-from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException
+from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
 from mlpug.utils import is_chunkable
 
 
@@ -76,11 +76,28 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             optimizer.zero_grad()
 
     def _calc_gradients(self, batch_data, training_settings=None):
+        """
+
+        :param batch_data:
+        :type batch_data:
+        :param training_settings:
+        :type training_settings:
+        :return:
+        :rtype:
+
+        :raises LossNotAvailableException
+        """
 
         if not self.batch_chunk_size:
-            loss, auxiliary_results = self.evaluate_loss(batch_data,
-                                                         inference_mode=False,
-                                                         evaluate_settings=training_settings)
+            results = self.evaluate_loss(batch_data,
+                                         inference_mode=False,
+                                         evaluate_settings=training_settings)
+
+            if 'loss' not in results:
+                raise LossNotAvailableException()
+
+            loss = results['loss']
+            auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
 
             self._back_propagate_from(loss)
         else:
@@ -118,7 +135,13 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             chunk = batch_data[chunk_start:chunk_end]
 
-            loss, aux_results = self.evaluate_loss(chunk, inference_mode=False, evaluate_settings=training_settings)
+            results = self.evaluate_loss(chunk, inference_mode=False, evaluate_settings=training_settings)
+
+            if 'loss' not in results:
+                raise LossNotAvailableException()
+
+            loss = results['loss']
+            aux_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
 
             # loss is assumed to be the average over the sample loss for the chunk
             # Divide through batch size to factor in that this loss is part of a larger batch.

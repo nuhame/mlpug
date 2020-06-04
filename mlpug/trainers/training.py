@@ -694,10 +694,12 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
                                If False the loss will be evaluated in training mode
         :param evaluate_settings: optional evaluate_settings object (usually dict)
 
-        :return: loss, auxiliary_results
+        :return: dict:
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
 
-        loss : Tensor
-        auxiliary_results : can be anything, e.g dict or list with values or data items
         """
 
         self._activate_inference_mode(inference_mode)
@@ -711,10 +713,11 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
 
-        :return: loss, auxiliary_results
-
-        loss : Tensor
-        auxiliary_results : can be anything, e.g dict or list with values or data items
+        :return: dict:
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
         """
 
         pass
@@ -795,7 +798,11 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         """
         :param model: nn.Module that returns the loss based on the given batch
                       The forward method of the training model must be callable and the following signature:
-                      model(self, batch_data, training_settings) -> (loss, auxiliary_results)
+
+                      model(self, batch_data, training_settings) -> {
+                        "loss": <Tensor>,
+                        "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+                      }
 
         :param model:
         :return:
@@ -814,14 +821,14 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
 
-        :return: loss, auxiliary_results
 
-        loss : Tensor
-        auxiliary_results : can be anything, e.g dict or list with values or data items
+        :return: dict:
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
         """
-        loss, auxiliary_results = self.training_model(batch_data, evaluate_settings)
-
-        return loss, auxiliary_results
+        return self.training_model(batch_data, evaluate_settings)
 
     def _validate_model(self):
         # TODO : this is framework dependent

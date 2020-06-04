@@ -28,7 +28,7 @@ class TrainerInvalidException(MLPugException):
 class BatchNotChunkableException(MLPugException):
     def __init__(self, message=None):
         err_msg = "Given batch is not chunkable, ensure that the batch object implements the " \
-                  "`__len__` and `__getitem__` methods, and that the `__getitem__` method can handle slices."
+                  "`__len__` and `__getitem__` methods, and that the `__getitem__` method can handle slices"
         if message:
             err_msg += f" : {message}"
 
@@ -37,7 +37,7 @@ class BatchNotChunkableException(MLPugException):
 
 class StateInvalidException(MLPugException):
     def __init__(self, message=None):
-        err_msg = "State invalid, unable to set state."
+        err_msg = "State invalid, unable to set state"
         if message:
             err_msg += f" : {message}"
 
@@ -46,8 +46,18 @@ class StateInvalidException(MLPugException):
 
 class InvalidParametersException(MLPugException):
     def __init__(self, message=None):
-        err_msg = "Invalid parameter(s)."
+        err_msg = "Invalid parameter(s)"
         if message:
             err_msg += f" : {message}"
 
         super().__init__(err_msg)
+
+
+class LossNotAvailableException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Key 'loss' not available in evaluation results dict"
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
+

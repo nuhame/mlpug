@@ -1,19 +1,16 @@
-import sys
-
-import abc
 from enum import Enum
 
 import math
 
-import numpy as np
-
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.mlpug_exceptions import CallbackInvalidException
-from mlpug.utils import has_key, SlidingWindow
+from mlpug.utils import has_key, get_key_paths, SlidingWindow
+
+from mlpug.evaluation import MetricEvaluatorBase
 
 import basics.base_utils as _
 
-from mlpug.utils import get_value_at, set_value_at
+from mlpug.utils import get_value_at
 
 
 class MetricsLoggingMode(Enum):
@@ -27,19 +24,17 @@ class MetricsLoggingMode(Enum):
                         MetricsLoggingMode.WINDOW_AVERAGE_METRICS}
 
 
-class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
+class MetricsLoggerBase(Callback):
 
     def __init__(self,
+                 metric_evaluator,
                  dataset_name,
-                 batch_metric_funcs,
                  batch_level,
                  logging_mode,
                  dataset=None,
                  evaluate_settings=None,
                  batch_averaging_window=None,
-                 batch_metric_reducer_funcs=None,
                  log_condition_func=None,
-                 show_dataset_evaluation_progress=False,
                  name="MetricsLoggerBase",
                  **kwargs):
         """
@@ -58,101 +53,28 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
         Using `log_condition_func` it can be used to control if metrics are calculated
 
-
-        # TODO : update documentation after refactor dd 18042020
-
         :param dataset_name:
         :type dataset_name:
-        :param batch_metric_funcs: A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
-                             the corresponding values are functions to calculate the metric value, or to gather
-                             information to calculated a combined/averaged metric value over a window,
-                             also see batch_metric_reducer_funcs and batch_averaging_window
 
-                             The functions will be called as follows:
+        :param batch_level: See general description above
+        :type batch_level:
 
-                             metric_func(**kwargs)
+        :param logging_mode: See general description above
+        :type logging_mode:
 
-                             Where kwargs will contain the following keys:
-                             batch, loss, auxiliary_results, evaluate_settings
+        :param dataset: Dataset, where the items are batches, to calculate the metrics with
+        :type dataset:
 
-                             Example batch_metric_funcs dict:
+        :param metric_evaluator: MetricEvaluator instance, or other object with the same public interface
+        :type metric_evaluator:
 
-                                 def get_loss(loss, **kwargs):
-                                    return loss
-
-                                 batch_metric_funcs = {
-                                    'loss': get_loss
-                                 }
-
-                             The function can also return a dict with metrics. For instance:
-
-                                 def calc_metrics(loss, **kwargs):
-                                    return {
-                                        "loss": loss,
-                                        "perplexity": math.exp(loss)
-                                    }
-
-                                 batch_metric_funcs = {
-                                    'metrics': calc_metrics
-                                 }
-
-                             Last, the function can also gather data, to be used by the corresponding
-                             reducer_func, e.g.:
-
-                                 def get_target_and_predicted(batch, auxiliary_results, **kwargs):
-                                        target = batch[1]
-                                        predicted = auxiliary_results[0]
-
-                                        return target, predicted
-
-                                 batch_metric_funcs = {
-                                    'recall': get_target_and_predicted
-                                 }
-
-                                 The corresponding reducer_func could be:
-
-                                def calc_recall(window):
-                                    target = []
-                                    predicted = []
-                                    # append all batch-level data
-                                    for t, p in window:
-                                        target.append(t)
-                                        predicted.append(p)
-
-                                    return recall_score(t, p)
-
-                                 batch_metric_reducer_funcs = {
-                                    'recall': calc_recall
-                                 }
-
-        :type batch_metric_funcs:
-        :param evaluate_settings:
+        :param evaluate_settings: Default evaluation settings to use, when no evaluate_settings are available in the
+                                  logs object provided to the callback methods
         :type evaluate_settings:
+
         :param batch_averaging_window: Window length in batches, over which the average metric must be calculated
         :type batch_averaging_window: Int
-        :param batch_metric_reducer_funcs:
-                             An optional dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
-                             the corresponding values are functions to calculate the average metric value,
-                             based on metrics, or other data, gathered per batch, also see batch_metric_funcs and
-                             batch_averaging_window
 
-                             The functions will be called as follows:
-
-                             reducer_func(window), where window is a list with metrics or other data
-                             gathered per batch.
-
-                             See `batch_metric_funcs` for example.
-
-                             The default functions assumes the window to be a list of floats and will average the
-                             values in this list
-
-        :type batch_metric_reducer_funcs:
-        :param average_only: If True, only results of the batch_metric_reducer_funcs will be logged, default is false
-        :type average_only: Boolean
-        :param get_loss_and_aux_from_logs: If true, the model loss and the auxiliary results are retrieved from the logs
-        :type get_loss_and_aux_from_logs:
-        :param show_dataset_evaluation_progress
-        :type show_dataset_evaluation_progress
         :param name:
         :type name:
         """
@@ -161,7 +83,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
         self._dataset = dataset
         self._dataset_name = dataset_name
 
-        self._batch_metric_funcs = batch_metric_funcs
+        self._metric_evaluator = metric_evaluator
+
         self._batch_level = batch_level
 
         self._logging_mode = logging_mode
@@ -170,18 +93,9 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
         self._batch_averaging_window = batch_averaging_window
 
-        self._batch_metric_reducer_funcs = batch_metric_reducer_funcs or {}
-
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
 
-        self._show_dataset_evaluation_progress = show_dataset_evaluation_progress
-
         self._name = name
-
-        # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
-        for metric_name in self._batch_metric_funcs.keys():
-            if metric_name not in self._batch_metric_reducer_funcs:
-                self._batch_metric_reducer_funcs[metric_name] = lambda window: np.nanmean(np.array(window))
 
         self._metric_windows = {}
 
@@ -256,8 +170,8 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                 dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
                 current[self._dataset_name]['batch'] = dataset_batch_logs
 
-            metric_names = list(self._batch_metric_funcs.keys())
-            metric_paths = self._get_metric_paths(dataset_batch_logs, metric_names=metric_names)
+            metric_names = self._metric_evaluator.get_metric_names()
+            metric_paths = get_key_paths(dataset_batch_logs, keys_to_consider=metric_names)
 
             self._update_metrics_windows_for(metric_paths, dataset_batch_logs)
 
@@ -289,54 +203,30 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
             current[self._dataset_name] = {}
 
         dataset_metrics = current[self._dataset_name]
-        for type in ['batch', 'window_average', 'dataset']:
-            if type not in dataset_metrics:
-                dataset_metrics[type] = {}
+        for metric_level in ['batch', 'window_average', 'dataset']:
+            if metric_level not in dataset_metrics:
+                dataset_metrics[metric_level] = {}
+
+    def _get_current_evaluate_settings(self, logs):
+        # Use custom settings if available, else use default settings
+
+        evaluate_settings = get_value_at('evaluate_settings', logs, warn_on_failure=False)
+        if evaluate_settings is None:
+            evaluate_settings = self._evaluate_settings
+
+        return evaluate_settings
 
     def _calc_whole_dataset_metrics(self, logs, log_path):
-        metric_names = list(self._batch_metric_funcs.keys())
-
-        if self._show_dataset_evaluation_progress:
-            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) on whole {self._dataset_name} dataset")
-
-        self._dataset_iterator = iter(self._dataset)
-
-        batch_metric_data_lists = {}
-
-        metric_paths = None
-        # Loop over all dataset batches, this will fill the sliding windows, finally calculate the averages
-        for dataset_batch in self._dataset_iterator:
-            batch_metric_data_map = {}
-            if not self._calc_batch_metric_data_from(dataset_batch, batch_metric_data_map, logs):
-                return False
-
-            if metric_paths is None:
-                metric_paths = self._get_metric_paths(batch_metric_data_map, metric_names=metric_names)
-
-            for metric_path in metric_paths:
-                batch_metric_data = get_value_at(metric_path, batch_metric_data_map)
-
-                batch_metric_data_list = batch_metric_data_lists[metric_path] \
-                    if metric_path in batch_metric_data_lists else None
-
-                if batch_metric_data_list is None:
-                    batch_metric_data_list = []
-                    batch_metric_data_lists[metric_path] = batch_metric_data_list
-
-                batch_metric_data_list += [batch_metric_data]
-
-            if self._show_dataset_evaluation_progress:
-                sys.stdout.write('#')
-                sys.stdout.flush()
-
-        if self._show_dataset_evaluation_progress:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
 
         current = self._get_logs_base(logs)
-        reduced_metrics_log = get_value_at(log_path, current)
+        metrics_log = get_value_at(log_path, current)
 
-        return self._reduce(batch_metric_data_lists, reduced_metrics_log)
+        evaluate_settings = self._get_current_evaluate_settings(logs)
+
+        return self._metric_evaluator.calc_dataset_metrics_for(self._dataset,
+                                                               metrics_log,
+                                                               evaluate_settings=evaluate_settings,
+                                                               dataset_name=self._dataset_name)
 
     def _init_metric_windows(self, reset=False):
         if reset:
@@ -347,75 +237,26 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
         return True
 
-    def _get_metric_paths(self, metrics, metric_names=None, base_path=None):
+    def _calc_batch_metric_data_from(self, batch, batch_metrics, logs):
+        evaluate_settings = self._get_current_evaluate_settings(logs)
 
-        if metric_names is None:
-            metric_names = list(metrics.keys())
-
-        metric_paths = []
-        for name in metric_names:
-            value = metrics[name]
-
-            if base_path is not None:
-                current_path = f"{base_path}.{name}"
-            else:
-                current_path = name
-
-            if type(value) is dict:
-                path_list = self._get_metric_paths(value, base_path=current_path)
-            else:
-                path_list = [current_path]
-
-            metric_paths += path_list
-
-        return metric_paths
-
-    def _calc_batch_metric_data_from(self, batch, batch_metric_data, logs):
-        success = True
-
-        # Use custom settings if available, else use default settings
-        evaluate_settings = get_value_at('evaluate_settings', logs, warn_on_failure=False)
-        if evaluate_settings is None:
-            evaluate_settings = self._evaluate_settings
-
+        model_output = None
         if self._dataset is None:
             current = self._get_logs_base(logs)
             loss = get_value_at(f"{self._dataset_name}.batch.loss", current)
             auxiliary_results = get_value_at(f"{self._dataset_name}.batch.auxiliary_results",
                                              current,
                                              warn_on_failure=False)
-        else:
-            loss, auxiliary_results = self._evaluate_loss(batch, evaluate_settings)
 
-        metric_func_args = {
-            'batch': batch,
-            'loss': loss,
-            'auxiliary_results': auxiliary_results,
-            'evaluate_settings': evaluate_settings
-        }
+            model_output = {
+                'loss': loss,
+                'auxiliary_results': auxiliary_results
+            }
 
-        for metric_name, batch_metric_func in self._batch_metric_funcs.items():
-            try:
-                batch_metric_data[metric_name] = batch_metric_func(**metric_func_args)
-            except Exception as e:
-                _.log_exception(self._log, f"Exception occurred calculating {metric_name} data for "
-                                           f"{self._dataset_name} batch", e)
-                success = False
-
-        return success
-
-    @abc.abstractmethod
-    def _evaluate_loss(self, batch, evaluate_settings=None):
-        """
-        Always returns loss, auxiliary_results tuple
-        :param batch:
-        :type batch:
-        :param evaluate_settings:
-        :type evaluate_settings:
-        :return: loss, auxiliary_results
-        :rtype: tuple
-        """
-        pass
+        return self._metric_evaluator.calc_batch_metrics_for(batch,
+                                                             batch_metrics,
+                                                             evaluate_settings=evaluate_settings,
+                                                             model_output=model_output)
 
     def _update_metrics_windows_for(self, metric_paths, batch_metrics):
         for metric_path in metric_paths:
@@ -430,19 +271,11 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
 
             sliding_window.slide(metric_value)
 
-    def _reduce(self, batch_metric_data_lists, reduced_metrics):
-        success = True
+    def _reduce(self, batch_metric_data_lists, reduced_metrics_log):
 
-        for metric_path, batch_metric_data_list in batch_metric_data_lists.items():
-            try:
-                reducer_func = get_value_at(metric_path, self._batch_metric_reducer_funcs)
-                set_value_at(metric_path, reduced_metrics, reducer_func(batch_metric_data_list))
-            except Exception as e:
-                _.log_exception(self._log, f"Exception occurred reducing {metric_path} for {self._dataset_name} dataset "
-                                           f"batch metric data", e)
-                success = False
-
-        return success
+        return self._metric_evaluator.reduce(batch_metric_data_lists,
+                                             reduced_metrics_log,
+                                             dataset_name=self._dataset_name)
 
     def _check_state(self, state):
         state_attributes = ['metric_windows']
@@ -453,20 +286,6 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                 return False
 
         return True
-
-    def _check_validity_funcs(self, func_dict, func_type):
-        valid = True
-
-        if func_dict is None:
-            return False
-
-        for metric_name, f in func_dict.items():
-            if not callable(f):
-                self._log.error(f"No valid {func_type} function provided for {metric_name}, "
-                                f"the {self} will not function")
-                valid = False
-
-        return valid
 
     def _validate(self):
         self._valid = True
@@ -479,8 +298,10 @@ class MetricsLoggerBase(Callback, metaclass=abc.ABCMeta):
                                 f"the {self} will not function")
                 self._valid = False
 
-        self._valid &= self._check_validity_funcs(self._batch_metric_funcs, "batch metric")
-        self._valid &= self._check_validity_funcs(self._batch_metric_reducer_funcs, "batch metric combining")
+        if not MetricEvaluatorBase.is_valid(self._metric_evaluator):
+            self._log.error(f"The given metric evaluator is not valid, the {self} will not function : "
+                            f"{self._metric_evaluator}")
+            self._valid = False
 
         if not type(self._batch_level) is bool:
             self._log.error(f"Batch level must be True or False, given value is: {self._batch_level}\n"
@@ -520,18 +341,19 @@ class TrainingMetricsLogger(MetricsLoggerBase):
     """
 
     def __init__(self,
-                 batch_metric_funcs,
+                 metric_evaluator,
                  batch_level=True,
                  logging_mode=MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
                  name="TrainingMetricsLogger",
                  **kwargs):
 
-        super().__init__(dataset_name='training',
-                         batch_metric_funcs=batch_metric_funcs,
-                         batch_level=batch_level,
-                         logging_mode=logging_mode,
-                         name=name,
-                         **kwargs)
+        super().__init__(
+            metric_evaluator=metric_evaluator,
+            dataset_name='training',
+            batch_level=batch_level,
+            logging_mode=logging_mode,
+            name=name,
+            **kwargs)
 
     def on_training_start(self,
                           num_epochs,
@@ -554,14 +376,8 @@ class TrainingMetricsLogger(MetricsLoggerBase):
 
         return self.on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
 
-    def _evaluate_loss(self, batch, evaluate_settings=None):
-        """
-        No implementation required, because loss and auxilairy results are usually available for the training set
-        """
-        pass
 
-
-class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
+class TestMetricsLogger(MetricsLoggerBase):
     """
     Child class must implement _evaluate_loss method
     """
@@ -569,10 +385,10 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
     def __init__(self,
                  dataset,
                  dataset_name,
-                 batch_metric_funcs,
+                 metric_evaluator,
                  batch_level=True,
                  logging_mode=None,
-                 name="TestMetricsLoggerBase",
+                 name="TestMetricsLogger",
                  **kwargs):
 
         if logging_mode is None:
@@ -581,7 +397,7 @@ class TestMetricsLoggerBase(MetricsLoggerBase, metaclass=abc.ABCMeta):
 
         super().__init__(dataset=dataset,
                          dataset_name=dataset_name,
-                         batch_metric_funcs=batch_metric_funcs,
+                         metric_evaluator=metric_evaluator,
                          batch_level=batch_level,
                          logging_mode=logging_mode,
                          name=name,
