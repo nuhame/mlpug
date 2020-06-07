@@ -674,6 +674,9 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def train_on(self, batch_data, training_settings=None):
         """
+        TODO : Should this also return only one dict with 'loss' and 'auxiliary_results' keys?
+               (Just like evaluate_loss)
+
         Use batch_data to perform a training iteration
 
         :param batch_data: batch_data object (e.g. dict, list, tuple)
