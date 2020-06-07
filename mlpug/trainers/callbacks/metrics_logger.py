@@ -165,9 +165,9 @@ class MetricsLoggerBase(Callback):
                 return False
 
             dataset_batch_logs = current[self._dataset_name]['batch']
+            # Merge in new batch level results
+            dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
             if self._logging_mode is MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS:
-                # Merge in new batch level results
-                dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
                 current[self._dataset_name]['batch'] = dataset_batch_logs
 
             metric_names = self._metric_evaluator.get_metric_names()
