@@ -6,8 +6,8 @@ from basics.base import Base
 
 import basics.base_utils as _
 
-from mlpug_exceptions import InvalidParametersException
-from utils import *
+from mlpug.mlpug_exceptions import InvalidParametersException
+from mlpug.utils import *
 
 
 class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
@@ -20,6 +20,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                  show_dataset_evaluation_progress=False,
                  name="MetricEvaluatorBase"):
         """
+
+        TODO : Add more documentation
 
         :param model_evaluate_func:
         :type model_evaluate_func:
@@ -37,7 +39,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                              metric_func(**kwargs)
 
                              Where kwargs will contain the following keys:
-                             batch, loss, auxiliary_results, evaluate_settings
+                             'batch', 'evaluate_settings' and the keys of the model evaluation results.
+                             Usually that is 'loss' and 'auxiliary_results'.
 
                              Example batch_metric_funcs dict:
 
@@ -138,8 +141,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
         for metric_name in batch_metric_funcs.keys():
-            if metric_name not in self._batch_metric_reducer_funcs:
-                self._batch_metric_reducer_funcs[metric_name] = lambda window: np.nanmean(np.array(window))
+            if metric_name not in batch_metric_reducer_funcs:
+                batch_metric_reducer_funcs[metric_name] = lambda window: np.nanmean(np.array(window))
 
         try:
             self.check_funcs(batch_metric_reducer_funcs, func_names=batch_metric_funcs.keys())
@@ -341,6 +344,9 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                                                                         inference_mode=True,
                                                                         evaluate_settings=settings)
 
+    def __str__(self):
+        return self.get_name()
+
     @staticmethod
     def check_funcs(fdict, func_names=None):
         if is_empty(fdict) or not can_get_items(fdict):
@@ -362,4 +368,3 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                has_method(ev, 'calc_batch_metrics_for') and \
                has_method(ev, 'calc_dataset_metrics_for') and \
                has_method(ev, 'reduce')
-
