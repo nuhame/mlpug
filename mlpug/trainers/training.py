@@ -163,6 +163,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                    "batch_step": self.batch_step,
                    "global_iter": self.global_iter,
                    "logs": self.logs,
+                   "experiment_data": self.experiment_data
                }, True
 
     def set_state(self, state):
