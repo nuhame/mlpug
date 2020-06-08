@@ -380,6 +380,8 @@ class TrainingMetricsLogger(MetricsLoggerBase):
 class TestMetricsLogger(MetricsLoggerBase):
     """
     Child class must implement _evaluate_loss method
+
+    TODO : We should implement a specialization for the most common case of logging the (window/dataset) loss average
     """
 
     def __init__(self,
