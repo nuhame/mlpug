@@ -23,8 +23,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         TODO : Add more documentation
 
-        :param model_evaluate_func:
-        :type model_evaluate_func:
+        :param model_evaluate_func: f(batch_data, evaluate_settings) -> model_output
+        :type model_evaluate_func: callable
 
         :param trainer:
         :type trainer:
