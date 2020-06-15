@@ -24,6 +24,20 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         TODO : Add more documentation
 
         :param model_evaluate_func: f(batch_data, evaluate_settings) -> model_output
+
+                                    IMPORTANT: it is assumed that the `model_evaluate_func` takes all
+                                    appropriate measures to disable training specific layers such as
+                                    dropout and gradient calculations.
+
+                                    Eg. for Pytorch:
+
+                                    def eval_model(batch_data, evaluate_settings):
+
+                                        my_training_model.eval()
+
+                                        with torch.no_grad():
+                                            return my_training_model(batch_data, evaluate_settings)
+
         :type model_evaluate_func: callable
 
         :param trainer:
