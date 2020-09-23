@@ -5,11 +5,9 @@ import torch
 
 from basics.logging import get_logger
 
+from examples.chatbot.conversation_dataset import indexesFromSentence
+
 logger = get_logger(os.path.basename(__file__))
-
-
-def indexesFromSentence(voc, sentence, EOS_token):
-    return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_token]
 
 
 def zeroPadding(l, fillvalue):
@@ -62,28 +60,6 @@ def batch2TrainData(voc, pair_batch, PAD_token, EOS_token):
     inp, lengths = inputVar(input_batch, voc, PAD_token, EOS_token)
     output, mask, max_target_len = outputVar(output_batch, voc, PAD_token, EOS_token)
     return inp, lengths, output, mask, max_target_len
-
-
-class IndexedSentencePairsDataset(torch.utils.data.Dataset):
-    def __init__(self, sentence_pairs, voc, EOS_token):
-        super(IndexedSentencePairsDataset).__init__()
-
-        self.sentence_pairs = sentence_pairs
-        self.voc = voc
-
-        self.EOS_token = EOS_token
-
-    def __len__(self):
-        return len(self.sentence_pairs)
-
-    def __getitem__(self, idx):
-        input_sentence = self.sentence_pairs[idx][0]
-        output_sentence = self.sentence_pairs[idx][1]
-
-        return self._map_to_indices(input_sentence), self._map_to_indices(output_sentence)
-
-    def _map_to_indices(self, sentence):
-        return indexesFromSentence(self.voc, sentence, self.EOS_token)
 
 
 def create_sentence_pairs_collate_fn(PAD_token, fixed_sequence_length=None):

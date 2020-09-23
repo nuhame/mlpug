@@ -1,8 +1,10 @@
 #
-# This script contains the code, extracted from the chatbot_reference.py script, to parse and process the
-# Cornell Movie Dialogs Corpus (provided through commandline argument `--corpus-path`).
+# This script contains the code, extracted from the pytorch/original_chatbot_tutorial/chatbot_reference.py script, to
+# parse and process the Cornell Movie Dialogs Corpus (provided through commandline argument `--corpus-path`).
 #
 # The resulting sentence pairs and vocabulary is stored in the given `--output-file`
+#
+# The code is not PyTorch specific
 #
 
 from __future__ import print_function
@@ -13,7 +15,7 @@ import argparse
 
 import pickle
 
-from mlpug.reference.chatbot_tutorial.conversation_parsing import \
+from examples.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \

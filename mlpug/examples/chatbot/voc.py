@@ -1,3 +1,6 @@
+# This is from the PyTorch Chatbot tutorial https://pytorch.org/tutorials/beginner/chatbot_tutorial.html
+# but is not PyTorch specific
+
 class Voc:
     def __init__(self, name, PAD_token=0, SOS_token=1, EOS_token=2):
         self.name = name
