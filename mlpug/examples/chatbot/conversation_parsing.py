@@ -1,5 +1,8 @@
 """
 Parsing functions for the Cornell movie dialogs corpus
+
+From https://pytorch.org/tutorials/beginner/chatbot_tutorial.html
+but not PyTorch specific
 """
 
 import os
@@ -8,7 +11,7 @@ import unicodedata
 import csv
 import codecs
 
-from mlpug.reference.chatbot_tutorial.voc import Voc
+from examples.chatbot.voc import Voc
 
 MOVIE_LINES_FIELDS = ["lineID", "characterID", "movieID", "character", "text"]
 MOVIE_CONVERSATIONS_FIELDS = ["character1ID", "character2ID", "movieID", "utteranceIDs"]

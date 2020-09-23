@@ -5,9 +5,9 @@ import pickle
 import torch
 import torch.nn as nn
 
-from mlpug.reference.chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
+from examples.chatbot.pytorch.original_chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
 
-from mlpug.reference.chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from examples.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
 
 from basics.logging import get_logger
 
