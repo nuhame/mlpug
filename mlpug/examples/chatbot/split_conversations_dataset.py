@@ -43,15 +43,14 @@ def load_conversations_data(conversations_dataset_file):
         return data
 
 
-def save_conversations_data(conversations_dataset_file, conversations, actors, original_metadata, voc=None):
+def save_conversations_data(conversations_dataset_file, pairs, original_metadata, voc=None):
     logger.info(f'\nSaving conversations dataset file : {conversations_dataset_file}')
-    logger.info(f'\nData set size : {len(conversations)}')
+    logger.info(f'\nData set size : {len(pairs)}')
 
     with open(conversations_dataset_file, 'wb') as f:
 
         conversation_data = {
-            'conversations': conversations,
-            'actors': actors,
+            'pairs': pairs,
             'args': args,
             'script': os.path.basename(__file__),
             'original_metadata': original_metadata
@@ -63,11 +62,10 @@ def save_conversations_data(conversations_dataset_file, conversations, actors, o
         pickle.dump(conversation_data, f)
 
 
-def print_samples(conversations, actors):
+def print_samples(pairs):
     # Print some conversations to validate
-    for conversation, actors_in_conversations in zip(conversations[:10], actors[:10]):
-        for line, actor in zip(conversation, actors_in_conversations):
-            logger.info(f'{actor} : {line}')
+    for pair in pairs[:10]:
+        logger.info(f"\n{pair[0]}\n{pair[1]}\n")
 
 
 split = np.array(args.split)
@@ -85,16 +83,17 @@ if len(split) != len(set_names):
 conversations_dataset_file = args.conversations_dataset
 data = load_conversations_data(conversations_dataset_file)
 
-conversations = data['conversations']
-actors = data['actors']
+pairs = data['pairs']
 voc = data['voc'] if 'voc' in data else None
 
 original_dataset_metadata = data.copy()
-del original_dataset_metadata['conversations']
-del original_dataset_metadata['actors']
+del original_dataset_metadata['pairs']
+
+if voc is not None:
+    del original_dataset_metadata['voc']
 
 # TODO : This code should be DRYed up
-num_conversations = len(conversations)
+num_conversations = len(pairs)
 logger.info(f'Number of conversations in dataset : {num_conversations}')
 indices = list(range(num_conversations))
 random.shuffle(indices)
@@ -119,10 +118,9 @@ for name, l in zip(set_names, set_lengths):
 
     indices_subset = indices[start_idx:start_idx+l]
 
-    conversations_subset = [conversations[i] for i in indices_subset]
-    actors_subset = [actors[i] for i in indices_subset]
-    print_samples(conversations_subset, actors_subset)
+    conversations_subset = [pairs[i] for i in indices_subset]
+    print_samples(conversations_subset)
 
-    save_conversations_data(dataset_path, conversations_subset, actors_subset, original_dataset_metadata, voc)
+    save_conversations_data(dataset_path, conversations_subset, original_dataset_metadata, voc)
 
     start_idx += l

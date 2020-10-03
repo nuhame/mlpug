@@ -6,8 +6,8 @@ import time
 import torch
 import torch.nn as nn
 
-from examples.chatbot.pytorch.original_chatbot_tutorial.loss import cross_entropy, masked_loss
-from examples.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.loss import cross_entropy, masked_loss
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
 
 # NVIDIA Automatic Mixed Precision Module
 # Only imported when needed
@@ -43,7 +43,7 @@ class Seq2SeqTrainModel(nn.Module):
         decoder_input = init_decoder_input
 
         # What happens to this, will this be available directly on the right device?
-        per_sample_cross_entropy = torch.cuda.FloatTensor(max_output_len, batch_size)
+        per_sample_cross_entropy = torch.FloatTensor(max_output_len, batch_size).to(encoder_outputs.device)
         # Forward batch of sequences through decoder one time step at a time
         for t in range(max_output_len):
             decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
@@ -59,7 +59,9 @@ class Seq2SeqTrainModel(nn.Module):
             decoder_output = decoder_output.squeeze()
             per_sample_cross_entropy[t, :] = cross_entropy(decoder_output, expected_bot_outputs[t])
 
-        return per_sample_cross_entropy
+        return {
+            "loss": per_sample_cross_entropy
+        }
 
 
 def train(input_variable, lengths, init_decoder_input, max_output_len, target_variable, mask, teacher_forcing_ratio,
@@ -76,8 +78,10 @@ def train(input_variable, lengths, init_decoder_input, max_output_len, target_va
     # Determine if we are using teacher forcing this iteration
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-    per_sample_loss = train_model(input_variable, lengths, init_decoder_input, max_output_len,
-                                  target_variable, use_teacher_forcing)
+    results = train_model(input_variable, lengths, init_decoder_input, max_output_len,
+                         target_variable, use_teacher_forcing)
+
+    per_sample_loss = results["loss"]
 
     loss = masked_loss(per_sample_loss, mask)
 
