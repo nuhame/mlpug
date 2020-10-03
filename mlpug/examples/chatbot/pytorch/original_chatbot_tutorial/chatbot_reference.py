@@ -15,19 +15,19 @@ from torch import optim
 import random
 import os
 
-from examples.chatbot.conversation_parsing import \
+from mlpug.examples.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \
     trimRareWords
 
-from examples.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
 
-from examples.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
 
-from examples.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
 
-from examples.chatbot.pytorch.original_chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
+from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
 
 USE_CUDA = torch.cuda.is_available()
 

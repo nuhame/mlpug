@@ -55,7 +55,8 @@ class InvalidParametersException(MLPugException):
 
 class LossNotAvailableException(MLPugException):
     def __init__(self, message=None):
-        err_msg = "Key 'loss' not available in evaluation results dict"
+        err_msg = "Key 'loss' not available in evaluation results dict. " \
+                  "TIP : your model needs to return a dict with a 'loss' key."
         if message:
             err_msg += f" : {message}"
 

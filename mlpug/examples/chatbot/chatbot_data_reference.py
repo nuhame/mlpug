@@ -15,7 +15,7 @@ import argparse
 
 import pickle
 
-from examples.chatbot.conversation_parsing import \
+from mlpug.examples.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \
