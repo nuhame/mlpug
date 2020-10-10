@@ -23,7 +23,10 @@ class GreedySearchDecoder(nn.Module):
         # Forward input through encoder model
         encoder_outputs, encoder_hidden = self.encoder(input_seq, input_length)
         # Prepare encoder's final hidden layer to be first hidden input to the decoder
-        decoder_hidden = encoder_hidden[:self.decoder.n_layers]
+        # decoder_hidden = encoder_hidden[:self.decoder.n_layers]
+        decoder_n_layers = self.decoder.n_layers
+        decoder_hidden = 0.5 * (encoder_hidden[:decoder_n_layers, 0, :, :] + encoder_hidden[:decoder_n_layers, 1, :, :])
+
         # Initialize decoder input with SOS_token
         decoder_input = torch.ones(1, 1, device=self.device, dtype=torch.long) * self.SOS_token
         # Initialize tensors to append decoded words to

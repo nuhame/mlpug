@@ -38,7 +38,16 @@ class Seq2SeqTrainModel(nn.Module):
 
         decoder_n_layers = self.decoder.n_layers
         # Set initial decoder hidden state to the encoder's final hidden state
-        decoder_hidden = encoder_hidden[:decoder_n_layers]
+        # This is incorrect:
+        # decoder_hidden = encoder_hidden[:decoder_n_layers]
+
+        # Taken the average over both directions
+        encoder_hidden = encoder_hidden.view(self.encoder.n_layers,
+                                             2,
+                                             -1,
+                                             self.encoder.hidden_size)
+
+        decoder_hidden = 0.5*(encoder_hidden[:decoder_n_layers, 0, :, :] + encoder_hidden[:decoder_n_layers, 1, :, :])
 
         decoder_input = init_decoder_input
 
