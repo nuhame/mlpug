@@ -201,7 +201,8 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         best_model_fname = None
         success = True
         data_saved = False
-        if force_monitoring or ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
+        if force_monitoring or \
+                ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
             model_quality = self._get_model_quality(current)
 
             model_quality_valid = model_quality is not None

@@ -276,7 +276,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
             batch_metric_data_map = {}
             batch_success = self.calc_batch_metrics_for(dataset_batch, batch_metric_data_map, evaluate_settings)
             if not batch_success:
-                return False, None
+                return False
 
             if metric_paths is None:
                 metric_paths = get_key_paths(batch_metric_data_map, keys_to_consider=metric_names)
