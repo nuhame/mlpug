@@ -64,16 +64,16 @@ model_name = 'cb_model'
 attn_model = 'dot'
 # attn_model = 'general'
 # attn_model = 'concat'
-encoder_state_size = 1920  # 1600  # 500
+encoder_state_size = 1000  # 1600  # 500
 embedding_size = 256  # encoder_state_size
-encoder_n_layers = 2
-decoder_n_layers = 2
+encoder_n_layers = 3
+decoder_n_layers = 3
 dropout = 0.1
 ##################################################
 
 # ########### Training/optimization ##############
 model_checkpoint_dir = os.path.join("checkpoints")
-checkpoint_iter_to_load = 84000  # 6500
+checkpoint_iter_to_load = -1  # 6500
 
 # TODO : 3 Sept 2019 : currently Automatic Mixed Precision of NVIDIA Apex does not work with DataParallel
 #        https://github.com/NVIDIA/apex/issues/227

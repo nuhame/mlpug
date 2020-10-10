@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--mixed-precision-opt-level',
-        type=str, required=False, default="O2",
+        type=str, required=False, default="O1",
         help='Set to True to use Mixed Precision Training')
 
     parser.add_argument(
