@@ -8,7 +8,7 @@ from statistics import mean
 from basics.base import Base
 import basics.base_utils as _
 
-from mlpug.utils import convert_to_dict, get_value_at, has_key, SlidingWindow
+from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
 from mlpug.mlpug_exceptions import TrainerInvalidException
 
@@ -66,8 +66,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         self._previous_batch_duration = None
 
-        self.training_loss_window = None
-        self.batch_duration_window = None
+        self._metric_windows = {}
 
         self._stop_training = False
 
@@ -79,8 +78,11 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self._assess_num_batches_per_epoch()
 
         if type(self.num_batches_per_epoch) == int and self.num_batches_per_epoch > 0:
-            self.training_loss_window = SlidingWindow(length=self.num_batches_per_epoch)
-            self.batch_duration_window = SlidingWindow(length=self.num_batches_per_epoch)
+            self._metric_windows['training.batch.loss'] = \
+                SlidingWindow(length=self.num_batches_per_epoch, name='training.batch.loss')
+
+            self._metric_windows['training_params.batch.duration'] = \
+                SlidingWindow(length=self.num_batches_per_epoch, name='training_params.batch.duration')
 
         if not self._call_callbacks("set_training_manager", self):
             self._callback_calls_successful = False
@@ -123,8 +125,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 "batch_step": self.batch_step,
                 "global_iter": self.global_iter,
                 "logs": self.logs,
-                "training_loss_window": self.training_loss_window.get_state() if self.training_loss_window else None,
-                "batch_duration_window": self.batch_duration_window.get_state() if self.batch_duration_window else None
+                "metric_windows": self._get_metric_windows_state()
             },
 
             "callbacks": {},
@@ -140,6 +141,12 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 cb_state, cb_success = callback.get_state()
 
                 success &= cb_success
+
+                if cb_name in state["callbacks"] and cb_state != state["callbacks"][cb_name]:
+                    self._log.error(f"There is already a callback in the TrainingManager state "
+                                    f"with the name {cb_name}, this state will be overridden now. "
+                                    f"Please ensure that all your callbacks have a unique name")
+                    success = False
 
                 state["callbacks"][cb_name] = cb_state
             except Exception as e:
@@ -199,8 +206,16 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.init_logs["batch_step"] = self.batch_step
         self.init_logs["global_iter"] = self.global_iter
 
-        success = self._set_window_state(state, "training_loss_window")
-        success &= self._set_window_state(state, "batch_duration_window")
+        success = self._set_metric_windows_states(state)
+
+        # TODO : legacy from <= 0.0.14
+        if "training_loss_window" in state["manager"]:
+            self._log.debug("Loading deprecated metric window state training_loss_window ...")
+            self._set_metric_window_state("training.batch.loss", state["manager"]["training_loss_window"])
+
+        if "batch_duration_window" in state["manager"]:
+            self._log.debug("Loading deprecated metric window state batch_duration_window ...")
+            self._set_metric_window_state("training_params.batch.duration", state["manager"]["batch_duration_window"])
 
         try:
             callbacks_map = {str(callback): callback for callback in self.callbacks}
@@ -230,23 +245,46 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _set_window_state(self, state, window_name):
+    def _get_metric_windows_state(self):
+        state = {}
+        for metric_path, metric_window in self._metric_windows.items():
+            state[metric_path] = metric_window.get_state()
+
+        return state
+
+    def _set_metric_windows_states(self, state):
         success = True
         try:
-            window_state = state["manager"][window_name]
-            if window_state:
-                window_length = window_state['length']
+            metric_windows_state = get_value_at("manager.metric_windows", state)
+            if metric_windows_state is None:
+                return success
 
-                if self.num_batches_per_epoch and (window_length != self.num_batches_per_epoch):
-                    # override when different number of batches per epoch is given (or calculated) during construction
-                    window = SlidingWindow(length=self.num_batches_per_epoch,
-                                           init_window_values=window_state['window'])
-                else:
-                    window = SlidingWindow(state=window_state)
+            for metric_path, window_state in metric_windows_state.items():
+                success &= self._set_metric_window_state(metric_path, window_state)
 
-                setattr(self, window_name, window)
         except Exception as e:
-            _.log_exception(self._log, f"Unable to set training loss window state, skipped ...", e)
+            _.log_exception(self._log, f"Unable to set metric windows state, skipped ...", e)
+            success = False
+
+        return success
+
+    def _set_metric_window_state(self, metric_path, window_state):
+        success = True
+        try:
+            window_length = window_state['length']
+
+            if self.num_batches_per_epoch and (window_length != self.num_batches_per_epoch):
+                # override when different number of batches per epoch is given (or calculated)
+                # during construction
+                window = SlidingWindow(length=self.num_batches_per_epoch,
+                                       init_window_values=window_state['window'],
+                                       name=metric_path)
+            else:
+                window = SlidingWindow(state=window_state)
+
+            self._metric_windows[metric_path] = window
+        except Exception as e:
+            _.log_exception(self._log, f"Unable to set metric window state for {metric_path}, skipped ...", e)
             success = False
 
         return success
@@ -257,14 +295,20 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                             'manager.batch_step',
                             'manager.global_iter',
                             'manager.logs',
-                            'manager.training_loss_window',
-                            'manager.batch_duration_window',
+                            'manager.metric_windows',
                             'callbacks',
                             'trainer']
 
         for attr in state_attributes:
             v = get_value_at(attr, state, warn_on_failure=False)
+
             if v is None:
+                if attr == "manager.metric_windows":
+                    v = get_value_at('manager.training_loss_window', state, warn_on_failure=False)
+                    if v is not None:
+                        self._log.debug("Legacy state detected (training_loss_window) ... ")
+                        continue
+
                 self._log.error(f"Given state does not have a value for {attr}, state is invalid")
                 return False
 
@@ -345,8 +389,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     ctl["batch"]["loss"], ctl["batch"]["auxiliary_results"] = self.trainer.train_on(training_batch,
                                                                                                     training_settings)
 
-                    self._update_window("training_loss_window", ctl["batch"]["loss"])
-                    ctl["window_average"]["loss"] = self._calc_window_average("training_loss_window")
+                    self._update_window("training.batch.loss")
+                    ctl["window_average"]["loss"] = self._calc_window_average("training.batch.loss")
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -371,7 +415,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 batch_training_end_time = time.time()
 
                 batch_duration = batch_training_end_time - batch_training_start_time
-                self._update_window("batch_duration_window", batch_duration)
+
+                set_value_at("training_params.batch.duration", current, batch_duration)
+
+                self._update_window("training_params.batch.duration")
 
                 self._previous_batch_duration = batch_duration
 
@@ -384,8 +431,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             if not (epoch_stopped_early or training_stopped_on_error):
                 ctpl = current["training_params"]
 
-                ctpl["window_average"]["duration"] = self._calc_window_average("batch_duration_window")
-                ctpl["epoch"]["duration"] = self._calc_window_sum("batch_duration_window")
+                ctpl["window_average"]["duration"] = self._calc_window_average("training_params.batch.duration")
+                ctpl["epoch"]["duration"] = self._calc_window_sum("training_params.batch.duration")
 
                 logs["cb_calls_success"] &= self._call_callbacks('on_epoch_completed', logs)
 
@@ -419,7 +466,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             "training": {
                 "batch": {},
                 "window_average": {
-                    "loss": self._calc_window_average("training_loss_window")
+                    "loss": self._calc_window_average("training.batch.loss")
                 },
                 "dataset": {},
             },
@@ -429,10 +476,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     "duration": self._previous_batch_duration,
                 },
                 "window_average": {
-                    "duration": self._calc_window_average("batch_duration_window")
+                    "duration": self._calc_window_average("training_params.batch.duration")
                 },
                 "epoch": {
-                    "duration": self._calc_window_sum("batch_duration_window")
+                    "duration": self._calc_window_sum("training_params.batch.duration")
                 }
             }
         }
@@ -457,38 +504,40 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _update_window(self, window_name, value):
+    def _update_window(self, metric_path):
         try:
-            window_obj = getattr(self, window_name)
-            if not window_obj:
+            window = self._metric_windows[metric_path]
+            if window is None:
                 return
 
-            window_obj.slide(value)
-        except Exception as e:
-            _.log_exception(self._log, f"Exception occurred updating sliding window {window_name}, skipped...", e)
+            value = get_value_at(metric_path, self.logs["current"])
 
-    def _calc_window_average(self, window_name):
+            window.slide(value)
+        except Exception as e:
+            _.log_exception(self._log, f"Exception occurred updating sliding window {metric_path}, skipped...", e)
+
+    def _calc_window_average(self, metric_path):
         try:
-            window_obj = getattr(self, window_name)
-            if not window_obj:
+            window = self._metric_windows[metric_path]
+            if window is None:
                 return None
 
-            window_data = getattr(self, window_name).window
+            window_data = window.window
             return mean(window_data) if len(window_data) > 0 else None
         except Exception as e:
-            _.log_exception(self._log, f"Exception occurred calculating sliding window average for {window_name}.", e)
+            _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None
 
-    def _calc_window_sum(self, window_name):
+    def _calc_window_sum(self, metric_path):
         try:
-            window_obj = getattr(self, window_name)
-            if not window_obj:
+            window = self._metric_windows[metric_path]
+            if window is None:
                 return None
 
-            window_data = getattr(self, window_name).window
+            window_data = window.window
             return sum(window_data) if len(window_data) > 0 else 0
         except Exception as e:
-            _.log_exception(self._log, f"Exception occurred calculating sliding window average for {window_name}.", e)
+            _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None
 
     def _prepare_training_dataset(self):

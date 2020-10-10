@@ -8,7 +8,7 @@ from mlpug.utils.utils import get_value_at
 class Callback(Base, metaclass=abc.ABCMeta):
 
     def __init__(self, name, base_logs_path="current"):
-        super(Callback, self).__init__()
+        super(Callback, self).__init__(pybase_logger_name=name)
 
         self.name = name
 
@@ -127,7 +127,4 @@ class Callback(Base, metaclass=abc.ABCMeta):
             return logs
         else:
             return get_value_at(self.base_log_path, logs)
-
-    def __str__(self):
-        return self.get_name()
 

@@ -10,7 +10,7 @@ from mlpug.evaluation import MetricEvaluatorBase
 
 import basics.base_utils as _
 
-from mlpug.utils import get_value_at
+from mlpug.utils import get_value_at, set_value_at
 
 
 class MetricsLoggingMode(Enum):
@@ -22,6 +22,9 @@ class MetricsLoggingMode(Enum):
     def will_log_window_average_metrics(mode):
         return mode in {MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
                         MetricsLoggingMode.WINDOW_AVERAGE_METRICS}
+
+    def __str__(self):
+        return str(self.value)
 
 
 class MetricsLoggerBase(Callback):
@@ -35,7 +38,7 @@ class MetricsLoggerBase(Callback):
                  evaluate_settings=None,
                  batch_averaging_window=None,
                  log_condition_func=None,
-                 name="MetricsLoggerBase",
+                 name=None,
                  **kwargs):
         """
 
@@ -51,7 +54,7 @@ class MetricsLoggerBase(Callback):
             Calculate metrics over whole data set       batch_level = False, mode = WHOLE_DATASET_METRICS
 
 
-        Using `log_condition_func` it can be used to control if metrics are calculated
+        `log_condition_func` can be used to control if metrics are calculated
 
         :param dataset_name:
         :type dataset_name:
@@ -78,7 +81,14 @@ class MetricsLoggerBase(Callback):
         :param name:
         :type name:
         """
-        super().__init__(name=f"{dataset_name} dataset {name}", **kwargs)
+
+        if name is None:
+            name = self.__class__.__name__
+
+            logging_level = "Batch level" if batch_level else "Epoch level"
+            name = f"{name}[{dataset_name} dataset][{logging_level}][{str(logging_mode)}]"
+
+        super().__init__(name=name, **kwargs)
 
         self._dataset = dataset
         self._dataset_name = dataset_name
@@ -164,16 +174,18 @@ class MetricsLoggerBase(Callback):
             if not self._calc_batch_metric_data_from(dataset_batch, batch_metrics, logs):
                 return False
 
-            dataset_batch_logs = current[self._dataset_name]['batch']
+            base_path = f"{self._dataset_name}.batch"
+            dataset_batch_logs = get_value_at(base_path, current)
+
             # Merge in new batch level results
             dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
             if self._logging_mode is MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS:
-                current[self._dataset_name]['batch'] = dataset_batch_logs
+                set_value_at(base_path, current, dataset_batch_logs)
 
             metric_names = self._metric_evaluator.get_metric_names()
             metric_paths = get_key_paths(dataset_batch_logs, keys_to_consider=metric_names)
 
-            self._update_metrics_windows_for(metric_paths, dataset_batch_logs)
+            self._update_metrics_windows_for(metric_paths, dataset_batch_logs, base_path=base_path)
 
             # gather all window data
             batch_metrics_lists = {p: s.window for p, s in self._metric_windows.items()}
@@ -258,15 +270,16 @@ class MetricsLoggerBase(Callback):
                                                              evaluate_settings=evaluate_settings,
                                                              model_output=model_output)
 
-    def _update_metrics_windows_for(self, metric_paths, batch_metrics):
+    def _update_metrics_windows_for(self, metric_paths, batch_metrics, base_path):
         for metric_path in metric_paths:
             metric_value = get_value_at(metric_path, batch_metrics)
 
+            full_metric_path = f"{base_path}.{metric_path}"
             sliding_window = self._metric_windows[metric_path] if metric_path in self._metric_windows else None
             if sliding_window is None:
-                self._log.debug(f"Creating sliding window for {metric_path}")
+                self._log.debug(f"Creating sliding window for {full_metric_path}")
 
-                sliding_window = SlidingWindow(length=self._batch_averaging_window)
+                sliding_window = SlidingWindow(length=self._batch_averaging_window, name=full_metric_path)
                 self._metric_windows[metric_path] = sliding_window
 
             sliding_window.slide(metric_value)
@@ -344,7 +357,6 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                  metric_evaluator,
                  batch_level=True,
                  logging_mode=MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
-                 name="TrainingMetricsLogger",
                  **kwargs):
 
         super().__init__(
@@ -390,7 +402,6 @@ class TestMetricsLogger(MetricsLoggerBase):
                  metric_evaluator,
                  batch_level=True,
                  logging_mode=None,
-                 name="TestMetricsLogger",
                  **kwargs):
 
         if logging_mode is None:
@@ -402,7 +413,6 @@ class TestMetricsLogger(MetricsLoggerBase):
                          metric_evaluator=metric_evaluator,
                          batch_level=batch_level,
                          logging_mode=logging_mode,
-                         name=name,
                          **kwargs)
 
         self._dataset_iterator = None
