@@ -1,5 +1,7 @@
 import torch
 
+from torch.cuda.amp import autocast
+
 from functools import reduce
 from mlpug.trainers.training import *
 
@@ -33,6 +35,54 @@ class Trainer(PTTrainerMixin, TrainerBase):
 
 
 class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
+
+    def __init__(self, *args, scaler=None, **kwargs):
+        super(DefaultTrainer, self).__init__(*args, **kwargs)
+
+        self._scaler = scaler
+
+        if self.use_mixed_precision:
+            if scaler is None:
+                self._log.debug("Creating default scaler instance for automatic mixed precision ...")
+                self._scaler = torch.cuda.amp.GradScaler()
+
+            self._log.info(f"Using scaler instance for automatic mixed precision : {self._scaler}")
+
+    def set_learning_rate_for(self, optimizer_name, lr):
+        """
+
+        Set learning rate for specific optimizer `optimizer_name` to `lr`
+
+        :param optimizer_name:
+        :param lr:
+
+        :return: True on success, else False
+        """
+        optimizer = self.get_optimizer(optimizer_name)
+        if not hasattr(optimizer, 'param_groups'):
+            self._log.error(f"No valid optimizer available with name {optimizer_name}, unable to set learning arte")
+            return False
+
+        try:
+            for group in optimizer.param_groups:
+                group['lr'] = lr
+        except Exception as e:
+            _.log_exception(self._log, f"Unable to set learning rate for optimizer {optimizer_name}", e)
+            return False
+
+        self._log.debug(f"Learning rate of optimizer set to : {lr}")
+
+        return True
+
+    def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
+
+        if self.use_mixed_precision:
+            self._activate_inference_mode(inference_mode)
+
+            with autocast():
+                return self._evaluate_loss(batch_data, evaluate_settings)
+        else:
+            return super().evaluate_loss(batch_data, inference_mode, evaluate_settings)
 
     def train_on(self, batch_data, training_settings=None):
         """
@@ -68,6 +118,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         self._prepare_update_model_parameters()
 
         self._update_model_parameters()
+
+        self._after_update_model_parameters()
 
         return loss, auxiliary_results
 
@@ -167,11 +219,21 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         return loss, chunk_aux_results
 
     def _back_propagate_from(self, loss, last_chunk=False):
-        loss.backward()
+        if self.use_mixed_precision:
+            self._scaler.scale(loss).backward()
+        else:
+            loss.backward()
 
     def _prepare_update_model_parameters(self):
         pass
 
     def _update_model_parameters(self):
         for optimizer in self.get_optimizers().values():
-            optimizer.step()
+            if self.use_mixed_precision:
+                self._scaler.step(optimizer)
+            else:
+                optimizer.step()
+
+    def _after_update_model_parameters(self):
+        if self.use_mixed_precision:
+            self._scaler.update()
