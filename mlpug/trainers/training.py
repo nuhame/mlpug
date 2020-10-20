@@ -220,8 +220,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         try:
             callbacks_map = {str(callback): callback for callback in self.callbacks}
 
-            callbacks = state["callbacks"] or {}
-            for cb_name, cb_state in callbacks.items():
+            callbacks_state = state["callbacks"] or {}
+            for cb_name, cb_state in callbacks_state.items():
                 if cb_name not in callbacks_map:
                     self._log.warn(f"Callback {cb_name} not given, unable to set callback state, skipping ...")
                     continue
@@ -721,6 +721,38 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         return success
 
+    def set_learning_rate(self, lr):
+        """
+        Convenience method to set the learning rate of all optimizers to `lr`
+
+        :param lr: Learning rate to set
+        :return: True on success else False
+        """
+        success = True
+
+        optimizer_names = self.get_optimizers().keys()
+        for opt_name in optimizer_names:
+            try:
+                success &= self.set_learning_rate_for(opt_name, lr)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to set learning rate for optimizer {opt_name}", e)
+                success = False
+
+        return success
+
+    @abc.abstractmethod
+    def set_learning_rate_for(self, optimizer_name, lr):
+        """
+
+        Set learning rate for specific optimizer `optimizer_name` to `lr`
+
+        :param optimizer_name:
+        :param lr:
+
+        :return: True on success, else False
+        """
+        pass
+
     @abc.abstractmethod
     def train_on(self, batch_data, training_settings=None):
         """
@@ -815,7 +847,11 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
 class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
-    def __init__(self, optimizers, model_components=None, batch_chunk_size=None):
+    def __init__(self,
+                 optimizers,
+                 model_components=None,
+                 batch_chunk_size=None,
+                 use_mixed_precision=False):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
 
@@ -834,6 +870,8 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
                                  Note 2.
                                  When using chunked batch processing, the default implementation assumes that the
                                  loss, calculated over a chunk, is the average of the sample losses
+
+        :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
         """
 
         model_components = convert_to_dict("model", model_components)
@@ -844,6 +882,10 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         self.batch_chunk_size = batch_chunk_size
         if self.batch_chunk_size is not None:
             self._log.info(f"Will train on batches by slicing the batch is chunks of {batch_chunk_size} samples.")
+
+        self.use_mixed_precision = use_mixed_precision
+        if self.use_mixed_precision:
+            self._log.info(f"Will train with mixed precision : {self.use_mixed_precision}")
 
         self.training_model = None
 
