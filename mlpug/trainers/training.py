@@ -361,9 +361,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             # It's a bit shorter
             logs = self.logs
 
-            logs["cb_calls_success"] &= self._call_callbacks('on_epoch_start', logs)
-
             epoch_stopped_early = False
+
+            epoch_start = True
 
             training_dataset = self._prepare_training_dataset()
             current = None
@@ -378,6 +378,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     break
 
                 logs["current"] = self._init_current_logs()
+
+                if epoch_start:
+                    epoch_start = False
+                    logs["cb_calls_success"] &= self._call_callbacks('on_epoch_start', logs)
 
                 logs["cb_calls_success"] &= self._call_callbacks('on_batch_training_start', training_batch, logs)
 
