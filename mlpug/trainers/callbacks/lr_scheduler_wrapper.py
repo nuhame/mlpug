@@ -52,6 +52,22 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         self._log.error("This method is not implemented, implement it in your child class implementation")
         return None, False
 
+    def on_epoch_start(self, logs):
+        if self._batch_level:
+            return True
+
+        self._init_logs(logs)
+
+        return self._update_logs(logs)
+
+    def on_batch_training_start(self, training_batch, logs):
+        if not self._batch_level:
+            return True
+
+        self._init_logs(logs)
+
+        return self._update_logs(logs)
+
     def on_batch_training_completed(self, training_batch, logs):
         if not self._batch_level:
             return True
@@ -81,10 +97,7 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
             ctp['lr'] = {}
 
     def _update_lr(self, logs, iter_name):
-        schedule_level = self._get_schedule_level()
-
         current = self._get_logs_base(logs)
-        ctp = current['training_params'][schedule_level]
 
         model_quality = self._get_model_quality(current)
         training_iter = current[iter_name]
@@ -98,18 +111,26 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
             _.log_exception(self._log, "An unexpected error occurred, "
                                        "execution of the learning rate scheduler(s) failed", e)
 
+        return self._update_logs(logs) and success
+
+    def _update_logs(self, logs):
+        current = self._get_logs_base(logs)
+
+        schedule_level = self._get_schedule_level()
+        ctp = current['training_params'][schedule_level]
+
         try:
             current_lr = self._get_current_lr()
 
             lr = get_value_at('lr', ctp, warn_on_failure=False) or {}
 
             ctp['lr'] = {**lr, **current_lr}
+
+            return True
         except Exception as e:
             _.log_exception(self._log, "An unexpected error occurred, "
                                        "unable to add current learning rate values to the logs object", e)
             return False
-
-        return success
 
     def _get_model_quality(self, current_logs):
         if not self._metric_to_monitor:
