@@ -364,7 +364,6 @@ class TrainingMetricsLogger(MetricsLoggerBase):
             dataset_name='training',
             batch_level=batch_level,
             logging_mode=logging_mode,
-            name=name,
             **kwargs)
 
     def on_training_start(self,

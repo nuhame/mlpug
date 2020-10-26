@@ -166,6 +166,10 @@ class LogProgress(Callback):
             if metric in skip_metric_names:
                 continue
 
+            if type(value) is tuple:
+                # use the first value as metric value, the other values are auxiliary results meant for other purposes
+                value = value[0]
+
             if type(value) is dict:
                 log += "\n" + self._create_log_for(value, metric, log_depth+1)
             elif isinstance(value, (float, int)):
