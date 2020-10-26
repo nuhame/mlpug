@@ -667,6 +667,10 @@ class AutoTensorboard(Callback):
         metrics, success = self._get_metrics_from(current_logs, writer_type, batch_level)
 
         for tag, metric in metrics.items():
+            if type(metric) is tuple:
+                # use the first value as metric value, the other values are auxiliary results meant for other purposes
+                metric = metric[0]
+
             self._writers[writer_type].add_scalar(tag, metric, global_step=training_iter)
 
         if training_iter % self._flush_period == 0:
