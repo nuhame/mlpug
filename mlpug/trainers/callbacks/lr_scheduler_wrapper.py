@@ -136,7 +136,13 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         if not self._metric_to_monitor:
             return None
 
-        return get_value_at(self._metric_to_monitor, current_logs)
+        model_quality = get_value_at(self._metric_to_monitor, current_logs)
+
+        if type(model_quality) is tuple:
+            # use the first value as metric value, the other values are auxiliary results meant for other purposes
+            model_quality = model_quality[0]
+
+        return model_quality
 
     @abc.abstractmethod
     def _exec_schedulers(self, training_iter, model_quality=None):
