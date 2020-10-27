@@ -187,7 +187,13 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                        f"{self._archive_last_model_checkpoint_every} {time_scale}")
 
     def _get_model_quality(self, current_logs):
-        return get_value_at(self._metric_to_monitor, current_logs)
+        model_quality = get_value_at(self._metric_to_monitor, current_logs)
+
+        if type(model_quality) is tuple:
+            # use the first value as metric value, the other values are auxiliary results meant for other purposes
+            model_quality = model_quality[0]
+
+        return model_quality
 
     # TODO : it would maybe be better to split the monitoring and the checkpointing in to two separated methods
     def _monitor(self, iter_name, logs, force_monitoring=False):
