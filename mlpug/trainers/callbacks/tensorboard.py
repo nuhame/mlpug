@@ -25,6 +25,7 @@ class Tensorboard(Callback):
                  dataset_name=None,
                  label_name=None,
                  batch_level=True,
+                 write_on_epoch_complete=False,
                  metrics_are_averages=False,
                  metric_names=None,
                  batch_log_period=1,
@@ -213,6 +214,10 @@ class Tensorboard(Callback):
 
         :param batch_level:     {boolean} If True, the given metrics will be logged per batch, else per epoch
 
+        :param write_on_epoch_complete: {boolean} If True, and batch_level = True, logs will also be written
+                                        on_epoch_complete. This is useful when on_epoch_complete metrics are calculated
+                                        that you want to incorporate in a batch_level graph.
+
         :param metrics_are_averages: {boolean}
                                      If True, the given metrics are written by a separate writer dedicated
                                      to metrics window averages
@@ -257,6 +262,7 @@ class Tensorboard(Callback):
         self._label_name = label_name
 
         self._batch_level = batch_level
+        self._write_on_epoch_complete = write_on_epoch_complete
         self._metrics_are_averages = metrics_are_averages
 
         self._metric_names = metric_names
@@ -320,7 +326,11 @@ class Tensorboard(Callback):
             return False
 
         if self._batch_level:
-            return True
+            if self._write_on_epoch_complete:
+                # There are dataset level metrics calculated that are followed on batch level.
+                return self.on_batch_training_completed(None, logs)
+            else:
+                return True
 
         current = self._get_logs_base(logs)
         epoch = current['epoch']
@@ -620,7 +630,7 @@ class AutoTensorboard(Callback):
             return False
 
         if not self._show_epoch_level:
-            return
+            return True
 
         current = self._get_logs_base(logs)
         epoch = current['epoch']
@@ -698,7 +708,7 @@ class AutoTensorboard(Callback):
                 alt_base_path = f"{self._dataset_name}.window_average"
 
             metrics, success = self._get_all_metrics_from(base_path, current_logs, batch_level)
-            if alt_base_path is not None:
+            if not success and alt_base_path is not None:
                 self._log.warn(f'Trying alternate metrics path {alt_base_path} ...')
                 alt_metrics, alt_success = self._get_all_metrics_from(alt_base_path, current_logs, batch_level)
 
