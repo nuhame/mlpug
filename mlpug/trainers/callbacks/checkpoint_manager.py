@@ -145,12 +145,15 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         return self._monitor(iter_name, logs, force_monitoring=force_monitoring)
 
     def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
-        if abs(self._best_model_quality) == float('Inf') or self._best_model_iter is None:
-            return True
+        self._log.info(f"Training ended, storing final model ...")
+        latest_model_fname = self._create_model_checkpoint()
+        success = (latest_model_fname is not None)
 
-        self._log.info(f"Best model quality reached {self._metric_to_monitor}={self._best_model_quality} "
-                       f"at global iteration {self._best_model_iter}")
-        return True
+        if abs(self._best_model_quality) != float('Inf') and self._best_model_iter is not None:
+            self._log.info(f"Best model quality reached {self._metric_to_monitor}={self._best_model_quality} "
+                           f"at global iteration {self._best_model_iter}")
+
+        return success
 
     def training_checkpoint_file_name(self):
         b_fn = self._base_filename
