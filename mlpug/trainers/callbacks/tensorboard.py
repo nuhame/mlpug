@@ -468,6 +468,7 @@ class AutoTensorboard(Callback):
                  flush_period=50,
                  log_dir='../training-logs/',
                  tensorboard_options=None,
+                 ignore_missing_metrics=False,
                  name="AutoTensorboard"):
         """
 
@@ -554,6 +555,8 @@ class AutoTensorboard(Callback):
                                     Optional dictionary with options that need to be used when instantiating the
                                     Tensorboard writers.
 
+        :param :param ignore_missing_metrics {Boolean}
+
         :param name:
         """
         super().__init__(name=name)
@@ -574,6 +577,8 @@ class AutoTensorboard(Callback):
         self._log_dir = log_dir
 
         self._tensorboard_options = tensorboard_options or {}
+
+        self._ignore_missing_metrics = ignore_missing_metrics
 
         self._writers = dict()
 
@@ -680,6 +685,13 @@ class AutoTensorboard(Callback):
     def _write(self, current_logs, training_iter, writer_type, batch_level):
         metrics, success = self._get_metrics_from(current_logs, writer_type, batch_level)
 
+        if not success:
+            if self._ignore_missing_metrics:
+                return True
+            else:
+                self._log.error("No metrics found, nothing to write to Tensorboard")
+                return success
+
         for tag, metric in metrics.items():
             if type(metric) is tuple:
                 # use the first value as metric value, the other values are auxiliary results meant for other purposes
@@ -709,7 +721,8 @@ class AutoTensorboard(Callback):
 
             metrics, success = self._get_all_metrics_from(base_path, current_logs, batch_level)
             if not success and alt_base_path is not None:
-                self._log.warn(f'Trying alternate metrics path {alt_base_path} ...')
+                if not self._ignore_missing_metrics:
+                    self._log.warn(f'Trying alternate metrics path {alt_base_path} ...')
                 alt_metrics, alt_success = self._get_all_metrics_from(alt_base_path, current_logs, batch_level)
 
                 if alt_success:
@@ -761,10 +774,12 @@ class AutoTensorboard(Callback):
             if len(metrics) > 0:
                 return metrics, True
             else:
-                self._log.warn(f'No metrics found at {base_path}')
+                if not self._ignore_missing_metrics:
+                    self._log.warn(f'No metrics found at {base_path}')
                 return metrics, False
         else:
-            self._log.error(f'No valid metrics found for {base_path}')
+            if not self._ignore_missing_metrics:
+                self._log.error(f'No valid metrics found for {base_path}')
             return None, False
 
     def _get_tag(self, metric_name, batch_level):
