@@ -99,6 +99,7 @@ def readSentencePairs(datafile):
         read().strip().split('\n')
     # Split every line into pairs and normalize
     pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
+
     return pairs
 
 
@@ -137,7 +138,20 @@ def create_vocabulary(corpus_name, pairs, PAD_token, SOS_token, EOS_token):
 # Using the functions defined above, return a populated voc object and pairs list
 def loadPrepareData(corpus_name, sentence_pairs_path, max_length, PAD_token, SOS_token, EOS_token):
     print("Start preparing training data ...")
-    pairs = readSentencePairs(sentence_pairs_path)
+    _pairs = readSentencePairs(sentence_pairs_path)
+
+    pairs = []
+    # Fix issues with multiple \t
+    for pair in _pairs:
+        if len(pair) > 2:
+            # Skip pair containing garbage
+            continue
+
+        if len(pair[0]) == 0 or len(pair[1]) == 0:
+            continue
+
+        pairs += [pair]
+
     print("Read {!s} sentence pairs".format(len(pairs)))
 
     if max_length is not None:

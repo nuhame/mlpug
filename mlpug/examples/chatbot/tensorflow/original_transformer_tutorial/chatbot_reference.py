@@ -1,13 +1,18 @@
 import time
 
+import os
+import sys
+
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
 import matplotlib.pyplot as plt
 
+from mlpug.examples.chatbot.conversation_dataset import load_sentence_pair_data
+
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
     filter_max_length, \
-    create_tf_encode_func
+    create_chatbot_tf_encode_func
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import \
     CustomSchedule, \
@@ -16,12 +21,20 @@ from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training im
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
 
-
 # ############# SETUP ###############
-num_layers = 4
-d_model = 128
-dff = 512
-num_heads = 8
+REMOTE_DEBUG = False
+
+experiment_name = "large-transformer-30112020-lr-1e_4"
+
+data_set_path = "./mlpug/examples/chatbot/data/"
+
+training_set_file = "training-1606433382-cmdc-sentence-pairs-with-voc-max-len-40-min-word-occurance-3-26112020.pickle"
+validation_set_file = "validation-1606433382-cmdc-sentence-pairs-with-voc-max-len-40-min-word-occurance-3-26112020.pickle"
+
+num_layers = 12
+d_model = 768
+dff = 3072
+num_heads = 12
 
 dropout_rate = 0.1
 
@@ -32,28 +45,44 @@ MAX_LENGTH = 40
 BUFFER_SIZE = 20000
 BATCH_SIZE = 64
 
-EPOCHS = 20
+EPOCHS = 200
 #####################################
 
+if REMOTE_DEBUG:
+    import pydevd
+    pydevd.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+
+
 # ########### SETUP DATA ############
-examples, metadata = tfds.load('ted_hrlr_translate/pt_to_en', with_info=True,
-                               as_supervised=True)
-train_examples, val_examples = examples['train'], examples['validation']
 
-tokenizer_en = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
-    (en.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+def create_dataset_generator(pairs):
 
-tokenizer_pt = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
-    (pt.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+    def generator():
+        for pair in pairs:
+            yield tuple(pair)
 
+    return generator
 
-input_vocab_size = tokenizer_pt.vocab_size + 2
-target_vocab_size = tokenizer_en.vocab_size + 2
+train_examples, _unused_ = load_sentence_pair_data(os.path.join(data_set_path, training_set_file))
+val_examples, _unused_ = load_sentence_pair_data(os.path.join(data_set_path, validation_set_file))
 
-tf_encode = create_tf_encode_func(tokenizer_pt, tokenizer_en)
+all_training_sentences = []
+for pair in train_examples:
+    all_training_sentences += pair
 
+tokenizer = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
+    all_training_sentences, target_vocab_size=2**13)
 
-train_dataset = train_examples.map(tf_encode)
+vocab_size = tokenizer.vocab_size + 2
+
+tf_encode = create_chatbot_tf_encode_func(tokenizer)
+
+train_dataset = tf.data.Dataset.from_generator(
+    create_dataset_generator(train_examples),
+    (tf.string, tf.string),
+    (tf.TensorShape([]), tf.TensorShape([])))
+
+train_dataset = train_dataset.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
 # cache the dataset to memory to get a speedup while reading from it.
 train_dataset = train_dataset.cache()
@@ -61,15 +90,21 @@ train_dataset = train_dataset.shuffle(BUFFER_SIZE).padded_batch(BATCH_SIZE)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
 
-val_dataset = val_examples.map(tf_encode)
+val_dataset = tf.data.Dataset.from_generator(
+    create_dataset_generator(val_examples),
+    (tf.string, tf.string),
+    (tf.TensorShape([]), tf.TensorShape([])))
+
+val_dataset = val_dataset.map(tf_encode)
 val_dataset = val_dataset.filter(filter_max_length).padded_batch(BATCH_SIZE)
 
 #####################################
 
 
 # ######## SETUP OPTIMIZER ##########
-learning_rate = CustomSchedule(d_model)
+# learning_rate = CustomSchedule(d_model)
 
+learning_rate = 1e-4
 optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
 train_loss = tf.keras.metrics.Mean(name='train_loss')
@@ -78,12 +113,12 @@ train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy
 
 # ########## SETUP MODEL ############
 transformer = Transformer(num_layers, d_model, num_heads, dff,
-                          input_vocab_size, target_vocab_size,
-                          pe_input=input_vocab_size,
-                          pe_target=target_vocab_size,
+                          vocab_size, vocab_size,
+                          pe_input=vocab_size,
+                          pe_target=vocab_size,
                           rate=dropout_rate)
 
-checkpoint_path = "../trained-models/"
+checkpoint_path = os.path.join("../trained-models/", experiment_name)
 #####################################
 
 
@@ -122,16 +157,16 @@ def train_step(inp, tar):
 
 
 def evaluate(inp_sentence):
-    start_token = [tokenizer_pt.vocab_size]
-    end_token = [tokenizer_pt.vocab_size + 1]
+    start_token = [tokenizer.vocab_size]
+    end_token = [tokenizer.vocab_size + 1]
 
     # inp sentence is portuguese, hence adding the start and end token
-    inp_sentence = start_token + tokenizer_pt.encode(inp_sentence) + end_token
+    inp_sentence = start_token + tokenizer.encode(inp_sentence) + end_token
     encoder_input = tf.expand_dims(inp_sentence, 0)
 
     # as the target is english, the first word to the transformer should be the
     # english start token.
-    decoder_input = [tokenizer_en.vocab_size]
+    decoder_input = [tokenizer.vocab_size]
     output = tf.expand_dims(decoder_input, 0)
 
     for i in range(MAX_LENGTH):
@@ -152,7 +187,7 @@ def evaluate(inp_sentence):
         predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
 
         # return the result if the predicted_id is equal to the end token
-        if predicted_id == tokenizer_en.vocab_size + 1:
+        if predicted_id == tokenizer.vocab_size + 1:
             return tf.squeeze(output, axis=0), attention_weights
 
         # concatentate the predicted_id to the output which is given to the decoder
@@ -165,7 +200,7 @@ def evaluate(inp_sentence):
 def plot_attention_weights(attention, sentence, result, layer):
     fig = plt.figure(figsize=(16, 8))
 
-    sentence = tokenizer_pt.encode(sentence)
+    sentence = tokenizer.encode(sentence)
 
     attention = tf.squeeze(attention[layer], axis=0)
 
@@ -183,11 +218,11 @@ def plot_attention_weights(attention, sentence, result, layer):
         ax.set_ylim(len(result) - 1.5, -0.5)
 
         ax.set_xticklabels(
-            ['<start>'] + [tokenizer_pt.decode([i]) for i in sentence] + ['<end>'],
+            ['<start>'] + [tokenizer.decode([i]) for i in sentence] + ['<end>'],
             fontdict=fontdict, rotation=90)
 
-        ax.set_yticklabels([tokenizer_en.decode([i]) for i in result
-                            if i < tokenizer_en.vocab_size],
+        ax.set_yticklabels([tokenizer.decode([i]) for i in result
+                            if i < tokenizer.vocab_size],
                            fontdict=fontdict)
 
         ax.set_xlabel('Head {}'.format(head + 1))
@@ -199,8 +234,8 @@ def plot_attention_weights(attention, sentence, result, layer):
 def translate(sentence, plot=''):
     result, attention_weights = evaluate(sentence)
 
-    predicted_sentence = tokenizer_en.decode([i for i in result
-                                              if i < tokenizer_en.vocab_size])
+    predicted_sentence = tokenizer.decode([i for i in result
+                                           if i < tokenizer.vocab_size])
 
     print('Input: {}'.format(sentence))
     print('Predicted translation: {}'.format(predicted_sentence))
@@ -212,7 +247,7 @@ def translate(sentence, plot=''):
 ckpt = tf.train.Checkpoint(transformer=transformer,
                            optimizer=optimizer)
 
-ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 
 # if a checkpoint exists, restore the latest checkpoint.
 if ckpt_manager.latest_checkpoint:
@@ -225,13 +260,13 @@ for epoch in range(EPOCHS):
     train_loss.reset_states()
     train_accuracy.reset_states()
 
-    # inp -> portuguese, tar -> english
     for (batch, (inp, tar)) in enumerate(train_dataset):
         train_step(inp, tar)
 
         if batch % log_interval == 0:
             print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
                 epoch + 1, batch, train_loss.result(), train_accuracy.result()))
+            sys.stdout.flush()
 
     if (epoch + 1) % 5 == 0:
         ckpt_save_path = ckpt_manager.save()

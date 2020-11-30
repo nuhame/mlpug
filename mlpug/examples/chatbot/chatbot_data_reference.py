@@ -15,6 +15,8 @@ import argparse
 
 import pickle
 
+import random
+
 from mlpug.examples.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
@@ -103,8 +105,9 @@ voc, pairs = loadPrepareData(corpus_name,
                              PAD_token, SOS_token, EOS_token)
 
 # Print some pairs to validate
+
 print("\npairs:")
-for pair in pairs[:10]:
+for pair in random.sample(pairs, 100):
     print(pair)
 
 # ## Load sentence pairs and remove pairs with rare words
