@@ -60,7 +60,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         """
         optimizer = self.get_optimizer(optimizer_name)
         if not hasattr(optimizer, 'param_groups'):
-            self._log.error(f"No valid optimizer available with name {optimizer_name}, unable to set learning arte")
+            self._log.error(f"No valid optimizer available with name {optimizer_name}, unable to set learning rate")
             return False
 
         try:
@@ -70,7 +70,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             _.log_exception(self._log, f"Unable to set learning rate for optimizer {optimizer_name}", e)
             return False
 
-        self._log.debug(f"Learning rate of optimizer set to : {lr}")
+        self._log.debug(f"Learning rate of optimizer {optimizer_name} set to : {lr}")
 
         return True
 
