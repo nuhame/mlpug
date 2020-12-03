@@ -81,6 +81,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         TODO : Add more documentation
 
         :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
+                                    Instead of providing a model_evaluate_func, you can provide a trainer instance.
+                                    Also see below.
 
                                     IMPORTANT: it is assumed that the `model_evaluate_func` takes all
                                     appropriate measures to disable training specific layers such as
@@ -94,8 +96,6 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
                                         with torch.no_grad():
                                             return my_training_model(batch_data, evaluate_settings)
-
-                                    Instead of providing a model_evaluate_func, you can provide a trainer instance.
 
         :type model_evaluate_func: callable
 
