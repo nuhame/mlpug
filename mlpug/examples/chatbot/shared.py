@@ -35,38 +35,18 @@ def create_argument_parser(description='Train reference chatbot on processed sen
         help='The number of GPUs to use in one process (DataParallel will be used)')
 
     parser.add_argument(
-        '--attention-model',
-        type=str, required=False, default='dot',
-        help='Attention model type: "dot", "general" or "concat"')
-
-    parser.add_argument(
         '--embedding-size',
-        type=int, required=False, default=256,
+        type=int, required=False, default=512,
         help='Input embedding size')
 
     parser.add_argument(
-        '--encoder-state-size',
-        type=int, required=False, default=1000,
-        help='Encoder state size')
-
-    parser.add_argument(
-        '--num-encoder-layers',
-        type=int, required=False, default=2,
-        help='Encoder state size')
-
-    parser.add_argument(
-        '--num-decoder-layers',
-        type=int, required=False, default=2,
-        help='Decoder state size')
-
-    parser.add_argument(
         '--dropout',
-        type=float, required=False, default=0.2,
+        type=float, required=False, default=0.1,
         help='Drop out rate')
 
     parser.add_argument(
         '--batch-size',
-        type=int, required=False, default=32,
+        type=int, required=False, default=64,
         help='Batch size')
 
     parser.add_argument(
@@ -75,28 +55,23 @@ def create_argument_parser(description='Train reference chatbot on processed sen
         help='Gradient clipping threshold')
 
     parser.add_argument(
-        '--teacher-forcing-ratio',
-        type=float, required=False, default=1.0,
-        help='How often teacher forcing should be applied, compared to not applying it')
-
-    parser.add_argument(
         '--learning-rate',
-        type=float, required=False, default=0.0001,
+        type=float, required=False, default=1e-4,
         help='Base learning rate')
 
     parser.add_argument(
         '--decoder-learning-rate-ratio',
-        type=float, required=False, default=5.0,
+        type=float, required=False, default=2.0,
         help='Decoder LR ratio, such that the decoder LR is ratio * base LR')
 
     parser.add_argument(
         '--num-epochs',
-        type=int, required=False, default=50,
+        type=int, required=False, default=20,
         help='Number of epochs to train')
 
     parser.add_argument(
         '--progress-logging-period',
-        type=int, required=False, default=200,
+        type=int, required=False, default=20,
         help='Period in global (batch) iterations before we log the training progress again.')
 
     parser.add_argument(
