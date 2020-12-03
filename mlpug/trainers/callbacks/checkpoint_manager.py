@@ -4,6 +4,8 @@ import json
 
 import abc
 
+import pickle
+
 from shutil import copyfile
 
 from mlpug.utils import get_value_at
@@ -26,8 +28,8 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
                  force_monitoring_on_epoch=True,
                  base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
-                 model_checkpoint_filename_ext="model",
-                 training_checkpoint_filename_ext="state",
+                 model_checkpoint_filename_ext="m-ckp",
+                 training_checkpoint_filename_ext="t-ckp",
                  backup_before_override=True,
                  disable_saving_checkpoints=False,
                  name="CheckpointManager"):
@@ -282,7 +284,8 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                     self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
                     success = False
 
-            training_checkpoint_success = self._create_training_checkpoint()
+            training_checkpoint_fname = self._create_training_checkpoint()
+            training_checkpoint_success = (training_checkpoint_fname is not None)
             data_saved |= training_checkpoint_success
 
             success &= training_checkpoint_success
@@ -293,7 +296,6 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
         return success
 
     def _save_current_model_as_best(self):
-
         model_fn = self.best_model_file_name()
 
         if self._backup_before_override:
@@ -304,13 +306,7 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                                            f"will not override override model checkpoint with new one", e)
                 return None
 
-        try:
-            self._save_model_checkpoint(model_fn)
-        except Exception as e:
-            _.log_exception(self._log, f"A problem occurred saving the current model as best model", e)
-            return None
-
-        return model_fn
+        return self._create_model_checkpoint(model_fn=model_fn)
 
     def _update_logs(self, model_improved, logs, current):
         if model_improved:
@@ -318,15 +314,26 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
 
         current["is_best"] = model_improved
 
-    def _create_model_checkpoint(self, file_to_copy=None):
-        model_fn = self.latest_model_file_name()
+    def _create_model_checkpoint(self, model_fn=None, file_to_copy=None):
+        if model_fn is None:
+            model_fn = self.latest_model_file_name()
+
         if file_to_copy:
             if not self._copy(file_to_copy, model_fn):
                 self._log.error(f"Unable to create model checkpoint based on file : {file_to_copy}")
                 return None
         else:
             try:
-                self._save_model_checkpoint(model_fn)
+                state, success = self._gather_model_checkpoint_data()
+                if state is not None:
+                    if not success:
+                        self._log.warn("Gathering the model checkpoint data was not completely successful, "
+                                       "will save available checkpoint data anyway ...")
+
+                    self._log.debug(f"Saving model checkpoint : {model_fn}")
+                    self._save_model_checkpoint(model_fn, state)
+                else:
+                    return None
             except Exception as e:
                 _.log_exception(self._log, f"A problem occurred saving the latest model as checkpoint", e)
                 return None
@@ -341,27 +348,77 @@ class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
                 if not self._backup_checkpoint(checkpoint_fname):
                     self._log.error("Unable to backup last training checkpoint, "
                                     "will not override override training checkpoint with new one")
-                    return False
+                    return None
             except Exception as e:
                 _.log_exception(self._log, f"A problem occurred backing up the last training checkpoint, "
                                            f"will not override override training checkpoint with new one", e)
-                return False
+                return None
 
-        success = False
         try:
-            success = self._save_training_checkpoint(checkpoint_fname)
+            state, success = self._gather_training_checkpoint_data()
+            if state is not None:
+                if not success:
+                    self._log.warn("Gathering the training checkpoint data was not completely successful, "
+                                   "will save available checkpoint data anyway ...")
+
+                self._log.debug(f"Saving training checkpoint : {checkpoint_fname}")
+                self._save_training_checkpoint(checkpoint_fname, state)
+            else:
+                return None
         except Exception as e:
             _.log_exception(self._log, f"Unable to save training checkpoint", e)
+            return None
 
-        return success
+        return checkpoint_fname
 
-    @abc.abstractmethod
-    def _save_training_checkpoint(self, filename):
-        self._log.error("This method is not implemented, implement it in your child class implementation")
+    def _gather_model_checkpoint_data(self):
+        """
 
-    @abc.abstractmethod
-    def _save_model_checkpoint(self, filename):
-        self._log.error("This method is not implemented, implement it in your child class implementation")
+        :return: state, success
+        """
+        state, success = self.trainer.get_model_components_state()
+
+        if state is not None:
+            if not success:
+                self._log.warn("Getting the model components state was not completely successful, "
+                               "continuing anyway ...")
+
+            if self._model_hyper_parameters is not None:
+                state['hyper_parameters'] = self._model_hyper_parameters
+
+            try:
+                manager_state, manager_state_success = self.training_manager.get_state_for_model_checkpoint()
+                state['manager_state'] = manager_state
+
+                if not manager_state_success:
+                    self._log.warn("Getting the manager state for the model checkpoint was not successful, "
+                                   "will continue anyway ...")
+                    success = False
+
+            except Exception as e:
+                _.log_exception(self._log, "Unable to add manager state to model checkpoint, "
+                                           "continuing anyway ...", e)
+                success = False
+        else:
+            # In any case when the state is None, gathering the model checkpoint data is not successful
+            success = False
+
+        return state, success
+
+    def _gather_training_checkpoint_data(self):
+        """
+
+        :return: state, success
+        """
+        return self.training_manager.get_state()
+
+    def _save_model_checkpoint(self, filename, state):
+        with open(filename, 'wb') as f:
+            pickle.dump(state, f)
+
+    def _save_training_checkpoint(self, filename, state):
+        with open(filename, 'wb') as f:
+            pickle.dump(state, f)
 
     def _backup_checkpoint(self, filename):
         if os.path.isfile(filename):
