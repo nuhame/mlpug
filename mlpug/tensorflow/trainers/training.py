@@ -4,8 +4,13 @@ import tensorflow as tf
 import h5py
 from tensorflow.python.keras.saving import hdf5_format
 
+import basics.base_utils as _
+
 from mlpug.trainers.training import *
-from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
+from mlpug.mlpug_exceptions import TrainerInvalidException, \
+    TrainerStateInvalidException, \
+    BatchNotChunkableException, \
+    LossNotAvailableException
 
 from mlpug.utils import get_value_at
 
@@ -13,7 +18,7 @@ from mlpug.utils import get_value_at
 class TFTrainerMixin:
 
     def _activate_inference_mode(self, inference_mode):
-        # Nothing to do (?)
+        # No pre-evaluation mode change
         pass
 
     def _get_model_state(self, model, model_name=None):
@@ -46,15 +51,15 @@ class Trainer(TFTrainerMixin, TrainerBase):
 
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, trainable_vars=None, **kwargs):
+    def __init__(self, *args, trainable_variables=None, **kwargs):
         super(DefaultTrainer, self).__init__(*args, **kwargs)
 
-        self.trainable_vars = convert_to_dict("optimizer", trainable_vars)
+        if trainable_variables is not None:
+            self.trainable_variables = convert_to_dict("optimizer", trainable_variables)
 
-        if self.trainable_vars is not None:
             missing_optimizer_vars = []
             for optimizer_name in self.optimizers.keys():
-                if optimizer_name not in self.trainable_vars or self.trainable_vars[optimizer_name] is None:
+                if optimizer_name not in self.trainable_variables or self.trainable_variables[optimizer_name] is None:
                     missing_optimizer_vars += [optimizer_name]
 
             if len(missing_optimizer_vars) > 0:
@@ -121,6 +126,29 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         return loss.numpy(), auxiliary_results
 
+    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
+        """
+        Evaluates the given training model on the  given batch_data, using the optional training_settings
+        Depending on the Deep learning backend you might need to use inference mode here
+
+        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
+        :param evaluate_settings: optional evaluate_settings object (usually dict)
+        :param inference_mode: optional bool, important when inference mode not set in `_activate_inference_mode`
+                               Pytorch:     inference_mode not required here
+                               Tensorflow:  inference_mode required here
+
+        :return: dict:
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
+        """
+
+        if not (type(inference_mode) is bool):
+            raise TrainerStateInvalidException("Inference mode is not set")
+
+        return self.training_model(batch_data, evaluate_settings, training=inference_mode)
+
     def _calc_gradients(self, batch_data, training_settings=None):
         """
 
@@ -152,11 +180,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
     def _back_propagate_from(self, loss, tape, last_chunk=False):
         gradients = {}
         for optimizer_name in self.optimizers.keys():
-            trainable_vars = get_value_at(optimizer_name, self.trainable_vars)
-            if trainable_vars is None:
-                trainable_vars = self.training_model.trainable_variables
+            trainable_variables = get_value_at(optimizer_name, self.trainable_variables)
+            if trainable_variables is None:
+                trainable_variables = self.training_model.trainable_variables
 
-            gradients[optimizer_name] = tape.gradient(loss, trainable_vars)
+            gradients[optimizer_name] = tape.gradient(loss, trainable_variables)
 
         return gradients
 
@@ -174,8 +202,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def _apply_gradients(self, gradients):
         for optimizer_name, optimizer in self.get_optimizers().items():
-            trainable_vars = get_value_at(optimizer_name, self.trainable_vars)
-            if trainable_vars is None:
-                trainable_vars = self.training_model.trainable_variables
+            trainable_variables = get_value_at(optimizer_name, self.trainable_variables)
+            if trainable_variables is None:
+                trainable_variables = self.training_model.trainable_variables
 
-            optimizer.apply_gradients(zip(gradients[optimizer_name], trainable_vars))
+            optimizer.apply_gradients(zip(gradients[optimizer_name], trainable_variables))

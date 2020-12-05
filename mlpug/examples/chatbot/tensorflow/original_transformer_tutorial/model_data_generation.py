@@ -1,8 +1,5 @@
 import tensorflow as tf
 
-MAX_LENGTH = 40
-
-
 def create_translation_tf_encode_func(tokenizer_pt, tokenizer_en):
 
     def encode(lang1, lang2):
@@ -45,5 +42,9 @@ def create_chatbot_tf_encode_func(tokenizer):
     return tf_encode
 
 
-def filter_max_length(x, y, max_length=MAX_LENGTH):
-    return tf.logical_and(tf.size(x) <= max_length, tf.size(y) <= max_length)
+def create_length_filter_func(max_length):
+
+    def filter_max_length(x, y):
+        return tf.logical_and(tf.size(x) <= max_length, tf.size(y) <= max_length)
+
+    return filter_max_length

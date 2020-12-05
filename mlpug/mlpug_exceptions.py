@@ -25,6 +25,15 @@ class TrainerInvalidException(MLPugException):
         super().__init__(err_msg)
 
 
+class TrainerStateInvalidException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Trainer state is invalid"
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
+
+
 class BatchNotChunkableException(MLPugException):
     def __init__(self, message=None):
         err_msg = "Given batch is not chunkable, ensure that the batch object implements the " \

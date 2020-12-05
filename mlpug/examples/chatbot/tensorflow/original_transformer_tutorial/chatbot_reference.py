@@ -9,7 +9,7 @@ import tensorflow_datasets as tfds
 from mlpug.examples.chatbot.conversation_dataset import load_sentence_pair_data
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
-    filter_max_length, \
+    create_length_filter_func, \
     create_chatbot_tf_encode_func
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import \
@@ -74,6 +74,7 @@ tokenizer = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
 vocab_size = tokenizer.vocab_size + 2
 
 tf_encode = create_chatbot_tf_encode_func(tokenizer)
+filter_max_length = create_length_filter_func(MAX_LENGTH)
 
 train_dataset = tf.data.Dataset.from_generator(
     create_dataset_generator(train_examples),

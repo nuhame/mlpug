@@ -60,7 +60,7 @@ class TeacherForcingController(mlp.callbacks.Callback):
 
 class ChatbotTrainer(mlp.trainers.DefaultTrainer):
 
-    def _evaluate_loss(self, batch_data, evaluate_settings=None):
+    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
 
         use_teacher_forcing = get_value_at('use_teacher_forcing', evaluate_settings)
         if use_teacher_forcing is None:
@@ -116,21 +116,6 @@ def calc_loss(loss, **kwargs):
 if __name__ == "__main__":
 
     parser = create_argument_parser()
-
-    parser.add_argument(
-        '--state-size',
-        type=int, required=False, default=768,
-        help='Encoder state size')
-
-    parser.add_argument(
-        '--num-encoder-layers',
-        type=int, required=False, default=2,
-        help='Encoder state size')
-
-    parser.add_argument(
-        '--num-decoder-layers',
-        type=int, required=False, default=2,
-        help='Decoder state size')
 
     parser.add_argument(
         '--attention-model',
@@ -223,19 +208,17 @@ if __name__ == "__main__":
     ##################################################
 
     # ############ Model configuration ###############
-    attn_model = args.attention_model
-    logger.info(f"Attention model : {attn_model}")
-
     embedding_size = args.embedding_size
     logger.info(f"embedding_size : {embedding_size}")
 
     state_size = args.state_size
     logger.info(f"state_size : {state_size}")
 
-    num_encoder_layers = args.num_encoder_layers
-    num_decoder_layers = args.num_decoder_layers
-    logger.info(f"num_encoder_layers : {num_encoder_layers}")
-    logger.info(f"num_decoder_layers : {num_decoder_layers}")
+    num_layers = args.num_layers
+    logger.info(f"num_layers : {num_layers}")
+
+    attn_model = args.attention_model
+    logger.info(f"Attention model : {attn_model}")
 
     dropout = args.dropout
     logger.info(f"dropout rate : {dropout}")
@@ -337,8 +320,8 @@ if __name__ == "__main__":
     embedding = nn.Embedding(voc.num_words, embedding_size)
 
     # Initialize encoder & decoder models
-    encoder = EncoderRNN(state_size, embedding, num_encoder_layers, dropout)
-    decoder = LuongAttnDecoderRNN(attn_model, embedding, state_size, voc.num_words, num_decoder_layers, dropout)
+    encoder = EncoderRNN(state_size, embedding, num_layers, dropout)
+    decoder = LuongAttnDecoderRNN(attn_model, embedding, state_size, voc.num_words, num_layers, dropout)
 
     training_model = Seq2SeqTrainModel(encoder, decoder)
 

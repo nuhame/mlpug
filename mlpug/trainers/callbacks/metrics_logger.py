@@ -14,6 +14,7 @@ from mlpug.utils import get_value_at, set_value_at
 
 
 class MetricsLoggingMode(Enum):
+    # TODO : Add BATCH_METRICS_ONLY Option
     BATCH_AND_WINDOW_AVERAGE_METRICS = "BATCH_AND_WINDOW_AVERAGE_METRICS"
     WINDOW_AVERAGE_METRICS = "WINDOW_AVERAGE_METRICS"
     WHOLE_DATASET_METRICS = "WHOLE_DATASET_METRICS"
@@ -333,8 +334,7 @@ class MetricsLoggerBase(Callback):
             self._valid = False
 
         if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode) and \
-                (not isinstance(self._batch_averaging_window, int) or
-                 self._batch_averaging_window <= 0):
+                self._batch_averaging_window <= 0:
             self._log.error(f"A valid batch processing window is required for "
                             f"metric logging mode ({self._logging_mode}, the {self} will not function")
             self._valid = False

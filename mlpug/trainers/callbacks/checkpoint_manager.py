@@ -14,7 +14,7 @@ from mlpug.trainers.callbacks.callback import Callback
 import basics.base_utils as _
 
 
-class CheckpointManagerBase(Callback, metaclass=abc.ABCMeta):
+class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  model_hyper_parameters=None,
