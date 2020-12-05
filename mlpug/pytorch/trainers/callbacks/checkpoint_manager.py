@@ -2,7 +2,7 @@ import sys
 
 import torch
 
-from mlpug.trainers.callbacks.checkpoint_manager import CheckpointManagerBase
+from mlpug.trainers.callbacks.checkpoint_manager import CheckpointManager as CheckpointManagerBase
 
 
 class CheckpointManager(CheckpointManagerBase):

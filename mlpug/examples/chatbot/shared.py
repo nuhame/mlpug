@@ -40,6 +40,16 @@ def create_argument_parser(description='Train reference chatbot on processed sen
         help='Input embedding size')
 
     parser.add_argument(
+        '--state-size',
+        type=int, required=False, default=768,
+        help='Model state size')
+
+    parser.add_argument(
+        '--num-layers',
+        type=int, required=False, default=2,
+        help='Number of Encoder and Decoder layers')
+
+    parser.add_argument(
         '--dropout',
         type=float, required=False, default=0.1,
         help='Drop out rate')

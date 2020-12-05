@@ -3,6 +3,9 @@ import torch
 from torch.cuda.amp import autocast
 
 from functools import reduce
+
+import basics.base_utils as _
+
 from mlpug.trainers.training import *
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
@@ -80,7 +83,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             self._activate_inference_mode(inference_mode)
 
             with autocast():
-                return self._evaluate_loss(batch_data, evaluate_settings)
+                return self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
         else:
             return super().evaluate_loss(batch_data, inference_mode, evaluate_settings)
 

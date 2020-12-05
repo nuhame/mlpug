@@ -12,6 +12,10 @@ from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidParameters
 from mlpug.utils import *
 
 
+def forward_loss(loss, **kwargs):
+    return loss, 1
+
+
 def default_metric_reducer_func(batch_metrics_list):
     # unzip
     metric_list, num_samples_list = list(zip(*batch_metrics_list))
@@ -103,7 +107,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                         custom model_evaluate_func
         :type trainer: TrainerBase child instance
 
-        :param batch_metric_funcs: [NOT OPTIONAL] A dict with keys representing the metric names
+        :param batch_metric_funcs: Optional. A dict with keys representing the metric names
              (e.g. "loss", "recall", etc.) and the corresponding values are functions to calculate a
              metric value, or to gather information to calculate or reduce an overall metric value, also see
              batch_metric_reducer_funcs.
@@ -175,6 +179,17 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                  batch_metric_reducer_funcs = {
                     'recall': calc_recall
                  }
+
+            When not provided the default just forwards the loss, calculated by the trainer or model_evaluate_func
+
+                def forward_loss(loss, **kwargs):
+                    return loss, 1
+
+                {
+                    'loss': forward_loss
+                }
+
+
         :type batch_metric_funcs: dict
 
         :param batch_metric_reducer_funcs: Optional.
@@ -242,6 +257,11 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
             self._model_evaluate_func = model_evaluate_func
 
         try:
+            if batch_metric_funcs is None:
+                batch_metric_funcs = {
+                    "loss": forward_loss
+                }
+
             self.check_funcs(batch_metric_funcs)
         except InvalidParametersException as e:
             raise InvalidParametersException("The batch metrics funcs are invalid") from e
@@ -502,7 +522,6 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    @abc.abstractmethod
     def _create_default_model_evaluate_func(self):
         """
         Creates function that evaluates model using the provided trainer instance.

@@ -77,14 +77,23 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         self._assess_num_batches_per_epoch()
 
-        if type(self.num_batches_per_epoch) == int and self.num_batches_per_epoch > 0:
-            self._metric_windows['training.batch.loss'] = \
-                SlidingWindow(length=self.num_batches_per_epoch, name='training.batch.loss')
+        try:
+            # TODO : better deal with num_batches_per_epoch special cases (e.g. Numpy number)
+            # TODO : deal with the case when we don't have SlidingWindows
+            if float(self.num_batches_per_epoch) != math.inf and self.num_batches_per_epoch > 0:
+                self._metric_windows['training.batch.loss'] = \
+                    SlidingWindow(length=self.num_batches_per_epoch, name='training.batch.loss')
 
-            self._metric_windows['training_params.batch.duration'] = \
-                SlidingWindow(length=self.num_batches_per_epoch, name='training_params.batch.duration')
+                self._metric_windows['training_params.batch.duration'] = \
+                    SlidingWindow(length=self.num_batches_per_epoch, name='training_params.batch.duration')
+        except Exception as e:
+            self._valid = False
+            _.log_exception(self._log,
+                            "Unable to setup sliding window for training loss and batch training duration",
+                            e)
 
         if not self._call_callbacks("set_training_manager", self):
+            self._valid = False
             self._callback_calls_successful = False
             self._log.error("One or more issues occurred while providing this training manager instance "
                             "to the provided callbacks")
@@ -755,7 +764,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         :return: True on success, else False
         """
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def train_on(self, batch_data, training_settings=None):
@@ -773,7 +782,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         loss : number (e.g. float)
         auxiliary_results : can be anything, e.g dict or list with values or data items
         """
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
         """
@@ -793,14 +802,19 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         self._activate_inference_mode(inference_mode)
 
-        return self._evaluate_loss(batch_data, evaluate_settings)
+        return self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
 
     @abc.abstractmethod
-    def _evaluate_loss(self, batch_data, evaluate_settings=None):
+    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
         """
+        Evaluates the given training model on the  given batch_data, using the optional training_settings
+        Depending on the Deep learning backend you might need to use inference mode here
 
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
+        :param inference_mode: bool, important when inference mode not set in `_activate_inference_mode`
+                               Pytorch:     inference_mode not required here
+                               Tensorflow:  inference_mode required here
 
         :return: dict:
             {
@@ -808,28 +822,27 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
         """
-
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def _activate_inference_mode(self, inference_mode):
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def _get_model_state(self, model, model_name=None):
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def _get_optimizer_state(self, optimizer, optimizer_name=None):
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def _set_model_state(self, model, state, model_name=None):
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
     def _set_optimizer_state(self, optimizer, state, optimizer_name):
-        pass
+        raise NotImplemented("Please implement this method in your child class")
 
     def _check_state(self, state):
         state_attributes = ['model_components', 'optimizers']
@@ -912,14 +925,16 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
 
-    def _evaluate_loss(self, batch_data, evaluate_settings=None):
+    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
         """
-
         Evaluates the given training model on the  given batch_data, using the optional training_settings
+        Depending on the Deep learning backend you might need to use inference mode here
 
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
-
+        :param inference_mode: optional bool, important when inference mode not set in `_activate_inference_mode`
+                               Pytorch:     inference_mode not required here
+                               Tensorflow:  inference_mode required here
 
         :return: dict:
             {
@@ -927,7 +942,8 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
         """
-        return self.training_model(batch_data, evaluate_settings)
+
+        return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _validate_model(self):
         # TODO : this is framework dependent

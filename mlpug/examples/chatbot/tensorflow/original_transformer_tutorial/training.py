@@ -1,6 +1,28 @@
 import tensorflow as tf
 
 
+class TrainModel(tf.keras.Model):
+    def __init__(self, transformer):
+        super(TrainModel, self).__init__()
+
+        self.transformer = transformer
+
+    def call(self, batch_data, training_settings):
+        inp, tar = batch_data
+
+        tar_inp = tar[:, :-1]
+        tar_real = tar[:, 1:]
+
+        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+
+        predictions, _ = self.transformer(inp, tar_inp, True, enc_padding_mask, combined_mask, dec_padding_mask)
+        loss = loss_function(tar_real, predictions)
+
+        return {
+            loss: loss
+        }
+
+
 def create_padding_mask(seq):
     seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
 

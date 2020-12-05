@@ -9,8 +9,7 @@ import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
-    MAX_LENGTH, \
-    filter_max_length, \
+    create_length_filter_func, \
     create_translation_tf_encode_func
 
 from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import \
@@ -40,6 +39,8 @@ dropout_rate = 0.1
 
 log_interval = 20
 
+MAX_LENGTH = 40
+
 BUFFER_SIZE = 20000
 BATCH_SIZE = 64
 
@@ -67,7 +68,7 @@ input_vocab_size = tokenizer_pt.vocab_size + 2
 target_vocab_size = tokenizer_en.vocab_size + 2
 
 tf_encode = create_translation_tf_encode_func(tokenizer_pt, tokenizer_en)
-
+filter_max_length = create_length_filter_func(MAX_LENGTH)
 
 train_dataset = train_examples.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
@@ -75,7 +76,6 @@ train_dataset = train_dataset.filter(filter_max_length)
 train_dataset = train_dataset.cache()
 train_dataset = train_dataset.shuffle(BUFFER_SIZE).padded_batch(BATCH_SIZE)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
-
 
 val_dataset = val_examples.map(tf_encode)
 val_dataset = val_dataset.filter(filter_max_length).padded_batch(BATCH_SIZE)
