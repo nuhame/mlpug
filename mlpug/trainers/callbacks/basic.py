@@ -172,11 +172,12 @@ class LogProgress(Callback):
 
             if type(value) is dict:
                 log += "\n" + self._create_log_for(value, metric, log_depth+1)
-            elif isinstance(value, (float, int)):
-                log_format = self._get_log_format(value)
-                log += log_format.format(metric, value)
             else:
-                log += "[UNKNOWN]"
+                try:
+                    log_format = self._get_log_format(value)
+                    log += log_format.format(metric, value)
+                except Exception as e:
+                    log += "[UNKNOWN]"
 
             if c < num_metrics - 1:
                 log += ', '
@@ -210,6 +211,7 @@ class BatchSizeLogger(Callback):
 
         current = self._get_logs_base(logs)
 
+        # TODO : doesn't work for Tensorflow
         current['training_params']['batch']['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
             training_batch[0].size(self._batch_dimension)
 
