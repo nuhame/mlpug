@@ -10,6 +10,7 @@ from mlpug.trainers.training import *
 from mlpug.mlpug_exceptions import TrainerInvalidException, \
     TrainerStateInvalidException, \
     BatchNotChunkableException, \
+    MLPugException, \
     LossNotAvailableException
 
 from mlpug.utils import get_value_at
@@ -54,7 +55,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
     def __init__(self, *args, trainable_variables=None, **kwargs):
         super(DefaultTrainer, self).__init__(*args, **kwargs)
 
-        if trainable_variables is not None:
+        self.trainable_variables = trainable_variables
+
+        if self.trainable_variables is None:
+            if len(self.optimizers) > 1:
+                raise TrainerInvalidException(f"No trainable variables provided per optimizer")
+        else:
             self.trainable_variables = convert_to_dict("optimizer", trainable_variables)
 
             missing_optimizer_vars = []
@@ -137,11 +143,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                                Pytorch:     inference_mode not required here
                                Tensorflow:  inference_mode required here
 
-        :return: dict:
+        :return: dict or tuple
             {
                 "loss": <Tensor>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
+
+            (loss, ... auxiliary results ...)
         """
 
         if not (type(inference_mode) is bool):
@@ -180,9 +188,15 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
     def _back_propagate_from(self, loss, tape, last_chunk=False):
         gradients = {}
         for optimizer_name in self.optimizers.keys():
-            trainable_variables = get_value_at(optimizer_name, self.trainable_variables)
+            trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
             if trainable_variables is None:
                 trainable_variables = self.training_model.trainable_variables
+
+                # This only needs to be done once
+                # Further, this situation only occurs when there is only one optimizer
+                self.trainable_variables = {
+                    optimizer_name: trainable_variables
+                }
 
             gradients[optimizer_name] = tape.gradient(loss, trainable_variables)
 
@@ -204,6 +218,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         for optimizer_name, optimizer in self.get_optimizers().items():
             trainable_variables = get_value_at(optimizer_name, self.trainable_variables)
             if trainable_variables is None:
-                trainable_variables = self.training_model.trainable_variables
+                raise MLPugException("Unexpected state :  trainable variables not found. Please file an issue.")
 
             optimizer.apply_gradients(zip(gradients[optimizer_name], trainable_variables))
