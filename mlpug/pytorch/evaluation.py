@@ -5,10 +5,19 @@ from mlpug.evaluation import MetricEvaluatorBase
 from mlpug.utils import is_chunkable
 
 
+def forward_loss(loss, **kwargs):
+    return loss.item(), 1
+
+
 class MetricEvaluator(MetricEvaluatorBase):
 
-    def __init__(self, *args, name="MetricEvaluator", **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+    def __init__(self, *args, batch_metric_funcs=None, name="MetricEvaluator", **kwargs):
+        if batch_metric_funcs is None:
+            batch_metric_funcs = {
+                "loss": forward_loss
+            }
+
+        super().__init__(*args, batch_metric_funcs=batch_metric_funcs, name=name, **kwargs)
 
     def _create_default_model_evaluate_func(self):
 
