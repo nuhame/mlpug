@@ -223,7 +223,7 @@ if __name__ == "__main__":
                                                  'validation',
                                                  metric_evaluator=average_loss_evaluator,
                                                  batch_averaging_window=len_validation_dataset),
-                 mlp.callbacks.BatchSizeLogger(),
+                 # mlp.callbacks.BatchSizeLogger(),
                  mlp.callbacks.CheckpointManager(metric_to_monitor='validation.window_average.loss',
                                                  base_checkpoint_filename=args.experiment_name,
                                                  archive_last_model_checkpoint_every=20000),
