@@ -43,7 +43,7 @@ class TFTrainerMixin:
     def _set_optimizer_state(self, optimizer, state, optimizer_name):
         with h5py.File(state, 'r') as f:
             weights = hdf5_format.load_optimizer_weights_from_hdf5_group(f)
-            optimizer.set_wights(weights)
+            optimizer.set_weights(weights)
 
 
 class Trainer(TFTrainerMixin, TrainerBase):
@@ -71,6 +71,45 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             if len(missing_optimizer_vars) > 0:
                 raise TrainerInvalidException(f"Missing trainable variables for optimizer(s) : "
                                               f"{', '.join(missing_optimizer_vars)}")
+
+        self._deferred_model_components_state = None
+        self._deferred_optimizers_state = None
+
+        self._first_batch = True
+
+    def set_model_components_state(self, state):
+        """
+
+        :param state:
+        :return: success (True or False)
+        """
+        if not _.is_callable(getattr(state, 'items', None)):
+            self._log.error("State is invalid, unable to set model components state")
+            return False
+
+        self._deferred_model_components_state = state
+
+        self._log.debug("Model components checkpoint state received; "
+                        "deferred setting the state until training has started")
+
+        return True
+
+    def set_optimizers_state(self, state):
+        """
+
+        :param state:
+        :return: success (True, False)
+        """
+        if not _.is_callable(getattr(state, 'items', None)):
+            self._log.error("State is invalid, unable to set optimizers state")
+            return False
+
+        self._deferred_optimizers_state = state
+
+        self._log.debug("Optimizers checkpoint state received; "
+                        "deferred setting the state until training has started")
+
+        return True
 
     def set_learning_rate_for(self, optimizer_name, lr):
         """
@@ -124,6 +163,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if not self.instance_valid():
             raise TrainerInvalidException()
 
+        if self._first_batch:
+            self._set_deferred_model_components_state(batch_data, training_settings)
+            self._set_trainable_variables()
+            self._set_deferred_optimizers_state()
+
+            self._first_batch = False
+
         loss, auxiliary_results, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
 
         gradients = self._process_gradients(gradients)
@@ -131,6 +177,59 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         self._apply_gradients(gradients)
 
         return loss.numpy(), auxiliary_results
+
+    def _set_trainable_variables(self):
+        if len(self.optimizers) > 1:
+            return
+
+        # This only needs to be done once
+        # Further, this situation only occurs when there is only one optimizer
+
+        optimizer_name = next(iter(self.optimizers))
+        trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
+        if trainable_variables is None:
+            trainable_variables = self.training_model.trainable_variables
+
+            self.trainable_variables = {
+                optimizer_name: trainable_variables
+            }
+
+    def _set_deferred_model_components_state(self, batch_data, training_settings):
+        """
+        Model component state can only be set after evaluating the model on input data
+        (Crazy but true)
+
+        :param batch_data:
+        :param training_settings:
+        :return:
+        """
+
+        if self._deferred_model_components_state is None:
+            return
+
+        self.evaluate_loss(batch_data,
+                           inference_mode=False,
+                           evaluate_settings=training_settings)
+
+        success = super().set_model_components_state(self._deferred_model_components_state)
+        if not success:
+            self._log.error("Unable to set deferred model components state, weights are not loaded")
+
+        self._deferred_model_components_state = None
+
+    def _set_deferred_optimizers_state(self):
+        if self._deferred_optimizers_state is None:
+            return
+
+        for optimizer_name, optimizer in self.optimizers.items():
+            trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
+            optimizer._create_all_weights(trainable_variables)
+
+        success = super().set_optimizers_state(self._deferred_optimizers_state)
+        if not success:
+            self._log.error("Unable to set deferred optimizers state, weights are not loaded")
+
+        self._deferred_optimizers_state = None
 
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
         """
@@ -189,14 +288,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         gradients = {}
         for optimizer_name in self.optimizers.keys():
             trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
-            if trainable_variables is None:
-                trainable_variables = self.training_model.trainable_variables
-
-                # This only needs to be done once
-                # Further, this situation only occurs when there is only one optimizer
-                self.trainable_variables = {
-                    optimizer_name: trainable_variables
-                }
 
             gradients[optimizer_name] = tape.gradient(loss, trainable_variables)
 
