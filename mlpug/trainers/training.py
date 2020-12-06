@@ -13,6 +13,20 @@ from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, Sl
 from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
+def normalize_evaluation(results):
+    if type(results) is dict:
+        return results
+    elif type(results) is tuple:
+        return {
+            "loss": results[0],
+            "auxiliary_results": results[1:]
+        }
+    else:
+        return {
+            "loss": results
+        }
+
+
 class TrainingManager(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
@@ -802,7 +816,8 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         self._activate_inference_mode(inference_mode)
 
-        return self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
+        results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
+        return normalize_evaluation(results)
 
     @abc.abstractmethod
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
@@ -816,11 +831,13 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
                                Pytorch:     inference_mode not required here
                                Tensorflow:  inference_mode required here
 
-        :return: dict:
+        :return: dict or tuple
             {
                 "loss": <Tensor>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
+
+            (loss, ... auxiliary results ...)
         """
         raise NotImplemented("Please implement this method in your child class")
 
@@ -936,11 +953,13 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
                                Pytorch:     inference_mode not required here
                                Tensorflow:  inference_mode required here
 
-        :return: dict:
+        :return: dict or tuple
             {
                 "loss": <Tensor>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
+
+            (loss, ... auxiliary results ...)
         """
 
         return self.training_model(batch_data, evaluate_settings, inference_mode)
