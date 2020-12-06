@@ -933,7 +933,10 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
                         "auxiliary_results": <can be anything, e.g dict or list with values or data items>
                       }
 
-        :param model:
+                      or
+
+                      model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
+
         :return:
         """
 

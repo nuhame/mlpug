@@ -1,5 +1,7 @@
 import os
 
+import pickle
+
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
@@ -260,26 +262,18 @@ if __name__ == "__main__":
                                            callbacks=callbacks,
                                            experiment_data=args)
 
-    # tc_file = args.training_checkpoint
-    # if tc_file:
-    #     # Can we make this whole procedure a part of MLPug?
-    #     logger.info(f"Loading training checkpoint : {tc_file}")
-    #     map_location = None
-    #     if distributed:
-    #         map_location = f'cuda:{args.local_rank}'
-    #
-    #     checkpoint = torch.load(tc_file, map_location=map_location)
-    #
-    #     manager.set_state(checkpoint)
-    #
-    #     if distributed:
-    #         dist.barrier()
-    #     logger.info(f"Ready loading training checkpoint.")
-    #
-    #     # Required, else loading a checkpoint can lead to OOMs
-    #     del checkpoint
-    #     if use_cuda:
-    #         torch.cuda.empty_cache()
+    tc_file = args.training_checkpoint
+    if tc_file:
+        logger.info(f"Loading training checkpoint : {tc_file}")
+
+        with open(tc_file, 'rb') as f:
+            checkpoint = pickle.load(f)
+
+        manager.set_state(checkpoint)
+
+        logger.info(f"Ready loading training checkpoint.")
+
+        del checkpoint
 
     trainer.set_training_model(train_model)
 
