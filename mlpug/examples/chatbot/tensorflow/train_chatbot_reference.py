@@ -76,13 +76,15 @@ if __name__ == "__main__":
         type=int, required=False, default=3072,
         help='Element-wise feed forward layer size')
 
+    import pydevd_pycharm
+    pydevd_pycharm.settrace('192.168.178.85', port=53483, stdoutToServer=True, stderrToServer=True)
+
     args = parser.parse_args()
+
+    mlp.logging.use_fancy_colors()
 
     logger_name = os.path.basename(__file__)
     logger = get_logger(logger_name)
-
-    import pydevd_pycharm
-    pydevd_pycharm.settrace('192.168.178.85', port=53483, stdoutToServer=True, stderrToServer=True)
 
     # TODO : seed
     # seed = args.seed
