@@ -52,10 +52,21 @@ class Trainer(TFTrainerMixin, TrainerBase):
 
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, trainable_variables=None, **kwargs):
+    def __init__(self, *args, trainable_variables=None, evaluate_loss_distributed_func=None, **kwargs):
+        """
+
+        :param args:
+        :param trainable_variables:
+        :param evaluate_loss_distributed_func: function(training_model,
+                                                        batch_data,
+                                                        evaluate_settings=None,
+                                                        inference_mode=None)
+        :param kwargs:
+        """
         super(DefaultTrainer, self).__init__(*args, **kwargs)
 
         self.trainable_variables = trainable_variables
+        self.evaluate_loss_distributed_func = evaluate_loss_distributed_func
 
         if self.trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -164,9 +175,16 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             raise TrainerInvalidException()
 
         if self._first_batch:
-            self._set_deferred_model_components_state(batch_data, training_settings)
-            self._set_trainable_variables()
-            self._set_deferred_optimizers_state()
+            # Check if we first need to restore a checkpoint
+            deferred_model_components_state_set = \
+                self._set_deferred_model_components_state(batch_data, training_settings)
+
+            if deferred_model_components_state_set:
+                # To set the deferred_model_components_state at the first batch the model was evaluated
+                # So we can get the trainable variables from the model and subsequently set the
+                # deferred optimizer state, which needs teh trainable variables.
+                self._set_trainable_variables()
+                self._set_deferred_optimizers_state()
 
             self._first_batch = False
 
@@ -201,12 +219,14 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :param batch_data:
         :param training_settings:
-        :return:
+        :return: True if set, else False
         """
 
         if self._deferred_model_components_state is None:
-            return
+            return False
 
+        # TODO : this actually only needs to happen when there is deferred model component state
+        #        But leaving it like this simplifies
         self.evaluate_loss(batch_data,
                            inference_mode=False,
                            evaluate_settings=training_settings)
@@ -216,6 +236,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             self._log.error("Unable to set deferred model components state, weights are not loaded")
 
         self._deferred_model_components_state = None
+
+        return success
 
     def _set_deferred_optimizers_state(self):
         if self._deferred_optimizers_state is None:
@@ -254,7 +276,15 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if not (type(inference_mode) is bool):
             raise TrainerStateInvalidException("Inference mode is not set")
 
-        return self.training_model(batch_data, evaluate_settings, training=inference_mode)
+        if self.evaluate_loss_distributed_func is not None:
+            results = self.evaluate_loss_distributed_func(self.training_model,
+                                                          batch_data,
+                                                          evaluate_settings,
+                                                          inference_mode)
+        else:
+            results = self.training_model(batch_data, evaluate_settings, inference_mode)
+
+        return results
 
     def _calc_gradients(self, batch_data, training_settings=None):
         """
@@ -274,6 +304,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             if 'loss' not in results:
                 raise LossNotAvailableException()
+
+            if self.trainable_variables is None:
+                # We now have evaluated the model and the trainable variables should be available
+                self._set_trainable_variables()
 
             loss = results['loss']
             auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)

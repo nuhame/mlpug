@@ -7,7 +7,7 @@ class TrainModel(tf.keras.Model):
 
         self.transformer = transformer
 
-    def call(self, batch_data, training_settings):
+    def call(self, batch_data, evaluate_settings, inference_mode=None):
         inp, tar = batch_data
 
         tar_inp = tar[:, :-1]
