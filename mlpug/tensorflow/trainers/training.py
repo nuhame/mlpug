@@ -52,21 +52,21 @@ class Trainer(TFTrainerMixin, TrainerBase):
 
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, trainable_variables=None, evaluate_loss_distributed_func=None, **kwargs):
+    def __init__(self, *args,
+                 trainable_variables=None,
+                 distribution_strategy=None,
+                 **kwargs):
         """
 
         :param args:
         :param trainable_variables:
-        :param evaluate_loss_distributed_func: function(training_model,
-                                                        batch_data,
-                                                        evaluate_settings=None,
-                                                        inference_mode=None)
+        :param distribution_strategy: Optional distributed training strategy
         :param kwargs:
         """
         super(DefaultTrainer, self).__init__(*args, **kwargs)
 
         self.trainable_variables = trainable_variables
-        self.evaluate_loss_distributed_func = evaluate_loss_distributed_func
+        self.distribution_strategy = distribution_strategy
 
         if self.trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -82,6 +82,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             if len(missing_optimizer_vars) > 0:
                 raise TrainerInvalidException(f"Missing trainable variables for optimizer(s) : "
                                               f"{', '.join(missing_optimizer_vars)}")
+
+        self._train_step_func = None
+        if self.distribution_strategy is not None:
+            self._train_step_func = self._create_distributed_training_step()
 
         self._deferred_model_components_state = None
         self._deferred_optimizers_state = None
@@ -183,20 +187,58 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 # To set the deferred_model_components_state at the first batch the model was evaluated
                 # So we can get the trainable variables from the model and subsequently set the
                 # deferred optimizer state, which needs teh trainable variables.
-                self._set_trainable_variables()
+                self._retrieve_trainable_variables()
                 self._set_deferred_optimizers_state()
 
             self._first_batch = False
 
-        loss, auxiliary_results, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
-
-        gradients = self._process_gradients(gradients)
-
-        self._apply_gradients(gradients)
+        if self._train_step_func is not None:
+            # loss, auxiliary_results = self._train_step_func(*batch_data, training_settings)
+            loss, auxiliary_results = self._train_step_func(*batch_data)
+        else:
+            loss, auxiliary_results = self._train_on(*batch_data, training_settings)
 
         return loss.numpy(), auxiliary_results
 
-    def _set_trainable_variables(self):
+    def _create_distributed_training_step(self):
+        train_step_signature = [
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        ]
+
+        @tf.function(input_signature=train_step_signature)
+        def train_on(*args):
+            print(f"training_step args = {args}")
+
+            # batch_data = args[:-1]
+            # training_settings = args[-1]
+
+            batch_data = args
+            training_settings = None
+
+            per_replica_losses, per_replica_auxiliary_results = self.distribution_strategy.run(
+                self._train_on,
+                args=(*batch_data, training_settings,))
+
+            loss = self.distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+            # User has to reduce anything in the auxiliary_results herself
+            return loss, per_replica_auxiliary_results
+
+        return train_on
+
+    def _train_on(self, *args):
+        batch_data = args[:-1]
+        training_settings = args[-1]
+
+        print(f"_train_on = {batch_data}")
+
+        loss, auxiliary_results, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
+
+        self._apply_gradients(self._process_gradients(gradients))
+
+        return loss, auxiliary_results
+
+    def _retrieve_trainable_variables(self):
         if len(self.optimizers) > 1:
             return
 
@@ -276,15 +318,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if not (type(inference_mode) is bool):
             raise TrainerStateInvalidException("Inference mode is not set")
 
-        if self.evaluate_loss_distributed_func is not None:
-            results = self.evaluate_loss_distributed_func(self.training_model,
-                                                          batch_data,
-                                                          evaluate_settings,
-                                                          inference_mode)
-        else:
-            results = self.training_model(batch_data, evaluate_settings, inference_mode)
-
-        return results
+        return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _calc_gradients(self, batch_data, training_settings=None):
         """
@@ -295,6 +329,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :raises LossNotAvailableException
         """
+
+        print(f"_calc_gradients = {batch_data}")
 
         if not self.batch_chunk_size:
             with tf.GradientTape() as tape:
@@ -307,7 +343,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             if self.trainable_variables is None:
                 # We now have evaluated the model and the trainable variables should be available
-                self._set_trainable_variables()
+                self._retrieve_trainable_variables()
 
             loss = results['loss']
             auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)

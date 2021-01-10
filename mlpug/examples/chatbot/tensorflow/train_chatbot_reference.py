@@ -132,6 +132,7 @@ if __name__ == "__main__":
     logger.info(f"experiment_name: {experiment_name}")
 
     batch_size = args.batch_size
+    logger.info(f"Batch size: {batch_size}")
 
     clip = args.gradient_clipping
     willClip = clip > 0.0
@@ -165,6 +166,9 @@ if __name__ == "__main__":
     logger.info('Loading validation set ...')
     validation_dataset, _unused_ = load_sentence_pair_data(dataset_path_for('validation'), logger)
 
+    # training_dataset = training_dataset[:1920]
+    # validation_dataset = validation_dataset[:640]
+
     logger.debug(f"Number of sentence pairs in training set: {len(training_dataset)}")
     logger.debug(f"Number of sentence pairs in validation set: {len(validation_dataset)}")
 
@@ -193,45 +197,38 @@ if __name__ == "__main__":
     logger.info(f"Number of training batches : {len_training_dataset}")
     logger.info(f"Number of validation batches : {len_validation_dataset}")
 
-    # strategy = tf.distribute.MirroredStrategy()
-    # with strategy.scope():
-    # ############### BUILD MODEL ####################
-    logger.info('Building model ...')
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        # ############### BUILD MODEL ####################
+        logger.info('Building model ...')
 
-    transformer = Transformer(num_layers, state_size,
-                              num_attention_heads, feed_forward_layer_size,
-                              vocab_size, vocab_size,
-                              pe_input=vocab_size,
-                              pe_target=vocab_size,
-                              rate=dropout)
+        transformer = Transformer(num_layers, state_size,
+                                  num_attention_heads, feed_forward_layer_size,
+                                  vocab_size, vocab_size,
+                                  pe_input=vocab_size,
+                                  pe_target=vocab_size,
+                                  rate=dropout)
 
-    train_model = TrainModel(transformer)
+        train_model = TrainModel(transformer)
 
-    # ############### SETUP OPTIMIZERS ###############
-    # Initialize optimizers
-    # TODO : learning rate provided by arguments not used
-    logger.info('Building optimizers ...')
-    learning_rate = CustomSchedule(state_size)
+        # ############### SETUP OPTIMIZERS ###############
+        # Initialize optimizers
+        # TODO : learning rate provided by arguments not used
+        logger.info('Building optimizers ...')
+        learning_rate = CustomSchedule(state_size)
 
-    # learning_rate = 5e-3
-    optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-    ##################################################
+        # learning_rate = 5e-3
+        optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+        ##################################################
 
     # ############## SETUP TRAINING ##################
 
     logger.info('Prepare training ...')
 
-    # @tf.function
-    # def evaluate_loss_distributed_func(training_model, batch_data, evaluate_settings=None, inference_mode=None):
-    #     per_replica_results = strategy.run(training_model, args=(batch_data, evaluate_settings, inference_mode,))
-    #     results = strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_results, axis=None)
-    #
-    #     return results
-
     trainer = mlp.trainers.DefaultTrainer(optimizer,
                                           transformer,
-                                          use_mixed_precision=use_mixed_precision,)
-                                          # evaluate_loss_distributed_func=evaluate_loss_distributed_func)
+                                          use_mixed_precision=use_mixed_precision,  #)
+                                          distribution_strategy=strategy)
 
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, name="AverageLossEvaluator")
 
