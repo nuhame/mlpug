@@ -53,20 +53,50 @@ class Trainer(TFTrainerMixin, TrainerBase):
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args,
-                 trainable_variables=None,
+                 batch_data_signature=None,
+                 training_settings_signature=None,
                  distribution_strategy=None,
+                 trainable_variables=None,
                  **kwargs):
         """
 
         :param args:
-        :param trainable_variables:
+        :param batch_data_signature: Required when distribution_strategy is given.
+                                     Example, when batch data is a tuple of an input and target tensor
+                                     (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+                                      tf.TensorSpec(shape=(None, None), dtype=tf.int64),)
+
+        :param training_settings_signature: On required when distribution_strategy is given AND
+                                            you use training_settings.
+
+                                            Default is {}.
+
         :param distribution_strategy: Optional distributed training strategy
+
+        :param trainable_variables: Only required when using multiple optimizers
+
         :param kwargs:
         """
         super(DefaultTrainer, self).__init__(*args, **kwargs)
 
-        self.trainable_variables = trainable_variables
+        self.batch_data_signature = batch_data_signature
+        self.training_settings_signature = training_settings_signature
+
         self.distribution_strategy = distribution_strategy
+
+        self.trainable_variables = trainable_variables
+
+        if self.batch_data_signature is None:
+            raise TrainerInvalidException(f"Missing batch_data_signature such that the "
+                                          f"training step computation graph can be traced")
+
+        if self.training_settings_signature is None:
+            self._log.info("training_settings_signature not given, setting to empty dict, "
+                           "implying that training settings won't be used.")
+            self.training_settings_signature = {}
+
+        self._train_step_func = self._create_training_step() if self.distribution_strategy is None \
+            else self._create_distributed_training_step()
 
         if self.trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -82,10 +112,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             if len(missing_optimizer_vars) > 0:
                 raise TrainerInvalidException(f"Missing trainable variables for optimizer(s) : "
                                               f"{', '.join(missing_optimizer_vars)}")
-
-        self._train_step_func = None
-        if self.distribution_strategy is not None:
-            self._train_step_func = self._create_distributed_training_step()
 
         self._deferred_model_components_state = None
         self._deferred_optimizers_state = None
@@ -192,49 +218,42 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        if self._train_step_func is not None:
-            # loss, auxiliary_results = self._train_step_func(*batch_data, training_settings)
-            loss, auxiliary_results = self._train_step_func(*batch_data)
-        else:
-            loss, auxiliary_results = self._train_on(*batch_data, training_settings)
+        loss, auxiliary_results = self._train_step_func(batch_data, training_settings)
 
         return loss.numpy(), auxiliary_results
 
-    def _create_distributed_training_step(self):
-        train_step_signature = [
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+    def _create_train_step_signature(self):
+        return [
+            self.batch_data_signature,
+            self.training_settings_signature
         ]
 
-        @tf.function(input_signature=train_step_signature)
-        def train_on(*args):
-            print(f"training_step args = {args}")
-
-            # batch_data = args[:-1]
-            # training_settings = args[-1]
-
-            batch_data = args
-            training_settings = None
-
+    def _create_distributed_training_step(self):
+        @tf.function(input_signature=self._create_train_step_signature())
+        def training_step_func(batch_data, training_settings):
             per_replica_losses, per_replica_auxiliary_results = self.distribution_strategy.run(
                 self._train_on,
-                args=(*batch_data, training_settings,))
+                args=(batch_data, training_settings,))
 
             loss = self.distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
             # User has to reduce anything in the auxiliary_results herself
             return loss, per_replica_auxiliary_results
 
-        return train_on
+        return training_step_func
 
-    def _train_on(self, *args):
-        batch_data = args[:-1]
-        training_settings = args[-1]
+    def _create_training_step(self):
+        @tf.function(input_signature=self._create_train_step_signature())
+        def training_step_func(batch_data, training_settings):
+            return self._train_on(batch_data, training_settings)
 
-        print(f"_train_on = {batch_data}")
+        return training_step_func
 
+    def _train_on(self, batch_data, training_settings):
         loss, auxiliary_results, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
 
-        self._apply_gradients(self._process_gradients(gradients))
+        self._update_model_parameters(self._prepare_update_model_parameters(gradients))
+
+        self._after_update_model_parameters(gradients)
 
         return loss, auxiliary_results
 
@@ -267,11 +286,16 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if self._deferred_model_components_state is None:
             return False
 
-        # TODO : this actually only needs to happen when there is deferred model component state
-        #        But leaving it like this simplifies
-        self.evaluate_loss(batch_data,
-                           inference_mode=False,
-                           evaluate_settings=training_settings)
+        def dry_eval_model():
+            self.evaluate_loss(batch_data,
+                               inference_mode=False,
+                               evaluate_settings=training_settings)
+
+        if self.distribution_strategy is not None:
+            with self.distribution_strategy.scope():
+                dry_eval_model()
+        else:
+            dry_eval_model()
 
         success = super().set_model_components_state(self._deferred_model_components_state)
         if not success:
@@ -285,9 +309,16 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if self._deferred_optimizers_state is None:
             return
 
-        for optimizer_name, optimizer in self.optimizers.items():
-            trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
-            optimizer._create_all_weights(trainable_variables)
+        def create_optimizer_weights():
+            for optimizer_name, optimizer in self.optimizers.items():
+                trainable_variables = get_value_at(optimizer_name, self.trainable_variables, warn_on_failure=False)
+                optimizer._create_all_weights(trainable_variables)
+
+        if self.distribution_strategy is not None:
+            with self.distribution_strategy.scope():
+                create_optimizer_weights()
+        else:
+            create_optimizer_weights()
 
         success = super().set_optimizers_state(self._deferred_optimizers_state)
         if not success:
@@ -330,8 +361,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         :raises LossNotAvailableException
         """
 
-        print(f"_calc_gradients = {batch_data}")
-
         if not self.batch_chunk_size:
             with tf.GradientTape() as tape:
                 results = self.evaluate_loss(batch_data,
@@ -363,7 +392,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         return gradients
 
-    def _process_gradients(self, gradients):
+    def _prepare_update_model_parameters(self, gradients):
         """
 
         :param gradients: dict with gradients per provided optimizer
@@ -375,10 +404,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         """
         return gradients
 
-    def _apply_gradients(self, gradients):
+    def _update_model_parameters(self, gradients):
         for optimizer_name, optimizer in self.get_optimizers().items():
             trainable_variables = get_value_at(optimizer_name, self.trainable_variables)
             if trainable_variables is None:
                 raise MLPugException("Unexpected state :  trainable variables not found. Please file an issue.")
 
             optimizer.apply_gradients(zip(gradients[optimizer_name], trainable_variables))
+
+    def _after_update_model_parameters(self, gradients):
+        pass

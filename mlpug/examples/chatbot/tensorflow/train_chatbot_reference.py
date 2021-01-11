@@ -131,6 +131,10 @@ if __name__ == "__main__":
     experiment_name = args.experiment_name
     logger.info(f"experiment_name: {experiment_name}")
 
+    num_gpus = args.num_gpus
+    num_gpus_str = "all available" if num_gpus is None else num_gpus
+    logger.info(f"Num. GPUs to use for training: {num_gpus_str}")
+
     batch_size = args.batch_size
     logger.info(f"Batch size: {batch_size}")
 
@@ -159,6 +163,7 @@ if __name__ == "__main__":
         'batch_size': 'size'
     }
 
+    # ########### Setup datasets ##############
     logger.info('Setup data sets ...')
 
     logger.info('Loading training set ...')
@@ -166,8 +171,8 @@ if __name__ == "__main__":
     logger.info('Loading validation set ...')
     validation_dataset, _unused_ = load_sentence_pair_data(dataset_path_for('validation'), logger)
 
-    # training_dataset = training_dataset[:1920]
-    # validation_dataset = validation_dataset[:640]
+    # training_dataset = training_dataset[:19200]
+    # validation_dataset = validation_dataset[:6400]
 
     logger.debug(f"Number of sentence pairs in training set: {len(training_dataset)}")
     logger.debug(f"Number of sentence pairs in validation set: {len(validation_dataset)}")
@@ -196,10 +201,15 @@ if __name__ == "__main__":
 
     logger.info(f"Number of training batches : {len_training_dataset}")
     logger.info(f"Number of validation batches : {len_validation_dataset}")
+    # ####################################################
 
-    strategy = tf.distribute.MirroredStrategy()
+    # ########### Build model and optimizers ##############
+    devices = None
+    if num_gpus is not None:
+        devices = [f"/gpu:{i}" for i in range(num_gpus)]
+
+    strategy = tf.distribute.MirroredStrategy(devices=devices)
     with strategy.scope():
-        # ############### BUILD MODEL ####################
         logger.info('Building model ...')
 
         transformer = Transformer(num_layers, state_size,
@@ -211,7 +221,6 @@ if __name__ == "__main__":
 
         train_model = TrainModel(transformer)
 
-        # ############### SETUP OPTIMIZERS ###############
         # Initialize optimizers
         # TODO : learning rate provided by arguments not used
         logger.info('Building optimizers ...')
@@ -219,16 +228,18 @@ if __name__ == "__main__":
 
         # learning_rate = 5e-3
         optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-        ##################################################
+
+    # ####################################################
 
     # ############## SETUP TRAINING ##################
-
     logger.info('Prepare training ...')
 
     trainer = mlp.trainers.DefaultTrainer(optimizer,
                                           transformer,
-                                          use_mixed_precision=use_mixed_precision,  #)
-                                          distribution_strategy=strategy)
+                                          use_mixed_precision=use_mixed_precision,
+                                          distribution_strategy=strategy,
+                                          batch_data_signature=(tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+                                                                tf.TensorSpec(shape=(None, None), dtype=tf.int64),))
 
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, name="AverageLossEvaluator")
 

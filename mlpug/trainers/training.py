@@ -412,7 +412,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 ctl = current["training"]
 
                 try:
-                    training_settings = logs["training_settings"] if has_key(logs, "training_settings") else None
+                    # Note: Tensorflow needs a defined training_settings
+                    training_settings = logs["training_settings"] if has_key(logs, "training_settings") else {}
                     ctl["batch"]["loss"], ctl["batch"]["auxiliary_results"] = self.trainer.train_on(training_batch,
                                                                                                     training_settings)
 
