@@ -7,6 +7,9 @@ from tensorflow.python.keras.saving import hdf5_format
 import basics.base_utils as _
 
 from mlpug.trainers.training import *
+
+from mlpug.tensorflow.evaluation import create_default_gather_loss_func
+
 from mlpug.mlpug_exceptions import TrainerInvalidException, \
     TrainerStateInvalidException, \
     BatchNotChunkableException, \
@@ -53,23 +56,29 @@ class Trainer(TFTrainerMixin, TrainerBase):
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args,
+                 gather_loss_func=None,
+                 eager_mode=False,
                  batch_data_signature=None,
                  training_settings_signature=None,
                  distribution_strategy=None,
                  trainable_variables=None,
+                 name="DefaultTrainer",
                  **kwargs):
         """
 
         :param args:
-        :param batch_data_signature: Required when distribution_strategy is given.
+        :param eager_mode: If true, the training step is not wrapped in a @tf.function
+        :param batch_data_signature: Is only required when eager_mode=False
                                      Example, when batch data is a tuple of an input and target tensor
                                      (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
                                       tf.TensorSpec(shape=(None, None), dtype=tf.int64),)
 
-        :param training_settings_signature: On required when distribution_strategy is given AND
-                                            you use training_settings.
+        :param training_settings_signature: Use when you use training_settings.
+                                            Is only used when eager_mode=False
 
                                             Default is {}.
+
+                                            Note: training_settings, are the same as evaluation_settings.
 
         :param distribution_strategy: Optional distributed training strategy
 
@@ -77,8 +86,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :param kwargs:
         """
-        super(DefaultTrainer, self).__init__(*args, **kwargs)
+        if gather_loss_func is None:
+            gather_loss_func = create_default_gather_loss_func(distribution_strategy, requester=name)
 
+        super(DefaultTrainer, self).__init__(*args, gather_loss_func=gather_loss_func, **kwargs)
+
+        self.eager_mode = eager_mode
         self.batch_data_signature = batch_data_signature
         self.training_settings_signature = training_settings_signature
 
@@ -86,17 +99,25 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self.trainable_variables = trainable_variables
 
-        if self.batch_data_signature is None:
-            raise TrainerInvalidException(f"Missing batch_data_signature such that the "
-                                          f"training step computation graph can be traced")
+        if not eager_mode:
+            if self.batch_data_signature is None:
+                raise TrainerInvalidException(f"Missing batch_data_signature such that the "
+                                              f"training step computation graph can be traced")
 
-        if self.training_settings_signature is None:
-            self._log.info("training_settings_signature not given, setting to empty dict, "
-                           "implying that training settings won't be used.")
-            self.training_settings_signature = {}
+            if self.training_settings_signature is None:
+                self._log.info("training_settings_signature not given, setting to empty dict, "
+                               "implying that training settings won't be used.")
+                self.training_settings_signature = {}
 
-        self._train_step_func = self._create_training_step() if self.distribution_strategy is None \
-            else self._create_distributed_training_step()
+            self._train_step_tf_func = self._create_training_step_tf_func() if self.distribution_strategy is None \
+                else self._create_distributed_training_step_tf_func()
+
+            self._call_model_tf_func = self._create_call_model_tf_func() if self.distribution_strategy is None \
+                else self._create_distributed_call_model_tf_func()
+        else:
+            self._log.warn("Training in eager mode.")
+            self._train_step_tf_func = self._train_on
+            self._call_model_tf_func = self._call_model
 
         if self.trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -218,9 +239,16 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        loss, auxiliary_results = self._train_step_func(batch_data, training_settings)
+        loss, auxiliary_results = self._train_step_tf_func(batch_data, training_settings)
 
-        return loss.numpy(), auxiliary_results
+        loss, *_unused_results_ = self._gather_loss_func(**{
+            'loss': loss,
+            'auxiliary_results': auxiliary_results,
+            'batch': batch_data,
+            'evaluate_settings': training_settings
+        })
+
+        return loss, auxiliary_results
 
     def _create_train_step_signature(self):
         return [
@@ -228,20 +256,14 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             self.training_settings_signature
         ]
 
-    def _create_distributed_training_step(self):
+    def _create_distributed_training_step_tf_func(self):
         @tf.function(input_signature=self._create_train_step_signature())
         def training_step_func(batch_data, training_settings):
-            per_replica_losses, per_replica_auxiliary_results = self.distribution_strategy.run(
-                self._train_on,
-                args=(batch_data, training_settings,))
-
-            loss = self.distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
-            # User has to reduce anything in the auxiliary_results herself
-            return loss, per_replica_auxiliary_results
+            return self.distribution_strategy.run(self._train_on, args=(batch_data, training_settings,))
 
         return training_step_func
 
-    def _create_training_step(self):
+    def _create_training_step_tf_func(self):
         @tf.function(input_signature=self._create_train_step_signature())
         def training_step_func(batch_data, training_settings):
             return self._train_on(batch_data, training_settings)
@@ -256,6 +278,28 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         self._after_update_model_parameters(gradients)
 
         return loss, auxiliary_results
+
+    def _create_call_model_signature(self):
+        return [
+            self.batch_data_signature,              # batch_data
+            self.training_settings_signature,       # evaluate_settings
+            tf.TensorSpec(shape=(), dtype=tf.bool)  # inference_mode
+        ]
+
+    def _create_distributed_call_model_tf_func(self):
+        @tf.function(input_signature=self._create_call_model_signature())
+        def call_model_func(batch_data, evaluate_settings, inference_mode):
+            return self.distribution_strategy.run(self._call_model,
+                                                  args=(batch_data, evaluate_settings, inference_mode))
+
+        return call_model_func
+
+    def _create_call_model_tf_func(self):
+        @tf.function(input_signature=self._create_call_model_signature())
+        def call_model_func(batch_data, evaluate_settings, inference_mode):
+            return self._call_model(batch_data, evaluate_settings, inference_mode)
+
+        return call_model_func
 
     def _retrieve_trainable_variables(self):
         if len(self.optimizers) > 1:
@@ -349,6 +393,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if not (type(inference_mode) is bool):
             raise TrainerStateInvalidException("Inference mode is not set")
 
+        if not inference_mode:
+            # @tf.function on the train step level
+            return self._call_model(batch_data, evaluate_settings, inference_mode)
+        else:
+            return self._call_model_tf_func(batch_data, evaluate_settings, tf.constant(inference_mode, dtype=tf.bool))
+
+    def _call_model(self, batch_data, evaluate_settings, inference_mode):
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _calc_gradients(self, batch_data, training_settings=None):

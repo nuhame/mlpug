@@ -72,9 +72,9 @@ class ChunkableBatchDataset(Base):
 class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
+                 batch_metric_funcs,
                  model_evaluate_func=None,
                  trainer=None,
-                 batch_metric_funcs=None,
                  batch_metric_reducer_funcs=None,
                  batch_chunk_size=None,
                  batch_chunk_metric_reducer_funcs=None,
@@ -84,30 +84,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         TODO : Add more documentation
 
-        :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
-                                    Instead of providing a model_evaluate_func, you can provide a trainer instance.
-                                    Also see below.
-
-                                    IMPORTANT: it is assumed that the `model_evaluate_func` takes all
-                                    appropriate measures to disable training specific layers such as
-                                    dropout and gradient calculations.
-
-                                    Eg. for Pytorch:
-
-                                    def eval_model(batch_data, evaluate_settings):
-
-                                        my_training_model.eval()
-
-                                        with torch.no_grad():
-                                            return my_training_model(batch_data, evaluate_settings)
-
-        :type model_evaluate_func: callable
-
-        :param trainer: An optional trainer instance to evaluate a model, you can provide this instead of a
-                        custom model_evaluate_func
-        :type trainer: TrainerBase child instance
-
-        :param batch_metric_funcs: Optional. A dict with keys representing the metric names
+        :param batch_metric_funcs: A dict with keys representing the metric names
              (e.g. "loss", "recall", etc.) and the corresponding values are functions to calculate a
              metric value, or to gather information to calculate or reduce an overall metric value, also see
              batch_metric_reducer_funcs.
@@ -180,17 +157,30 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                     'recall': calc_recall
                  }
 
-            When not provided the default just forwards the loss, calculated by the trainer or model_evaluate_func
-
-                def forward_loss(loss, **kwargs):
-                    return loss, 1
-
-                {
-                    'loss': forward_loss
-                }
-
-
         :type batch_metric_funcs: dict
+
+        :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
+                                    Instead of providing a model_evaluate_func, you can provide a trainer instance.
+                                    Also see below.
+
+                                    IMPORTANT: it is assumed that the `model_evaluate_func` takes all
+                                    appropriate measures to disable training specific layers such as
+                                    dropout and gradient calculations.
+
+                                    Eg. for Pytorch:
+
+                                    def eval_model(batch_data, evaluate_settings):
+
+                                        my_training_model.eval()
+
+                                        with torch.no_grad():
+                                            return my_training_model(batch_data, evaluate_settings)
+
+        :type model_evaluate_func: callable
+
+        :param trainer: An optional trainer instance to evaluate a model, you can provide this instead of a
+                        custom model_evaluate_func
+        :type trainer: TrainerBase child instance
 
         :param batch_metric_reducer_funcs: Optional.
                  A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and

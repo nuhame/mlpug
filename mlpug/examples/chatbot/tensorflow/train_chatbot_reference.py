@@ -171,8 +171,8 @@ if __name__ == "__main__":
     logger.info('Loading validation set ...')
     validation_dataset, _unused_ = load_sentence_pair_data(dataset_path_for('validation'), logger)
 
-    # training_dataset = training_dataset[:19200]
-    # validation_dataset = validation_dataset[:6400]
+    training_dataset = training_dataset[:40000]
+    validation_dataset = validation_dataset[:12000]
 
     logger.debug(f"Number of sentence pairs in training set: {len(training_dataset)}")
     logger.debug(f"Number of sentence pairs in validation set: {len(validation_dataset)}")
@@ -236,12 +236,15 @@ if __name__ == "__main__":
 
     trainer = mlp.trainers.DefaultTrainer(optimizer,
                                           transformer,
-                                          use_mixed_precision=use_mixed_precision,
+                                          eager_mode=False,
+                                          # use_mixed_precision=use_mixed_precision,
                                           distribution_strategy=strategy,
                                           batch_data_signature=(tf.TensorSpec(shape=(None, None), dtype=tf.int64),
                                                                 tf.TensorSpec(shape=(None, None), dtype=tf.int64),))
 
-    average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, name="AverageLossEvaluator")
+    average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
+                                                            distribution_strategy=strategy,
+                                                            name="AverageLossEvaluator")
 
     callbacks = [mlp.callbacks.TestMetricsLogger(validation_dataset,
                                                  'validation',
