@@ -817,6 +817,9 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         self._activate_inference_mode(inference_mode)
 
+        if evaluate_settings is None:
+            evaluate_settings = {}
+
         results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
         return normalize_evaluation(results)
 
@@ -885,6 +888,7 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
+                 gather_loss_func=None,
                  batch_chunk_size=None,
                  use_mixed_precision=False):
         """
@@ -892,6 +896,39 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         :param optimizers: dict or list with optimizer(s), or a single optimizer instance
         :param model_components: dict or list with model components(s), or a single model instance
+        :param gather_loss_func: Required.
+                                 Function to process loss output of model, for instance, to gather loss values
+                                 from multiple devices. The loss value will be available at
+                                 `current.batch.training.loss`.
+
+                                 When a tuple is returned the first value in the tuple will be used
+                                 Although not required, MLPug's default behaviour requires the loss to be a
+                                 plain value, not a Tensor object.
+
+                                 TODO : synchronise explanation with batch_metric_funcs explanation
+                                        of MetricEvaluatorBase
+
+                                 This function are of the same type as the batch_metric_funcs of MetricEvaluatorBase
+
+                                 Examples:
+
+                                 # Simply return the loss converted from a tensor
+                                 # This is also the default function.
+                                 def gather_loss(loss, **kwargs):
+                                    return loss.item()
+
+                                 # gather loss from multiple devices
+                                 def gather_distributed_loss(auxiliary_results, **kwargs):
+                                    loss_sum = auxiliary_results['loss_sum']
+                                    num_samples = auxiliary_results['num_samples']
+
+                                    dist.reduce(loss_sum, 0)
+                                    dist.reduce(num_samples, 0)
+
+                                    loss = loss_sum/num_samples
+
+                                    return loss.item(), loss_sum, num_samples
+
         :param batch_chunk_size: optional batch chunk size (int)
                                  If given, batches are processed in chunks of size `batch_chunk_size` samples to
                                  calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
@@ -913,6 +950,11 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         optimizers = convert_to_dict("optimizer", optimizers)
 
         super().__init__(model_components, optimizers)
+
+        if not callable(gather_loss_func):
+            raise TrainerInvalidException("No gather_loss_func provided, unknown how to handle raw loss.")
+
+        self._gather_loss_func = gather_loss_func
 
         self.batch_chunk_size = batch_chunk_size
         if self.batch_chunk_size is not None:

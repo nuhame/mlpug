@@ -1,23 +1,62 @@
+import os
+
 import torch
+import torch.distributed as dist
 
 from mlpug.evaluation import MetricEvaluatorBase
 
 from mlpug.utils import is_chunkable
 
+from basics.logging import get_logger
 
-def forward_loss(loss, **kwargs):
+logger = get_logger(os.path.basename(__file__))
+
+
+# ####### DEFAULT GATHER LOSS METHODS ########
+def gather_loss(loss, **kwargs):
     return loss.item(), 1
+
+
+def create_gather_distributed_loss_func():
+
+    # Pytorch Distributed Data Parallel averages gradients, so to reflect this in the loss, it needs to be averaged
+    def gather_distributed_loss(loss, **kwargs):
+        loss_sum = dist.reduce(loss, 0)
+        num_devices = dist.get_world_size()
+        loss = loss_sum/num_devices
+
+        return loss.item(), 1
+
+    return gather_distributed_loss
+
+
+def create_default_gather_loss_func(requester=None):
+    if requester is None:
+        requester = ''
+    else:
+        requester += ' : '
+
+    if dist.is_initialized():
+        logger.info(f"{requester}Using default distributed gather loss function")
+        gather_loss_func = create_gather_distributed_loss_func()
+    else:
+        logger.info(f"{requester}Using default gather loss function")
+        gather_loss_func = gather_loss
+
+    return gather_loss_func
+# ############################################
 
 
 class MetricEvaluator(MetricEvaluatorBase):
 
     def __init__(self, *args, batch_metric_funcs=None, name="MetricEvaluator", **kwargs):
+
         if batch_metric_funcs is None:
             batch_metric_funcs = {
-                "loss": forward_loss
+                "loss": create_default_gather_loss_func(requester=name)
             }
 
-        super().__init__(*args, batch_metric_funcs=batch_metric_funcs, name=name, **kwargs)
+        super().__init__(batch_metric_funcs, *args, name=name, **kwargs)
 
     def _create_default_model_evaluate_func(self):
 
