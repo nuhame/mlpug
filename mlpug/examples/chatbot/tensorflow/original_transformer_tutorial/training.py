@@ -16,9 +16,9 @@ class TrainModel(tf.keras.Model):
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
 
         predictions, _ = self.transformer(inp, tar_inp, True, enc_padding_mask, combined_mask, dec_padding_mask)
-        loss = loss_function(tar_real, predictions)
+        loss, summed_loss, num_samples = loss_function(tar_real, predictions)
 
-        return loss
+        return loss, summed_loss, num_samples
 
 
 def create_padding_mask(seq):
@@ -63,7 +63,10 @@ def loss_function(real, pred):
     mask = tf.cast(mask, dtype=loss_.dtype)
     loss_ *= mask
 
-    return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
+    summed_loss = tf.reduce_sum(loss_)
+    num_samples = tf.reduce_sum(mask)
+
+    return summed_loss/num_samples, summed_loss, num_samples
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
