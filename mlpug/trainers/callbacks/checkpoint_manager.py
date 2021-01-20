@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 
@@ -146,10 +147,28 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return self._monitor(iter_name, logs, force_monitoring=force_monitoring)
 
-    def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
-        self._log.info(f"Training ended, storing final model ...")
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
+        status = 'ended'
+        if stopped_early:
+            status = 'stopped early'
+
+        if stopped_on_error:
+            status = 'stopped on error'
+
+        if interrupted:
+            status = 'interrupted'
+
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        self._log.info(f"Training {status}, ...")
+        self._log.info(f"... storing latest model ...")
         latest_model_fname = self._create_model_checkpoint()
         success = (latest_model_fname is not None)
+
+        if stopped_early or interrupted:
+            self._log.info(f"... storing training checkpoint ...")
+            training_checkpoint_fname = self._create_training_checkpoint()
+            success &= (training_checkpoint_fname is not None)
 
         if abs(self._best_model_quality) != float('Inf') and self._best_model_iter is not None:
             self._log.info(f"Best model quality reached {self._metric_to_monitor}={self._best_model_quality} "
