@@ -148,7 +148,24 @@ class MetricsLoggerBase(Callback):
                           start_batch,
                           start_update_iter):
 
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
+        will_log_window_average_metrics = MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode)
+
+        if not self.instance_valid():
+            if will_log_window_average_metrics:
+                self._log.error(f"{self} is not valid, unable to set up averaging window ... ")
+            else:
+                self._log.error(f"{self} is not valid, skipping this hook ... ")
+            return False
+
+        if will_log_window_average_metrics and \
+                (self._batch_averaging_window is None or self._batch_averaging_window <= 0):
+            self._log.error(f"A valid batch processing window is required for "
+                            f"metric logging mode ({self._logging_mode}, the {self} will not function")
+            self._valid = False
+
+            return False
+
+        if will_log_window_average_metrics:
             self._init_metric_windows()
 
         return True
@@ -333,12 +350,6 @@ class MetricsLoggerBase(Callback):
                             f"the {self} will not function")
             self._valid = False
 
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode) and \
-                self._batch_averaging_window <= 0:
-            self._log.error(f"A valid batch processing window is required for "
-                            f"metric logging mode ({self._logging_mode}, the {self} will not function")
-            self._valid = False
-
         if self._log_condition_func is not None and not callable(self._log_condition_func):
             self._log.error(f"The log condition function must be callable, "
                             f"metric logging mode ({self._logging_mode}, the {self} will not function")
@@ -385,7 +396,7 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                 self._valid = False
                 return False
 
-        return self.on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
+        return super().on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
 
 
 class TestMetricsLogger(MetricsLoggerBase):
@@ -415,6 +426,33 @@ class TestMetricsLogger(MetricsLoggerBase):
                          **kwargs)
 
         self._dataset_iterator = None
+
+    def on_training_start(self,
+                          num_epochs,
+                          num_batches_per_epoch,
+                          start_epoch,
+                          start_batch,
+                          start_update_iter):
+
+        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
+            if self._batch_averaging_window is None:
+                try:
+                    self._batch_averaging_window = len(self._dataset)
+                    if self._batch_averaging_window == math.inf:
+                        self._log.error(f"The batch average window of the {self._dataset_name} data set is infinite, "
+                                        f"unable to calculate window average. "
+                                        f"Please set a finite batch_processing_window during construction of "
+                                        f"this TestMetricsLogger.")
+                        self._valid = False
+                    else:
+                        self._log.debug(f"Set batch averaging window to number of batches in "
+                                        f"{self._dataset_name} data set : {self._batch_averaging_window}")
+                except Exception as e:
+                    _.log_exception(self._log, f"Unable to assess data set length to set the batch averaging window, "
+                                               f"{self} will not function", e)
+                    self._valid = False
+
+        return super().on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
 
     def on_epoch_start(self, logs):
         """
@@ -455,21 +493,5 @@ class TestMetricsLogger(MetricsLoggerBase):
         if not hasattr(self._dataset, '__iter__'):
             self._log.error(f"The given dataset {str(self._dataset)} is not iterable, the {self} will not function")
             self._valid = False
-
-        if self._batch_averaging_window is None:
-            try:
-                self._batch_averaging_window = len(self._dataset)
-                if self._batch_averaging_window == math.inf:
-                    self._log.error(f"The batch average window of the {self._dataset_name} data set is infinite, "
-                                    f"unable to calculate window average. Please set a finite batch_processing_window "
-                                    f"during construction of this TestMetricsLogger.")
-                    self._valid = False
-                else:
-                    self._log.debug(f"Set batch averaging window to number of batches in "
-                                    f"{self._dataset_name} data set : {self._batch_averaging_window}")
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to assess data set length to set the batch averaging window, "
-                                           f"{self} will not function", e)
-                self._valid = False
 
         super()._validate()

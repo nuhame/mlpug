@@ -104,15 +104,6 @@ class ChatbotTrainer(mlp.trainers.DefaultTrainer):
                 nn.utils.clip_grad_norm_(self.training_model.parameters(), clip)
 
 
-def calc_loss(loss, **kwargs):
-    if distributed:
-        dist.reduce(loss, 0)
-        if args.local_rank == 0:
-            loss /= float(dist.get_world_size())
-
-    return loss.item(), 1
-
-
 if __name__ == "__main__":
 
     parser = create_argument_parser()
@@ -147,6 +138,7 @@ if __name__ == "__main__":
         logger_name += f" (WORKER {args.local_rank})"
 
     logger = get_logger(logger_name)
+    mlp.logging.use_fancy_colors()
 
     if distributed and single_process_data_parallel:
         logger.warn("The num_gpus argument will be ignored in Distributed Data Parallel mode. "
@@ -164,9 +156,9 @@ if __name__ == "__main__":
                      "use distributed data parallel mode instead")
         exit(-1)
 
-    # if is_first_worker:
-    #     import pydevd_pycharm
-    #     pydevd_pycharm.settrace('192.168.178.85', port=53483, stdoutToServer=True, stderrToServer=True)
+    if args.remote_debug and is_first_worker:
+        import pydevd_pycharm
+        pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     seed = args.seed
     logger.info(f"Seed : {seed}")
@@ -291,7 +283,6 @@ if __name__ == "__main__":
     training_sampler = None
     validation_sampler = None
     if distributed:
-        # TODO : do sampler.set_epoch(), at the beginning of each epoch?
         training_sampler = torch.utils.data.distributed.DistributedSampler(training_dataset)
         validation_sampler = torch.utils.data.distributed.DistributedSampler(validation_dataset)
 
@@ -364,18 +355,18 @@ if __name__ == "__main__":
                              },
                              use_mixed_precision=use_mixed_precision)
 
-    average_loss_evaluator = mlp.evaluation.MetricEvaluator(
-        trainer=trainer,
-        batch_metric_funcs={
-            'loss': calc_loss
-        },
-        name="AverageLossEvaluator")
+    average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, name="AverageLossEvaluator")
 
-    callbacks = [TeacherForcingController(name="TeacherForcingController"),
-                 mlp.callbacks.TestMetricsLogger(validation_dataset_loader,
-                                                 'validation',
-                                                 metric_evaluator=average_loss_evaluator),
-                 ]
+    callbacks = []
+    if distributed:
+        callbacks += [mlp.callbacks.DistributedSamplerManager(training_sampler, name="SamplerManager[training]"),
+                      mlp.callbacks.DistributedSamplerManager(validation_sampler, name="SamplerManager[validation]")]
+
+    callbacks += [TeacherForcingController(name="TeacherForcingController"),
+                  mlp.callbacks.TrainingMetricsLogger(metric_evaluator=average_loss_evaluator),
+                  mlp.callbacks.TestMetricsLogger(validation_dataset_loader,
+                                                  dataset_name='validation',
+                                                  metric_evaluator=average_loss_evaluator)]
 
     if is_first_worker:
         callbacks += [

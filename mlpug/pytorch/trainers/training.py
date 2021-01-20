@@ -8,8 +8,6 @@ import basics.base_utils as _
 
 from mlpug.trainers.training import *
 
-from mlpug.pytorch.evaluation import create_default_gather_loss_func
-
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
 from mlpug.utils import is_chunkable
 
@@ -41,11 +39,8 @@ class Trainer(PTTrainerMixin, TrainerBase):
 
 class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, gather_loss_func=None, scaler=None, name="DefaultTrainer", **kwargs):
-        if gather_loss_func is None:
-            gather_loss_func = create_default_gather_loss_func(requester=name)
-
-        super(DefaultTrainer, self).__init__(*args, gather_loss_func=gather_loss_func, **kwargs)
+    def __init__(self, *args, scaler=None, name="DefaultTrainer", **kwargs):
+        super(DefaultTrainer, self).__init__(*args, **kwargs)
 
         self._scaler = scaler
 
@@ -123,13 +118,6 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         self._reset_gradients()
 
         loss, auxiliary_results = self._calc_gradients(batch_data, training_settings=training_settings)
-
-        loss, *_unused_results_ = self._gather_loss_func(**{
-            'loss': loss,
-            'auxiliary_results': auxiliary_results,
-            'batch': batch_data,
-            'evaluate_settings': training_settings
-        })
 
         self._prepare_update_model_parameters()
 

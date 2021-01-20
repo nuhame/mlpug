@@ -28,7 +28,7 @@ class EncoderRNN(nn.Module):
 
         # Batch dimension should be second (for partitioning over multiple GPUs)
         # But pack_padded_sequence requires a 1D list
-        input_lengths = input_lengths.squeeze(0)
+        input_lengths = input_lengths.squeeze(0).cpu()
         # Pack padded batch of sequences for RNN module
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, enforce_sorted=self.enforce_sorted)
 

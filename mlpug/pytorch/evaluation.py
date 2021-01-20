@@ -14,18 +14,20 @@ logger = get_logger(os.path.basename(__file__))
 
 # ####### DEFAULT GATHER LOSS METHODS ########
 def gather_loss(loss, **kwargs):
-    return loss.item(), 1
+    loss = loss.item()
+    return loss, loss, 1
 
 
 def create_gather_distributed_loss_func():
 
     # Pytorch Distributed Data Parallel averages gradients, so to reflect this in the loss, it needs to be averaged
     def gather_distributed_loss(loss, **kwargs):
-        loss_sum = dist.reduce(loss, 0)
+        loss_sum = loss
+        dist.reduce(loss_sum, 0)
         num_devices = dist.get_world_size()
         loss = loss_sum/num_devices
 
-        return loss.item(), 1
+        return loss.item(), loss_sum.item(), num_devices
 
     return gather_distributed_loss
 

@@ -13,7 +13,8 @@ logger = get_logger(os.path.basename(__file__))
 
 # ####### DEFAULT GATHER LOSS METHODS ########
 def gather_loss(loss, **kwargs):
-    return loss.numpy(), 1
+    loss = loss.numpy()
+    return loss, loss, 1
 
 
 def create_gather_distributed_loss_func(distribution_strategy):
@@ -21,8 +22,9 @@ def create_gather_distributed_loss_func(distribution_strategy):
     # Tensorflow distribution strategies sum gradients, so to reflect this in the loss, it needs to be summed
     def gather_distributed_loss(loss, **kwargs):
         loss = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, loss, axis=None)
+        loss = loss.numpy()
 
-        return loss.numpy(), 1
+        return loss, loss, 1
 
     return gather_distributed_loss
 
