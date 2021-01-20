@@ -76,15 +76,15 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.experiment_data = experiment_data
 
         self.init_logs = None
-        self.logs = {}
+        self.logs = {
+            "cb_calls_success": True
+        }
 
         self._previous_batch_duration = None
 
         self._metric_windows = {}
 
         self._stop_training = False
-
-        self._callback_calls_successful = True
 
         if not self._validate():
             return
@@ -108,7 +108,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         if not self._call_callbacks("set_training_manager", self):
             self._valid = False
-            self._callback_calls_successful = False
+            self.logs["cb_calls_success"] = False
             self._log.error("One or more issues occurred while providing this training manager instance "
                             "to the provided callbacks")
 
@@ -123,8 +123,15 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         try:
             self._train()
         except KeyboardInterrupt:
-            sys.stdout.write("\n\n")
+            self._update_cb_success(self._call_callbacks('on_training_ended',
+                                                         stopped_early=False,
+                                                         stopped_on_error=False,
+                                                         interrupted=True,
+                                                         callback_calls_success=self.logs["cb_calls_success"]))
+
+            sys.stdout.write("\n")
             self._log.info('Training process interrupted by you ... 🤷🏻‍♂️\n')
+            sys.stdout.flush()
             # TODO : deal with the distributed training case, wait to return until
             #  all workers have stopped training
             self.stop_training()
@@ -342,15 +349,26 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         epoch_stopped_early = False
         training_stopped_on_error = False
 
-        cb_calls_success = self._callback_calls_successful
+        if self.init_logs is not None:
+            self._log.debug("Setting provided initial log object ...")
 
-        cb_calls_success &= self._call_callbacks('on_training_start',
-                                                 self.num_epochs,
-                                                 self.num_batches_per_epoch,
-                                                 self.epoch,
-                                                 self.batch_step,
-                                                 self.global_iter)
+            cb_calls_success = self.logs["cb_calls_success"]
+            self.logs = self.init_logs
+            self.logs["cb_calls_success"] &= cb_calls_success
 
+            self.init_logs = None
+
+        # override log state for certain parameters given at construction
+        self.logs["final_epoch"] = self.num_epochs - 1
+        self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
+
+        self.logs["cb_calls_success"] &= self._call_callbacks('on_training_start',
+                                                              self.num_epochs,
+                                                              self.num_batches_per_epoch,
+                                                              self.epoch,
+                                                              self.batch_step,
+                                                              self.global_iter)
+        update = self._update_cb_success
         for epoch in range(self.epoch, self.num_epochs):
             self.epoch = epoch
 
@@ -359,29 +377,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 self._log.warn("Training stopped early")
                 break
 
-            if self.init_logs is not None:
-                self._log.debug("Setting provided initial logs object ...")
-                self.logs = self.init_logs
+            # Keep anything in the logs from the previous epoch that is non-standard
+            # Reset all other values
+            self.logs = {**self.logs, **{
+                "epoch": self.epoch,
+                "current": None,
+            }}
 
-                # override log state for certain parameters given at construction
-                self.logs["final_epoch"] = self.num_epochs-1
-                self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
-                self.init_logs = None
-            else:
-                # Keep anything in the logs from the previous epoch that is non-standard
-                self.logs = self.logs or {}
-                self.logs = {**self.logs, **{
-                    "final_epoch": self.num_epochs - 1,
-                    "final_batch_step": self.num_batches_per_epoch - 1,
-
-                    "epoch": self.epoch,
-
-                    "current": None,
-
-                    "cb_calls_success": cb_calls_success
-                }}
-
-            # It's a bit shorter
+            # just a bit shorter
             logs = self.logs
 
             epoch_stopped_early = False
@@ -390,7 +393,6 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             training_dataset = self._prepare_training_dataset()
             current = None
-            ctl = None
             for training_batch in iter(training_dataset):
                 batch_training_start_time = time.time()
 
@@ -404,20 +406,22 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 if epoch_start:
                     epoch_start = False
-                    logs["cb_calls_success"] &= self._call_callbacks('on_epoch_start', logs)
+                    update(self._call_callbacks('on_epoch_start', logs))
 
-                logs["cb_calls_success"] &= self._call_callbacks('on_batch_training_start', training_batch, logs)
+                update(self._call_callbacks('on_batch_training_start', training_batch, logs))
 
                 current = logs["current"]
                 ctl = current["training"]
-
                 try:
                     # Note: Tensorflow needs a defined training_settings
                     training_settings = logs["training_settings"] if has_key(logs, "training_settings") else {}
-                    ctl["batch"]["loss"], ctl["batch"]["auxiliary_results"] = self.trainer.train_on(training_batch,
-                                                                                                    training_settings)
+                    loss, auxiliary_results = self.trainer.train_on(training_batch, training_settings)
+
+                    ctl["batch"]["loss"] = loss
+                    ctl["batch"]["auxiliary_results"] = auxiliary_results
 
                     self._update_window("training.batch.loss")
+
                     ctl["window_average"]["loss"] = self._calc_window_average("training.batch.loss")
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
@@ -429,19 +433,18 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                     _.log_exception(self._log, err_msg, e)
 
-                    logs["cb_calls_success"] &= self._call_callbacks('on_batch_training_failed', e, logs)
+                    update(self._call_callbacks('on_batch_training_failed', e, logs))
                     training_stopped_on_error = True
 
                 if training_stopped_on_error:
                     break
 
-                logs["cb_calls_success"] &= self._call_callbacks('on_batch_training_completed', training_batch, logs)
+                update(self._call_callbacks('on_batch_training_completed', training_batch, logs))
 
                 self.batch_step += 1
                 self.global_iter += 1
 
                 batch_training_end_time = time.time()
-
                 batch_duration = batch_training_end_time - batch_training_start_time
 
                 set_value_at("training_params.batch.duration", current, batch_duration)
@@ -464,20 +467,19 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 logs["cb_calls_success"] &= self._call_callbacks('on_epoch_completed', logs)
 
-            cb_calls_success &= logs["cb_calls_success"]
-
             if training_stopped_on_error:
                 break
 
             self.batch_step = 0
 
-        cb_calls_success &= self._call_callbacks('on_training_ended',
-                                                 stopped_early=epoch_stopped_early or training_stopped_early,
-                                                 stopped_on_error=training_stopped_on_error,
-                                                 callback_calls_success=cb_calls_success)
+        update(self._call_callbacks('on_training_ended',
+                                    stopped_early=epoch_stopped_early or training_stopped_early,
+                                    stopped_on_error=training_stopped_on_error,
+                                    interrupted=False,
+                                    callback_calls_success=self.logs["cb_calls_success"]))
 
         if not training_stopped_on_error:
-            if cb_calls_success:
+            if self.logs["cb_calls_success"]:
                 self._log.info("Training completed. All good! ❤️")
             else:
                 self._log.warn("Training completed, but one or more callback errors occurred. "
@@ -531,6 +533,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 success = False
 
         return success
+
+    def _update_cb_success(self, cb_calls_success):
+        self.logs["cb_calls_success"] &= cb_calls_success
 
     def _update_window(self, metric_path):
         try:
