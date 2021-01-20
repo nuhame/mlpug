@@ -111,11 +111,12 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
         """
 
         :param stopped_early:
         :param stopped_on_error:
+        :param interrupted:
         :param callback_calls_success:
 
         :return: success (True or False)
