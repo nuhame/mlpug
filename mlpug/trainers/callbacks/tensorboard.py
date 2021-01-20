@@ -337,7 +337,7 @@ class Tensorboard(Callback):
 
         return self._write(current, epoch)
 
-    def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
         self._writer.close()
         return True
 
@@ -642,7 +642,7 @@ class AutoTensorboard(Callback):
 
         return self._write(current, epoch, writer_type=METRIC_WRITER, batch_level=False)
 
-    def on_training_ended(self, stopped_early, stopped_on_error, callback_calls_success):
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
         for writer in self._writers.values():
             writer.close()
         return True
