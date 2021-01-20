@@ -8,8 +8,6 @@ import basics.base_utils as _
 
 from mlpug.trainers.training import *
 
-from mlpug.tensorflow.evaluation import create_default_gather_loss_func
-
 from mlpug.mlpug_exceptions import TrainerInvalidException, \
     TrainerStateInvalidException, \
     BatchNotChunkableException, \
@@ -56,7 +54,6 @@ class Trainer(TFTrainerMixin, TrainerBase):
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args,
-                 gather_loss_func=None,
                  eager_mode=False,
                  batch_data_signature=None,
                  training_settings_signature=None,
@@ -86,10 +83,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :param kwargs:
         """
-        if gather_loss_func is None:
-            gather_loss_func = create_default_gather_loss_func(distribution_strategy, requester=name)
-
-        super(DefaultTrainer, self).__init__(*args, gather_loss_func=gather_loss_func, **kwargs)
+        super(DefaultTrainer, self).__init__(*args, **kwargs)
 
         self.eager_mode = eager_mode
         self.batch_data_signature = batch_data_signature
@@ -240,13 +234,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             self._first_batch = False
 
         loss, auxiliary_results = self._train_step_tf_func(batch_data, training_settings)
-
-        loss, *_unused_results_ = self._gather_loss_func(**{
-            'loss': loss,
-            'auxiliary_results': auxiliary_results,
-            'batch': batch_data,
-            'evaluate_settings': training_settings
-        })
 
         return loss, auxiliary_results
 

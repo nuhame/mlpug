@@ -95,16 +95,12 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             # TODO : better deal with num_batches_per_epoch special cases (e.g. Numpy number)
             # TODO : deal with the case when we don't have SlidingWindows
             if float(self.num_batches_per_epoch) != math.inf and self.num_batches_per_epoch > 0:
-                self._metric_windows['training.batch.loss'] = \
-                    SlidingWindow(length=self.num_batches_per_epoch, name='training.batch.loss')
-
                 self._metric_windows['training_params.batch.duration'] = \
                     SlidingWindow(length=self.num_batches_per_epoch, name='training_params.batch.duration')
         except Exception as e:
             self._valid = False
             _.log_exception(self._log,
-                            "Unable to setup sliding window for training loss and batch training duration",
-                            e)
+                            "Unable to setup sliding window for training loss and batch training duration", e)
 
         if not self._call_callbacks("set_training_manager", self):
             self._valid = False
@@ -362,13 +358,15 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.logs["final_epoch"] = self.num_epochs - 1
         self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
 
-        self.logs["cb_calls_success"] &= self._call_callbacks('on_training_start',
-                                                              self.num_epochs,
-                                                              self.num_batches_per_epoch,
-                                                              self.epoch,
-                                                              self.batch_step,
-                                                              self.global_iter)
         update = self._update_cb_success
+
+        update(self._call_callbacks('on_training_start',
+                                    self.num_epochs,
+                                    self.num_batches_per_epoch,
+                                    self.epoch,
+                                    self.batch_step,
+                                    self.global_iter))
+
         for epoch in range(self.epoch, self.num_epochs):
             self.epoch = epoch
 
@@ -384,15 +382,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 "current": None,
             }}
 
-            # just a bit shorter
-            logs = self.logs
-
-            epoch_stopped_early = False
-
-            epoch_start = True
-
             training_dataset = self._prepare_training_dataset()
+
+            update(self._call_callbacks('on_epoch_start', self.logs))
+
+            logs = self.logs  # just a bit shorter
             current = None
+            epoch_stopped_early = False
             for training_batch in iter(training_dataset):
                 batch_training_start_time = time.time()
 
@@ -402,27 +398,19 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     self._log.warn("Training epoch stopped early")
                     break
 
-                logs["current"] = self._init_current_logs()
-
-                if epoch_start:
-                    epoch_start = False
-                    update(self._call_callbacks('on_epoch_start', logs))
+                current = self._init_current_logs()
+                logs["current"] = current
 
                 update(self._call_callbacks('on_batch_training_start', training_batch, logs))
-
-                current = logs["current"]
-                ctl = current["training"]
                 try:
                     # Note: Tensorflow needs a defined training_settings
-                    training_settings = logs["training_settings"] if has_key(logs, "training_settings") else {}
-                    loss, auxiliary_results = self.trainer.train_on(training_batch, training_settings)
+                    if not has_key(logs, "training_settings"):
+                        logs["training_settings"] = {}
 
-                    ctl["batch"]["loss"] = loss
-                    ctl["batch"]["auxiliary_results"] = auxiliary_results
+                    loss, auxiliary_results = self.trainer.train_on(training_batch, logs["training_settings"])
 
-                    self._update_window("training.batch.loss")
-
-                    ctl["window_average"]["loss"] = self._calc_window_average("training.batch.loss")
+                    set_value_at("training.batch.loss", current, loss)
+                    set_value_at("training.batch.auxiliary_results", current, auxiliary_results)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -448,7 +436,6 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 batch_duration = batch_training_end_time - batch_training_start_time
 
                 set_value_at("training_params.batch.duration", current, batch_duration)
-
                 self._update_window("training_params.batch.duration")
 
                 self._previous_batch_duration = batch_duration
@@ -460,12 +447,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     break
 
             if not (epoch_stopped_early or training_stopped_on_error):
-                ctpl = current["training_params"]
+                mean_batch_duration = self._calc_window_average("training_params.batch.duration")
+                epoch_duration = self._calc_window_sum("training_params.batch.duration")
 
-                ctpl["window_average"]["duration"] = self._calc_window_average("training_params.batch.duration")
-                ctpl["epoch"]["duration"] = self._calc_window_sum("training_params.batch.duration")
+                set_value_at("training_params.window_average.duration", current, mean_batch_duration)
+                set_value_at("training_params.epoch.duration", current, epoch_duration)
 
-                logs["cb_calls_success"] &= self._call_callbacks('on_epoch_completed', logs)
+                update(self._call_callbacks('on_epoch_completed', logs))
 
             if training_stopped_on_error:
                 break
@@ -495,9 +483,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             "training": {
                 "batch": {},
-                "window_average": {
-                    "loss": self._calc_window_average("training.batch.loss")
-                },
+                "window_average": {},
                 "dataset": {},
             },
 
@@ -893,7 +879,6 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
-                 gather_loss_func=None,
                  batch_chunk_size=None,
                  use_mixed_precision=False):
         """
@@ -901,38 +886,6 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         :param optimizers: dict or list with optimizer(s), or a single optimizer instance
         :param model_components: dict or list with model components(s), or a single model instance
-        :param gather_loss_func: Required.
-                                 Function to process loss output of model, for instance, to gather loss values
-                                 from multiple devices. The loss value will be available at
-                                 `current.batch.training.loss`.
-
-                                 When a tuple is returned the first value in the tuple will be used
-                                 Although not required, MLPug's default behaviour requires the loss to be a
-                                 plain value, not a Tensor object.
-
-                                 TODO : synchronise explanation with batch_metric_funcs explanation
-                                        of MetricEvaluatorBase
-
-                                 This function are of the same type as the batch_metric_funcs of MetricEvaluatorBase
-
-                                 Examples:
-
-                                 # Simply return the loss converted from a tensor
-                                 # This is also the default function.
-                                 def gather_loss(loss, **kwargs):
-                                    return loss.item()
-
-                                 # gather loss from multiple devices
-                                 def gather_distributed_loss(auxiliary_results, **kwargs):
-                                    loss_sum = auxiliary_results['loss_sum']
-                                    num_samples = auxiliary_results['num_samples']
-
-                                    dist.reduce(loss_sum, 0)
-                                    dist.reduce(num_samples, 0)
-
-                                    loss = loss_sum/num_samples
-
-                                    return loss.item(), loss_sum, num_samples
 
         :param batch_chunk_size: optional batch chunk size (int)
                                  If given, batches are processed in chunks of size `batch_chunk_size` samples to
@@ -955,11 +908,6 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         optimizers = convert_to_dict("optimizer", optimizers)
 
         super().__init__(model_components, optimizers)
-
-        if not callable(gather_loss_func):
-            raise TrainerInvalidException("No gather_loss_func provided, unknown how to handle raw loss.")
-
-        self._gather_loss_func = gather_loss_func
 
         self.batch_chunk_size = batch_chunk_size
         if self.batch_chunk_size is not None:

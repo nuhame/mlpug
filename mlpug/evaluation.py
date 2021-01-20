@@ -18,9 +18,9 @@ def forward_loss(loss, **kwargs):
 
 def default_metric_reducer_func(batch_metrics_list):
     # unzip
-    metric_list, num_samples_list = list(zip(*batch_metrics_list))
+    _, metric_sum_list, num_samples_list = list(zip(*batch_metrics_list))
 
-    metric_sum = sum(metric_list)
+    metric_sum = sum(metric_sum_list)
     num_samples = sum(num_samples_list)
 
     metric = metric_sum/num_samples

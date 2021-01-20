@@ -37,35 +37,6 @@ def create_dataset_generator(pairs):
     return generator
 
 
-def create_gather_distributed_loss_func(distribution_strategy):
-
-    # Tensorflow distribution strategies sum gradients, so to reflect this in the loss, it needs to be summed
-    def gather_distributed_loss(auxiliary_results, **kwargs):
-        loss_sum_per_replica = auxiliary_results[0]
-        num_samples_per_replica = auxiliary_results[1]
-
-        loss_sum = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, loss_sum_per_replica, axis=None)
-        num_samples = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, num_samples_per_replica, axis=None)
-
-        loss = loss_sum/num_samples
-
-        return loss.numpy(), loss_sum.numpy(), num_samples.numpy()
-
-    return gather_distributed_loss
-
-
-def calc_loss_average(batch_metrics_list):
-    # unzip (we don't care about the average here)
-    _, loss_sum_list, num_samples_list = list(zip(*batch_metrics_list))
-
-    loss_sum = sum(loss_sum_list)
-    num_samples = sum(num_samples_list)
-
-    loss = loss_sum / num_samples
-
-    return loss, loss_sum, num_samples
-
-
 def prepare_dataset(raw_dataset, tf_encode, filter_sequence_length):
     dataset = tf.data.Dataset.from_generator(
         create_dataset_generator(raw_dataset),
@@ -82,8 +53,21 @@ def prepare_dataset(raw_dataset, tf_encode, filter_sequence_length):
     return dataset
 
 
-def calc_loss(loss, **kwargs):
-    return loss.item(), 1
+def create_gather_distributed_loss_func(distribution_strategy):
+
+    # Tensorflow distribution strategies sum gradients, so to reflect this in the loss, it needs to be summed
+    def gather_distributed_loss(auxiliary_results, **kwargs):
+        loss_sum_per_replica = auxiliary_results[0]
+        num_samples_per_replica = auxiliary_results[1]
+
+        loss_sum = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, loss_sum_per_replica, axis=None)
+        num_samples = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, num_samples_per_replica, axis=None)
+
+        loss = loss_sum/num_samples
+
+        return loss.numpy(), loss_sum.numpy(), num_samples.numpy()
+
+    return gather_distributed_loss
 
 
 if __name__ == "__main__":
@@ -105,10 +89,11 @@ if __name__ == "__main__":
         type=int, required=False, default=3072,
         help='Element-wise feed forward layer size')
 
-    # import pydevd_pycharm
-    # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
-
     args = parser.parse_args()
+
+    if args.remote_debug:
+        import pydevd_pycharm
+        pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     mlp.logging.use_fancy_colors()
 
@@ -263,28 +248,26 @@ if __name__ == "__main__":
     # ############## SETUP TRAINING ##################
     logger.info('Prepare training ...')
 
-    gather_distributed_loss_func = create_gather_distributed_loss_func(distribution_strategy=strategy)
-
     trainer = mlp.trainers.DefaultTrainer(optimizer,
                                           transformer,
                                           eager_mode=False,
                                           # use_mixed_precision=use_mixed_precision,
                                           distribution_strategy=strategy,
                                           batch_data_signature=(tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-                                                                tf.TensorSpec(shape=(None, None), dtype=tf.int64),),
-                                          gather_loss_func=gather_distributed_loss_func)
+                                                                tf.TensorSpec(shape=(None, None), dtype=tf.int64),))
+
+    # The default gather_loss_func doesn't take masking in to account
+    gather_loss_func = create_gather_distributed_loss_func(strategy)
 
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
                                                             distribution_strategy=strategy,
                                                             batch_metric_funcs={
-                                                                "loss": gather_distributed_loss_func
-                                                            },
-                                                            batch_metric_reducer_funcs={
-                                                                "loss": calc_loss_average
+                                                                "loss": gather_loss_func
                                                             },
                                                             name="AverageLossEvaluator")
 
-    callbacks = [mlp.callbacks.TestMetricsLogger(validation_dataset,
+    callbacks = [mlp.callbacks.TrainingMetricsLogger(metric_evaluator=average_loss_evaluator),
+                 mlp.callbacks.TestMetricsLogger(validation_dataset,
                                                  'validation',
                                                  metric_evaluator=average_loss_evaluator,
                                                  batch_averaging_window=len_validation_dataset),

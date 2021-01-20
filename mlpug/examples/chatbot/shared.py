@@ -89,4 +89,9 @@ def create_argument_parser(description='Train reference chatbot on processed sen
         type=int, required=False, default=0,
         help='Random seed to use to ensure same random split at each restart')
 
+    parser.add_argument(
+        '--remote-debug',
+        action='store_true',
+        help="If specified, remote debugging will be enabled")
+
     return parser
