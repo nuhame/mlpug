@@ -384,10 +384,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
             training_dataset = self._prepare_training_dataset()
 
-            update(self._call_callbacks('on_epoch_start', self.logs))
-
             logs = self.logs  # just a bit shorter
             current = None
+            epoch_started = True
             epoch_stopped_early = False
             for training_batch in iter(training_dataset):
                 batch_training_start_time = time.time()
@@ -400,6 +399,11 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 current = self._init_current_logs()
                 logs["current"] = current
+
+                # on_epoch_start needs to be called in the loop, because some callbacks might need the current object
+                if epoch_started:
+                    update(self._call_callbacks('on_epoch_start', self.logs))
+                    epoch_started = False
 
                 update(self._call_callbacks('on_batch_training_start', training_batch, logs))
                 try:
