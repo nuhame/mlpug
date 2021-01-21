@@ -7,45 +7,93 @@ from mlpug.evaluation import MetricEvaluatorBase
 
 from mlpug.utils import is_chunkable
 
+from basics.base import Base
 from basics.logging import get_logger
 
 logger = get_logger(os.path.basename(__file__))
 
 
 # ####### DEFAULT GATHER LOSS METHODS ########
-def gather_loss(loss, **kwargs):
-    loss = loss.item()
-    return loss, loss, 1
+class GatherLossSimple(Base):
 
+    def __init__(self, requester=None):
+        name = "GatherLossSimple"
+        if requester is not None:
+            name += f'[{requester}]'
 
-def create_gather_distributed_loss_func():
+        super(GatherLossSimple, self).__init__(pybase_logger_name=name)
 
-    # Pytorch Distributed Data Parallel averages gradients, so to reflect this in the loss, it needs to be averaged
-    def gather_distributed_loss(loss, **kwargs):
+        self.requester = requester
+
+        self._gather_loss_func = None
+        if dist.is_initialized():
+            self._log.info(f"Using simple distributed gather loss function")
+            self._gather_loss_func = self._gather_loss_distributed
+        else:
+            self._log.info(f"Using simple gather loss function")
+            self._gather_loss_func = self._gather_loss
+
+    def __call__(self, *args, **kwargs):
+        return self._gather_loss_func(*args, **kwargs)
+
+    def _gather_loss(self, loss, **kwargs):
+        loss = loss.item()
+        return loss, loss, 1
+
+    def _gather_loss_distributed(self, loss, **kwargs):
         loss_sum = loss
         dist.reduce(loss_sum, 0)
         num_devices = dist.get_world_size()
-        loss = loss_sum/num_devices
+        loss = loss_sum / num_devices
 
         return loss.item(), loss_sum.item(), num_devices
 
-    return gather_distributed_loss
+
+class GatherMaskedLoss(Base):
+
+    def __init__(self, requester=None):
+        name = "GatherMaskedLoss"
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super(GatherMaskedLoss, self).__init__(pybase_logger_name=name)
+
+        self.requester = requester
+
+        self._gather_loss_func = None
+        if dist.is_initialized():
+            self._log.info(f"Using distributed gather masked loss function")
+            self._gather_loss_func = self._gather_loss_distributed
+        else:
+            self._log.info(f"Using gather masked loss function")
+            self._gather_loss_func = self._gather_loss
+
+    def __call__(self, *args, **kwargs):
+        return self._gather_loss_func(*args, **kwargs)
+
+    def _gather_loss(self, auxiliary_results, **kwargs):
+        loss_sum = auxiliary_results[0].item()
+        num_samples = auxiliary_results[1].item()
+
+        loss = loss_sum/num_samples
+
+        return loss, loss_sum, num_samples
+
+    def _gather_loss_distributed(self, auxiliary_results, **kwargs):
+        loss_sum = auxiliary_results[0]
+        num_samples = auxiliary_results[1]
+
+        dist.reduce(loss_sum, 0)
+        dist.reduce(num_samples, 0)
+
+        loss_sum = loss_sum.item()
+        num_samples = num_samples.item()
+
+        loss = loss_sum / num_samples
+
+        return loss, loss_sum, num_samples
 
 
-def create_default_gather_loss_func(requester=None):
-    if requester is None:
-        requester = ''
-    else:
-        requester += ' : '
-
-    if dist.is_initialized():
-        logger.info(f"{requester}Using default distributed gather loss function")
-        gather_loss_func = create_gather_distributed_loss_func()
-    else:
-        logger.info(f"{requester}Using default gather loss function")
-        gather_loss_func = gather_loss
-
-    return gather_loss_func
 # ############################################
 
 
@@ -55,7 +103,7 @@ class MetricEvaluator(MetricEvaluatorBase):
 
         if batch_metric_funcs is None:
             batch_metric_funcs = {
-                "loss": create_default_gather_loss_func(requester=name)
+                "loss": GatherLossSimple(requester=name)
             }
 
         super().__init__(batch_metric_funcs, *args, name=name, **kwargs)

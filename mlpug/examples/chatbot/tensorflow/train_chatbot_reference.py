@@ -53,23 +53,6 @@ def prepare_dataset(raw_dataset, tf_encode, filter_sequence_length):
     return dataset
 
 
-def create_gather_distributed_loss_func(distribution_strategy):
-
-    # Tensorflow distribution strategies sum gradients, so to reflect this in the loss, it needs to be summed
-    def gather_distributed_loss(auxiliary_results, **kwargs):
-        loss_sum_per_replica = auxiliary_results[0]
-        num_samples_per_replica = auxiliary_results[1]
-
-        loss_sum = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, loss_sum_per_replica, axis=None)
-        num_samples = distribution_strategy.reduce(tf.distribute.ReduceOp.SUM, num_samples_per_replica, axis=None)
-
-        loss = loss_sum/num_samples
-
-        return loss.numpy(), loss_sum.numpy(), num_samples.numpy()
-
-    return gather_distributed_loss
-
-
 if __name__ == "__main__":
 
     parser = create_argument_parser()
@@ -256,13 +239,10 @@ if __name__ == "__main__":
                                           batch_data_signature=(tf.TensorSpec(shape=(None, None), dtype=tf.int64),
                                                                 tf.TensorSpec(shape=(None, None), dtype=tf.int64),))
 
-    # The default gather_loss_func doesn't take masking in to account
-    gather_loss_func = create_gather_distributed_loss_func(strategy)
-
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
                                                             distribution_strategy=strategy,
                                                             batch_metric_funcs={
-                                                                "loss": gather_loss_func
+                                                                "loss": mlp.evaluation.GatherMaskedLoss(strategy)
                                                             },
                                                             name="AverageLossEvaluator")
 
