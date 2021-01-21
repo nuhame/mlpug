@@ -24,7 +24,6 @@ import mlpug.pytorch as mlp
 from mlpug.utils import get_value_at
 
 from basics.logging import get_logger
-from basics.logging_utils import log_exception
 
 
 def transfer_to_gpu(opt):
@@ -82,11 +81,8 @@ class ChatbotTrainer(mlp.trainers.DefaultTrainer):
 
         per_sample_loss = results["loss"]
 
-        loss = masked_loss(per_sample_loss, output_mask)
-
-        return {
-            "loss": loss
-        }
+        # loss, loss_sum, num_samples
+        return masked_loss(per_sample_loss, output_mask)
 
     def _prepare_update_model_parameters(self):
         if not willClip:
@@ -355,7 +351,11 @@ if __name__ == "__main__":
                              },
                              use_mixed_precision=use_mixed_precision)
 
-    average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, name="AverageLossEvaluator")
+    average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
+                                                            batch_metric_funcs={
+                                                                "loss": mlp.evaluation.GatherMaskedLoss()
+                                                            },
+                                                            name="AverageLossEvaluator")
 
     callbacks = []
     if distributed:
