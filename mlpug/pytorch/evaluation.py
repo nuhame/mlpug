@@ -3,7 +3,7 @@ import os
 import torch
 import torch.distributed as dist
 
-from mlpug.evaluation import MetricEvaluatorBase
+from mlpug.evaluation import default_metric_reducer_func, MetricEvaluatorBase
 
 from mlpug.utils import is_chunkable
 
