@@ -1,6 +1,5 @@
-# TODO : remove PyTorch dependency
 import os
-from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at as get_value_at_func
@@ -15,6 +14,10 @@ WINDOW_AVERAGED_METRICS_WRITER = 'window-averaged-metrics'
 
 def get_value_at(path, obj):
     return get_value_at_func(path, obj, warn_on_failure=False)
+
+
+def tagify(label):
+    return label.replace(' ', '_').lower()
 
 
 class Tensorboard(Callback):
@@ -158,7 +161,6 @@ class Tensorboard(Callback):
 
         When registering these boards the `hamburger` and `hotdog` recall plots will be combined in one recall plot.
         Further, the `hamburger` and `hotdog` precision plots will be combined in one precision plot.
-
 
 
         ## Using `metrics_are_averages` and `metric_names`
@@ -397,12 +399,13 @@ class Tensorboard(Callback):
     def _write(self, current_logs, training_iter):
         metrics, success = self._get_metrics_from(current_logs)
 
-        for tag, metric in metrics.items():
+        for label, metric in metrics.items():
             if type(metric) is tuple:
                 # use the first value as metric value, the other values are auxiliary results meant for other purposes
                 metric = metric[0]
 
-            self._writer.add_scalar(tag, metric, global_step=training_iter)
+            tag = tagify(label)
+            self._writer.add_scalar(tag, metric, global_step=training_iter, display_name=label)
 
         if training_iter % self._flush_period == 0:
             self._writer.flush()
@@ -424,8 +427,8 @@ class Tensorboard(Callback):
             if metric is None:
                 return None
 
-            tag = self._get_tag(metric_path)
-            metrics[tag] = metric
+            label = self._get_label(metric_path)
+            metrics[label] = metric
 
             return metric
 
@@ -445,14 +448,14 @@ class Tensorboard(Callback):
 
         return metrics, success
 
-    def _get_tag(self, metric_name):
+    def _get_label(self, metric_name):
         iter_level = 'batch' if self._batch_level else 'epoch'
 
-        tag = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
-        tag = tag.replace('.', '_')
-        tag = f"{tag} - per {iter_level}"
+        label = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
+        label = label.replace('.', ' ').replace('_', ' ').title()
+        label = f"{label} - per {iter_level}"
 
-        return tag
+        return label
 
 
 class AutoTensorboard(Callback):
@@ -692,12 +695,14 @@ class AutoTensorboard(Callback):
                 self._log.error("No metrics found, nothing to write to Tensorboard")
                 return success
 
-        for tag, metric in metrics.items():
+        for label, metric in metrics.items():
             if type(metric) is tuple:
                 # use the first value as metric value, the other values are auxiliary results meant for other purposes
                 metric = metric[0]
 
-            self._writers[writer_type].add_scalar(tag, metric, global_step=training_iter)
+            tag = tagify(label)
+
+            self._writers[writer_type].add_scalar(tag, metric, global_step=training_iter, display_name=label)
 
         if training_iter % self._flush_period == 0:
             self._writers[writer_type].flush()
@@ -764,9 +769,9 @@ class AutoTensorboard(Callback):
                     _add_metrics(metric, metric_name)
                     continue
 
-                tag = self._get_tag(metric_name, batch_level)
+                label = self._get_label(metric_name, batch_level)
 
-                metrics[tag] = metric
+                metrics[label] = metric
 
         if _.is_dict(dataset_metrics):
             _add_metrics(dataset_metrics)
@@ -782,11 +787,11 @@ class AutoTensorboard(Callback):
                 self._log.error(f'No valid metrics found for {base_path}')
             return None, False
 
-    def _get_tag(self, metric_name, batch_level):
+    def _get_label(self, metric_name, batch_level):
         iter_level = 'batch' if batch_level else 'epoch'
 
-        tag = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
-        tag = tag.replace('.', '_')
-        tag = f"{tag} - per {iter_level}"
+        label = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
+        label = label.replace('.', ' ').replace('_', ' ').title()
+        label = f"{label} - per {iter_level}"
 
-        return tag
+        return label
