@@ -5,6 +5,7 @@ from functools import reduce
 import torch
 import torch.distributed as dist
 
+from mlpug.trainers.training import BatchChunkingResults
 from mlpug.evaluation import default_metric_reducer_func, MetricEvaluatorBase
 
 from mlpug.utils import is_chunkable
@@ -74,8 +75,8 @@ class GatherMaskedLoss(Base):
         return self._gather_loss_func(*args, **kwargs)
 
     def _gather_loss(self, auxiliary_results, **kwargs):
-        # When auxiliary_results is a simple list, it is assumed that is was created by batch chunking
-        if type(auxiliary_results) is list:
+        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
+        if type(auxiliary_results) is BatchChunkingResults:
             loss_sum = sum([aux[0] for aux in auxiliary_results])
             num_samples = sum([aux[1] for aux in auxiliary_results])
         else:
@@ -90,8 +91,8 @@ class GatherMaskedLoss(Base):
         return loss, loss_sum, num_samples
 
     def _gather_loss_distributed(self, auxiliary_results, **kwargs):
-        # When auxiliary_results is a simple list, it is assumed that is was created by batch chunking
-        if type(auxiliary_results) is list:
+        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
+        if type(auxiliary_results) is BatchChunkingResults:
             loss_sum = sum([aux[0] for aux in auxiliary_results])
             num_samples = sum([aux[1] for aux in auxiliary_results])
         else:

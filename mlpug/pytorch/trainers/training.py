@@ -178,7 +178,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             raise BatchNotChunkableException()
 
         chunk_losses = []
-        chunk_aux_results = []
+        chunk_aux_results = BatchChunkingResults()
         chunk_lengths = []
 
         batch_size = len(batch_data)
