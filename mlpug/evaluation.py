@@ -329,7 +329,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         :rtype: Bool
 
         """
-        if self._batch_chunk_size is not None and not force_no_chunking:
+        if not force_no_chunking and self._batch_chunk_size is not None and model_output is None:
             chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
             # Set force_no_chunking = True, because the batches will now already be chunks of a batch

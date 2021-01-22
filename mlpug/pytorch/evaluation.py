@@ -1,5 +1,7 @@
 import os
 
+from functools import reduce
+
 import torch
 import torch.distributed as dist
 
@@ -72,16 +74,29 @@ class GatherMaskedLoss(Base):
         return self._gather_loss_func(*args, **kwargs)
 
     def _gather_loss(self, auxiliary_results, **kwargs):
-        loss_sum = auxiliary_results[0].item()
-        num_samples = auxiliary_results[1].item()
+        # When auxiliary_results is a simple list, it is assumed that is was created by batch chunking
+        if type(auxiliary_results) is list:
+            loss_sum = sum([aux[0] for aux in auxiliary_results])
+            num_samples = sum([aux[1] for aux in auxiliary_results])
+        else:
+            loss_sum = auxiliary_results[0]
+            num_samples = auxiliary_results[1]
+
+        loss_sum = loss_sum.item()
+        num_samples = num_samples.item()
 
         loss = loss_sum/num_samples
 
         return loss, loss_sum, num_samples
 
     def _gather_loss_distributed(self, auxiliary_results, **kwargs):
-        loss_sum = auxiliary_results[0]
-        num_samples = auxiliary_results[1]
+        # When auxiliary_results is a simple list, it is assumed that is was created by batch chunking
+        if type(auxiliary_results) is list:
+            loss_sum = sum([aux[0] for aux in auxiliary_results])
+            num_samples = sum([aux[1] for aux in auxiliary_results])
+        else:
+            loss_sum = auxiliary_results[0]
+            num_samples = auxiliary_results[1]
 
         dist.reduce(loss_sum, 0)
         dist.reduce(num_samples, 0)
