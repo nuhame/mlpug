@@ -27,6 +27,10 @@ def normalize_evaluation(results):
         }
 
 
+class BatchChunkingResults(list):
+    pass
+
+
 class TrainingManager(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
