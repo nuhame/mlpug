@@ -44,7 +44,7 @@ def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
             value = value[key]
         else:
             if warn_on_failure:
-                t = traceback.format_stack(limit=3)
+                t = traceback.format_stack(limit=4)
                 logger.warn(f"Key path {key_path} not found in given data.\n"
                             f"Called from (partial stack): \n"
                             f"{''.join(t[:-1])}\n")
