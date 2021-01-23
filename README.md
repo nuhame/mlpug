@@ -2,19 +2,19 @@
 Mlpug is a machine learning library agnostic framework for model training.
 
 So much of the functionality you need to train your machine learning model is 
-independent of the machine learning library your, e.g. PyTorch and Tensorflow.
+independent of the machine learning library your using, e.g. PyTorch and Tensorflow.
 For instance, 
 
  * checkpoint management,
- * evaluation of validation set loss and other metrics, 
+ * evaluation of validation set loss and other custom metrics, 
  * progress logging, 
  * progress visualization using Tensorboard, 
  * the use of gradient accumulation to train with large batch sizes using limited GPU memory, etc.. 
 
 You need such functionality no matter what machine learning framework you are using.
 
-Mlpug provides a single framework with a unified API for all such training functionality
-independent of the framework you are using. This also implied that when you switch frameworks
+Mlpug provides a single framework with a unified API for all such training functionality,
+independent of the machine learning library you are using. This also implied that when you switch library
 you can reuse your training code with no, or minimal, changes.
 
 ## Supported backends
@@ -30,7 +30,7 @@ Further, support for the following machine learning library backends are planned
 If you like your favorite machine learning library to be supported, please file an issue!
 
 ## Almost at version 0.1!
-Mlpug is still in development. If you are having trouble using mlpug for your use case or 
+Mlpug is still in development. If you are having trouble using mlpug for your use case, or 
 when you have found a bug, please file an issue.
 
 ## Contents
