@@ -21,7 +21,7 @@ you can reuse your training code with no, or minimal, changes.
 Currently, mlpug supports the following deep learning/machine learning library 'backends':
 
  * PyTorch
- * Tensorflow (in development, some feature not available yet)
+ * Tensorflow (in development, some features not available yet)
    
 Further, support for the following machine learning library backends are planned: 
  * Microsoft DeepSpeed
@@ -39,7 +39,7 @@ when you have found a bug, please file an issue.
 
 The following sections are documentation ToDo's: \
 [The `logs` object](#the-logs-object) \
-[Callbacks](#the-logs-object) \
+[Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
 [Progress Logging](#progress-logging) \
 [CheckpointManager](#checkpoint-manager) \
 [Calculating custom metrics](#calculating-custom-metrics) \
