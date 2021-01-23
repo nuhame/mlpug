@@ -1,5 +1,5 @@
-# MLPug
-MLPug is a machine learning library agnostic framework for model training.
+# mlpug
+Mlpug is a machine learning library agnostic framework for model training.
 
 So much of the functionality you need to train your machine learning model is 
 independent of the machine learning library your, e.g. PyTorch and Tensorflow.
@@ -13,12 +13,12 @@ For instance,
 
 You need such functionality no matter what machine learning framework you are using.
 
-MLPug provides a single framework with a unified API for all such training functionality
+Mlpug provides a single framework with a unified API for all such training functionality
 independent of the framework you are using. This also implied that when you switch frameworks
 you can reuse your training code with no, or minimal, changes.
 
 ## Supported backends
-Currently, MLPug supports the following deep learning/machine learning library 'backends':
+Currently, mlpug supports the following deep learning/machine learning library 'backends':
 
  * PyTorch
  * Tensorflow (in development, some feature not available yet)
@@ -30,11 +30,11 @@ Further, support for the following machine learning library backends are planned
 If you like your favorite machine learning library to be supported, please file an issue!
 
 ## Almost at version 0.1!
-MLPug is still in development. If you are having trouble using MLPug for your use case or 
+Mlpug is still in development. If you are having trouble using mlpug for your use case or 
 when you have found a bug, please file an issue.
 
 ## Contents
-[Installing MLPug](#installing-mlpug) \
+[Installing mlpug](#installing-mlpug) \
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | [TF](#hello-world-with-tensorflow))
 
 The following sections are documentation ToDo's: \
@@ -49,7 +49,7 @@ The following sections are documentation ToDo's: \
 [Metric computation having a large batch size](#metric-computation-having-a-large-batch-size) \
 [CUDA Memory tools](#cuda-memory-tools)
 
-## Installing MLPug
+## Installing mlpug
 Please ensure that you are using Python3.7+.
 
 Install as follows:
@@ -58,19 +58,19 @@ pip install mlpug
 ```
 
 ### Usage with PyTorch
-When you want to use MLPug with PyTorch, you will need to install it:
+When you want to use mlpug with PyTorch, you will need to install it:
 ```
 pip install torch torchvision
 ```
 
 ### Usage with Tensorflow
-When you want to use MLPug with Tensorflow, you will need to install it:
+When you want to use mlpug with Tensorflow, you will need to install it:
 ```
 pip install tensorflow
 ```
 
 ## Hello World!
-This is the Hello World of training with MLPug. You will see that the usage of MLPug with Pytorch and Tensorflow is 
+This is the Hello World of training with mlpug. You will see that the usage of mlpug with Pytorch and Tensorflow is 
 very similar.
 
 For details please see [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py), 
@@ -79,10 +79,10 @@ For details please see [tensorflow/hello_world.py](mlpug/examples/documentation/
 I suggest you download and run these examples.
 
 When reading through the explanation below it might be that you still have a lot of questions about the why and how of
-training with MLPug, however I will expand the MLPug documentation soon, so you will get better insight.
+training with mlpug, however I will expand the mlpug documentation soon, so you will get better insight.
 
 ### 'Hello World' with PyTorch
-To use MLPug with Pytorch
+To use mlpug with Pytorch
 ```python
 import mlpug.pytorch as mlp
 ```
@@ -111,7 +111,8 @@ classifier = torch.nn.Sequential(
     torch.nn.Linear(128, 10))
 ```
 
-MLPug needs a way to evaluate the loss of the model. One way to that is to define a "training model" that outputs the loss 
+Mlpug needs a way to evaluate the loss of the model. One way to do that is to define a `TrainModel` that 
+outputs the loss 
 ```python
 class TrainModel(torch.nn.Module):
     def __init__(self, classifier):
@@ -134,12 +135,12 @@ To train the model we will also need an optimizer
 optimizer = torch.optim.Adam(classifier.parameters(), eps=1e-7)
 ```
 
-To now use MLPug to start training we need to create a `Trainer` which will be used by a `TrainingManager`.
+To now use mlpug to start training, we need to create a `Trainer` which will be used by a `TrainingManager`.
 ```python
 trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
 ```
 
-MLPug uses a callback system allowing you to customize and extend the training functionality. 
+Mlpug uses a callback system allowing you to customize and extend the training functionality. 
 The list of callback instances you provide the `TrainingManager` will be called using hooks at different stages of the 
 training process.
 ```python
@@ -161,7 +162,7 @@ The `TrainingMetricsLogger` and the `TestMetricsLogger` callback instances log t
 in a `logs` object that is passed through all callbacks during training. The `LogProgress` callback instance logs the 
 metric values stored in the received `logs` object.
 
-We can now instantiate the `TrainingManager` and pass it the training_model. 
+We can now instantiate the `TrainingManager` and pass it the `trainer`. 
 ```python
 manager = mlp.trainers.TrainingManager(trainer,
                                        training_dataset,
@@ -169,7 +170,7 @@ manager = mlp.trainers.TrainingManager(trainer,
                                        callbacks=callbacks)
 ```
 
-Before we can start training we still have to provide the `training_model` to the trainer.
+Before we can start training we still have to provide the `train_model` to the trainer.
 ```python
 trainer.set_training_model(train_model)
 ```
@@ -179,9 +180,9 @@ The final step is to actually start training:
 manager.start_training()
 ```
 ### 'Hello World' with Tensorflow
-Below we will focus only on the minor differences between using MLPug with PyTorch and Tensorflow.
+Below we will focus only on the minor differences between using mlpug with PyTorch and Tensorflow.
 
-To use MLPug with Tensorflow
+To use mlpug with Tensorflow
 ```python
 import mlpug.tensorflow as mlp
 ```
