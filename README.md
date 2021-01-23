@@ -44,6 +44,7 @@ The following sections are documentation ToDo's: \
 [CheckpointManager](#checkpoint-manager) \
 [Calculating custom metrics](#calculating-custom-metrics) \
 [Tensorboard](#tensorboard) \
+[Multi GPU training](#multi-gpu-training) \
 [Mixed Precision Training](#mixed-precision-training) \
 [Gradient Accumulation](#gradient-accumulation) \
 [Metric computation having a large batch size](#metric-computation-having-a-large-batch-size) \
@@ -179,6 +180,25 @@ The final step is to actually start training:
 ```python
 manager.start_training()
 ```
+
+Running `pytorch/hello_world.py` finishes like this:
+```text
+###############################################################################
+Epoch 9/9	READY - Duration 0:00:08
+Moving average:
+training       : loss          0.238.
+
+Computed over dataset:
+validation     : loss          0.346.
+
+
+
+INFO    : TrainingManager::_train : Training completed. All good! ❤️
+
+Using the classifier ...
+real label = 9, predicted label = 9
+```
+
 ### 'Hello World' with Tensorflow
 Below we will focus only on the minor differences between using mlpug with PyTorch and Tensorflow.
 
@@ -205,3 +225,40 @@ When you run [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow
 [tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py) you will see
 that when not running in eager mode, training is much faster.
 
+Running `tensorflow/hello_world.py` finishes like this:
+```text
+###############################################################################
+Epoch 9/9	READY - Duration 0:00:15
+Moving average:
+training       : loss          0.229.
+
+Computed over dataset:
+validation     : loss          0.370.
+
+
+
+INFO    : TrainingManager::_train : Training completed. All good! ❤️
+
+Using the classifier ...
+real label = 9, predicted label = 9
+```
+
+Running `tensorflow/hello_world_not_eager.py` finishes like this:
+```text
+###############################################################################
+Epoch 9/9	READY - Duration 0:00:06
+Moving average:
+training       : loss          0.229.
+
+Computed over dataset:
+validation     : loss          0.370.
+
+
+
+INFO    : TrainingManager::_train : Training completed. All good! ❤️
+
+Using the classifier ...
+real label = 9, predicted label = 9
+```
+
+Note the difference in epoch duration!
