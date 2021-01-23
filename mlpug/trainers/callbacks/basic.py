@@ -64,7 +64,10 @@ class LogProgress(Callback):
     def on_epoch_completed(self, logs):
         current = self._get_logs_base(logs)
         duration = self._get_epoch_duration(logs)
-        sys.stdout.write('\nEpoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
+        sys.stdout.write('\n')
+        sys.stdout.write('###############################################################################')
+        sys.stdout.write('\n')
+        sys.stdout.write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
