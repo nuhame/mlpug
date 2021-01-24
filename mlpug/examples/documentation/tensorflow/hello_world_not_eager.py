@@ -90,18 +90,19 @@ manager = mlp.trainers.TrainingManager(trainer,
 trainer.set_training_model(train_model)
 # ##########################################
 
-# ################# START! #################
-manager.start_training()
-# ##########################################
+if __name__ == '__main__':
+    # ################# START! #################
+    manager.start_training()
+    # ##########################################
 
-# ######### USE THE TRAINED MODEL ##########
-print("\nUsing the classifier ...")
-image = test_images[0]
-real_label = test_labels[0]
+    # ######### USE THE TRAINED MODEL ##########
+    print("\nUsing the classifier ...")
+    image = test_images[0]
+    real_label = test_labels[0]
 
-logits = classifier(tf.expand_dims(image, 0))
-probabilities = tf.nn.softmax(logits)
+    logits = classifier(tf.expand_dims(image, 0))
+    probabilities = tf.nn.softmax(logits)
 
-predicted_label = tf.math.argmax(probabilities, axis=-1)
+    predicted_label = tf.math.argmax(probabilities, axis=-1)
 
-print(f"real label = {real_label}, predicted label = {tf.squeeze(predicted_label)}\n")
+    print(f"real label = {real_label}, predicted label = {tf.squeeze(predicted_label)}\n")
