@@ -29,26 +29,60 @@ Further, support for the following machine learning library backends are planned
 
 If you like your favorite machine learning library to be supported, please file an issue!
 
+## Mlpug focus
+Although mlpug should be able to deal with any training job, its functionality is mostly focussed on dealing with  
+training large models on large datasets, using limited hardware (GPU or TPU) resources and memory.
+
 ## Almost at version 0.1!
 Mlpug is still in development. If you are having trouble using mlpug for your use case, or 
 when you have found a bug, please file an issue.
 
 ## Contents
 [Installing mlpug](#installing-mlpug) \
+\
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | [TF](#hello-world-with-tensorflow))
-
+\
+\
+\
 The following sections are documentation ToDo's: \
 [The `logs` object](#the-logs-object) \
+\
 [Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
+\
 [Progress Logging](#progress-logging) \
-[CheckpointManager](#checkpoint-manager) \
-[Calculating custom metrics](#calculating-custom-metrics) \
-[Tensorboard](#tensorboard) \
+\
+[Model components vs Training model](#model-components-vs-training-model) \
+\
+[Checkpoint management](#checkpoint-management) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using the CheckpointManager](#using-the-checkpointmanager) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using training checkpoints](#using-training-checkpoints) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using model checkpoints](#using-model-checkpoints) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Checkpointing on error or interrupt](#checkpointing on error or interrupt) \
+\
+[Mlpug metric evaluators](#mlpug-metric-evaluators) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Auxiliary batch training results](#auxiliary-batch-training-results) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Calculating custom metrics](#calculating-custom-metrics) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Conditional computation of metrics](#conditional-computation-of-metrics) \
+\
+[Batch chunking, dealing with GPU memory limits](#batch-chunking-dealing-with-gpu-memory-limits) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Gradient Accumulation](#gradient-accumulation) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Chunked Metric Computation](#chunked-metric-computation) \
+\
+[Using Tensorboard](#using-tensorboard) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Tensorboard made easy with AutoTensorboard](#tensorboard-made-easy-with-auto-tensorboard) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[More fine grained control](#more-fine-grained-control) \
+\
+[Learning Rate Scheduling](#learning-rate-scheduling) \
+\
 [Multi GPU training](#multi-gpu-training) \
+\
 [Mixed Precision Training](#mixed-precision-training) \
+\
 [Gradient Accumulation](#gradient-accumulation) \
-[Metric computation having a large batch size](#metric-computation-having-a-large-batch-size) \
-[CUDA Memory tools](#cuda-memory-tools)
+\
+[CUDA Memory tools](#cuda-memory-tools) \
+\
+[Using multiple optimizers](#using-multiple-optimizers)
 
 ## Installing mlpug
 Please ensure that you are using Python3.7+.
