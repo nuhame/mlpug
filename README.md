@@ -44,7 +44,7 @@ when you have found a bug, please file an issue.
 \
 \
 \
-The following sections are documentation ToDo's: \
+The following sections are documentation ToDo's, but provide insight in to mlpug's features: \
 [The `logs` object](#the-logs-object) \
 \
 [Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
