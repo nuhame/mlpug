@@ -93,19 +93,20 @@ manager = mlp.trainers.TrainingManager(trainer,
 trainer.set_training_model(train_model)
 # ##########################################
 
-# ################# START! #################
-manager.start_training()
-# ##########################################
+if __name__ == '__main__':
+    # ################# START! #################
+    manager.start_training()
+    # ##########################################
 
-# ######### USE THE TRAINED MODEL ##########
-print("\nUsing the classifier ...")
-first_sample = next(iter(test_data))
-image = first_sample[0]
-real_label = first_sample[1]
+    # ######### USE THE TRAINED MODEL ##########
+    print("\nUsing the classifier ...")
+    first_sample = next(iter(test_data))
+    image = first_sample[0]
+    real_label = first_sample[1]
 
-logits = classifier(image)
-probabilities = torch.softmax(logits, dim=-1)
+    logits = classifier(image)
+    probabilities = torch.softmax(logits, dim=-1)
 
-predicted_label = torch.argmax(probabilities)
+    predicted_label = torch.argmax(probabilities)
 
-print(f"real label = {real_label}, predicted label = {predicted_label}\n")
+    print(f"real label = {real_label}, predicted label = {predicted_label}\n")
