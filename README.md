@@ -57,7 +57,7 @@ The following sections are documentation ToDo's: \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using the CheckpointManager](#using-the-checkpointmanager) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using training checkpoints](#using-training-checkpoints) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using model checkpoints](#using-model-checkpoints) \
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Checkpointing on error or interrupt](#checkpointing on error or interrupt) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Checkpointing on error or interrupt](#checkpointing-on-error-or-interrupt) \
 \
 [Mlpug metric evaluators](#mlpug-metric-evaluators) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Auxiliary batch training results](#auxiliary-batch-training-results) \
