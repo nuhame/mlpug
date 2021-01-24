@@ -14,6 +14,7 @@ setuptools.setup(
     url="https://github.com/nuhame/mlpug",
     packages=setuptools.find_packages(),
     install_requires=[
+        'pybase @ git+https://github.com/visionscaper/pybase.git',
         'tensorboardX',
         # required for tensorboard, else this error occurs : ModuleNotFoundError: No module named 'past'
         # TODO : still required?
