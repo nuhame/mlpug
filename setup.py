@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="mlpug",
-    version="0.0.23",
+    version="0.0.25",
     author="Freddy Snijder",
     author_email="mlpug@visionscapers.com",
     description="A machine learning library agnostic framework for model training",
@@ -14,7 +14,7 @@ setuptools.setup(
     url="https://github.com/nuhame/mlpug",
     packages=setuptools.find_packages(),
     install_requires=[
-        'pybase @ git+https://github.com/visionscaper/pybase.git',
+        'visionscaper-pybase',
         'tensorboardX',
         # required for tensorboard, else this error occurs : ModuleNotFoundError: No module named 'past'
         # TODO : still required?
