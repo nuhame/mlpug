@@ -128,12 +128,6 @@ training_dataset = torch.utils.data.DataLoader(training_data,
                                                batch_size=batch_size,
                                                shuffle=False,
                                                num_workers=3)
-
-# Using the test set as a validation set, just for demonstration purposes
-validation_dataset = torch.utils.data.DataLoader(test_data,
-                                                 batch_size=batch_size,
-                                                 shuffle=False,
-                                                 num_workers=3)
 ```
 
 ... and a model we want to train
