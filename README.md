@@ -14,7 +14,7 @@ For instance,
 You need such functionality no matter what machine learning framework you are using.
 
 Mlpug provides a single framework with a unified API for all such training functionality,
-independent of the machine learning library you are using. This also implied that when you switch library
+independent of the machine learning library you are using. This also implies that when you switch library
 you can reuse your training code with no, or minimal, changes.
 
 ## Supported backends
@@ -25,6 +25,7 @@ Currently, mlpug supports the following deep learning/machine learning library '
    
 Further, support for the following machine learning library backends are planned: 
  * Microsoft DeepSpeed
+ * Apache MXNet
  * Jax
 
 If you like your favorite machine learning library to be supported, please file an issue!
@@ -77,8 +78,6 @@ The following sections are documentation ToDo's, but provide insight in to mlpug
 [Multi GPU training](#multi-gpu-training) \
 \
 [Mixed Precision Training](#mixed-precision-training) \
-\
-[Gradient Accumulation](#gradient-accumulation) \
 \
 [CUDA Memory tools](#cuda-memory-tools) \
 \
