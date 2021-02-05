@@ -110,8 +110,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 else self._create_distributed_call_model_tf_func()
         else:
             self._log.warn("Training in eager mode.")
-            self._train_step_tf_func = self._train_on
-            self._call_model_tf_func = self._call_model
+            self._train_step_tf_func = self._train_on if self.distribution_strategy is None \
+                else self._create_distributed_training_step_eager()
+
+            self._call_model_tf_func = self._call_model if self.distribution_strategy is None \
+                else self._create_distributed_call_model_eager()
 
         if self.trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -257,6 +260,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         return training_step_func
 
+    def _create_distributed_training_step_eager(self):
+        def training_step_func(batch_data, training_settings):
+            return self.distribution_strategy.run(self._train_on, args=(batch_data, training_settings,))
+
+        return training_step_func
+
     def _train_on(self, batch_data, training_settings):
         loss, auxiliary_results, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
 
@@ -285,6 +294,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         @tf.function(input_signature=self._create_call_model_signature())
         def call_model_func(batch_data, evaluate_settings, inference_mode):
             return self._call_model(batch_data, evaluate_settings, inference_mode)
+
+        return call_model_func
+
+    def _create_distributed_call_model_eager(self):
+        def call_model_func(batch_data, evaluate_settings, inference_mode):
+            return self.distribution_strategy.run(self._call_model,
+                                                  args=(batch_data, evaluate_settings, inference_mode))
 
         return call_model_func
 
