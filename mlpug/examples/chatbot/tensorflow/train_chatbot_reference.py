@@ -47,7 +47,7 @@ def prepare_dataset(raw_dataset, tf_encode, filter_sequence_length):
     dataset = dataset.filter(filter_sequence_length)
     # cache the dataset to memory to get a speedup while reading from it.
     dataset = dataset.cache()
-    dataset = dataset.shuffle(BUFFER_SIZE).padded_batch(batch_size)
+    dataset = dataset.shuffle(BUFFER_SIZE).padded_batch(global_batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
     return dataset
@@ -132,8 +132,8 @@ if __name__ == "__main__":
     num_gpus_str = "all available" if num_gpus is None else num_gpus
     logger.info(f"Num. GPUs to use for training: {num_gpus_str}")
 
-    batch_size = args.batch_size
-    logger.info(f"Batch size: {batch_size}")
+    batch_size_per_replica = args.batch_size
+    logger.info(f"Batch size per replica: {batch_size_per_replica}")
 
     clip = args.gradient_clipping
     willClip = clip > 0.0
@@ -160,7 +160,7 @@ if __name__ == "__main__":
         'batch_size': 'size'
     }
 
-    # ########### Setup datasets ##############
+    # ########### Load datasets ##############
     logger.info('Setup data sets ...')
 
     logger.info('Loading training set ...')
@@ -168,8 +168,8 @@ if __name__ == "__main__":
     logger.info('Loading validation set ...')
     validation_dataset, _unused_ = load_sentence_pair_data(dataset_path_for('validation'), logger)
 
-    training_dataset = training_dataset[:40000]
-    validation_dataset = validation_dataset[:12000]
+    # training_dataset = training_dataset[:40000]
+    # validation_dataset = validation_dataset[:12000]
 
     logger.debug(f"Number of sentence pairs in training set: {len(training_dataset)}")
     logger.debug(f"Number of sentence pairs in validation set: {len(validation_dataset)}")
@@ -189,16 +189,7 @@ if __name__ == "__main__":
 
     tf_encode = create_chatbot_tf_encode_func(tokenizer)
     filter_sequence_length = create_length_filter_func(max_sequence_length)
-
-    training_dataset = prepare_dataset(training_dataset, tf_encode, filter_sequence_length)
-    validation_dataset = prepare_dataset(validation_dataset, tf_encode, filter_sequence_length)
-
-    len_training_dataset = training_dataset.reduce(0, lambda x, _: x + 1).numpy()
-    len_validation_dataset = validation_dataset.reduce(0, lambda x, _: x + 1).numpy()
-
-    logger.info(f"Number of training batches : {len_training_dataset}")
-    logger.info(f"Number of validation batches : {len_validation_dataset}")
-    # ####################################################
+    ############################################
 
     # ########### Build model and optimizers ##############
     devices = None
@@ -228,16 +219,32 @@ if __name__ == "__main__":
 
     # ####################################################
 
+    # ############### Prepare datasets ###################
+    global_batch_size = batch_size_per_replica*strategy.num_replicas_in_sync
+    logger.info(f"Global batch size : {global_batch_size}")
+
+    training_dataset = prepare_dataset(training_dataset, tf_encode, filter_sequence_length)
+    validation_dataset = prepare_dataset(validation_dataset, tf_encode, filter_sequence_length)
+
+    len_training_dataset = training_dataset.reduce(0, lambda x, _: x + 1).numpy()
+    len_validation_dataset = validation_dataset.reduce(0, lambda x, _: x + 1).numpy()
+
+    logger.info(f"Number of training batches : {len_training_dataset}")
+    logger.info(f"Number of validation batches : {len_validation_dataset}")
+
+    # Distribute training and validation set
+    training_dist_dataset = strategy.experimental_distribute_dataset(training_dataset)
+    validation_dist_dataset = strategy.experimental_distribute_dataset(validation_dataset)
+    # ####################################################
+
     # ############## SETUP TRAINING ##################
     logger.info('Prepare training ...')
 
     trainer = mlp.trainers.DefaultTrainer(optimizer,
                                           transformer,
-                                          eager_mode=False,
                                           # use_mixed_precision=use_mixed_precision,
                                           distribution_strategy=strategy,
-                                          batch_data_signature=(tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-                                                                tf.TensorSpec(shape=(None, None), dtype=tf.int64),))
+                                          batch_data_signature=training_dist_dataset.element_spec)
 
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
                                                             distribution_strategy=strategy,
@@ -247,7 +254,7 @@ if __name__ == "__main__":
                                                             name="AverageLossEvaluator")
 
     callbacks = [mlp.callbacks.TrainingMetricsLogger(metric_evaluator=average_loss_evaluator),
-                 mlp.callbacks.TestMetricsLogger(validation_dataset,
+                 mlp.callbacks.TestMetricsLogger(validation_dist_dataset,
                                                  'validation',
                                                  metric_evaluator=average_loss_evaluator,
                                                  batch_averaging_window=len_validation_dataset),
@@ -282,7 +289,7 @@ if __name__ == "__main__":
                                            ignore_missing_metrics=True)]
 
     manager = mlp.trainers.TrainingManager(trainer,
-                                           training_dataset,
+                                           training_dist_dataset,
                                            num_batches_per_epoch=len_training_dataset,
                                            num_epochs=num_epochs,
                                            callbacks=callbacks,
