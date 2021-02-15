@@ -1,6 +1,6 @@
 import os
 
-from functools import reduce
+import abc
 
 import torch
 import torch.distributed as dist
@@ -17,27 +17,76 @@ logger = get_logger(os.path.basename(__file__))
 
 
 # ####### DEFAULT GATHER LOSS METHODS ########
-class GatherLossSimple(Base):
+class GatherLossBase(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, requester=None):
-        name = "GatherLossSimple"
+    def __init__(self, name, delete_training_loss=True, delete_auxiliary_results=True, requester=None):
         if requester is not None:
             name += f'[{requester}]'
 
-        super(GatherLossSimple, self).__init__(pybase_logger_name=name)
+        super(GatherLossBase, self).__init__(pybase_logger_name=name)
+
+        self._delete_training_loss = delete_training_loss
+        self._delete_auxiliary_results = delete_auxiliary_results
 
         self.requester = requester
 
         self._gather_loss_func = None
         if dist.is_initialized():
-            self._log.info(f"Using simple distributed gather loss function")
+            self._log.info(f"Using distributed gather masked loss function")
             self._gather_loss_func = self._gather_loss_distributed
         else:
-            self._log.info(f"Using simple gather loss function")
+            self._log.info(f"Using gather masked loss function")
             self._gather_loss_func = self._gather_loss
 
-    def __call__(self, *args, **kwargs):
-        return self._gather_loss_func(*args, **kwargs)
+    def _do_detatch_auxiliary_results(self, auxiliary_results):
+        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
+        if type(auxiliary_results) is BatchChunkingResults:
+            for aux in auxiliary_results:
+                aux[0].detach_()
+                aux[1].detach_()
+        else:
+            auxiliary_results[0].detach_()
+            auxiliary_results[1].detach_()
+
+    def _do_delete_auxiliary_results(self, auxiliary_results):
+        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
+        if type(auxiliary_results) is BatchChunkingResults:
+            for (ls, ns) in auxiliary_results:
+                del ls
+                del ns
+        else:
+            (ls, ns) = auxiliary_results
+            del ls
+            del ns
+
+    @abc.abstractmethod
+    def __call__(self, loss, auxiliary_results, **kwargs):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def _gather_loss(self, **kwargs):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def _gather_loss_distributed(self, **kwargs):
+        raise NotImplementedError()
+
+
+class GatherLossSimple(GatherLossBase):
+
+    def __init__(self, delete_training_loss=True, requester=None):
+        super().__init__("GatherLossSimple", delete_training_loss, requester)
+
+    def __call__(self, loss, **kwargs):
+        training_loss = loss
+        training_loss.detach_()
+
+        loss, loss_sum, num_samples = self._gather_loss_func(loss=training_loss, **kwargs)
+
+        if self._delete_training_loss:
+            del training_loss
+
+        return loss, loss_sum, num_samples
 
     def _gather_loss(self, loss, **kwargs):
         loss = loss.item()
@@ -52,37 +101,39 @@ class GatherLossSimple(Base):
         return loss.item(), loss_sum.item(), num_devices
 
 
-class GatherMaskedLoss(Base):
+class GatherMaskedLoss(GatherLossBase):
 
-    def __init__(self, requester=None):
-        name = "GatherMaskedLoss"
-        if requester is not None:
-            name += f'[{requester}]'
+    def __init__(self, delete_training_loss=True, delete_auxiliary_results=True, requester=None):
+        super().__init__("GatherMaskedLoss", delete_training_loss, delete_auxiliary_results, requester)
 
-        super(GatherMaskedLoss, self).__init__(pybase_logger_name=name)
+    def __call__(self, loss, auxiliary_results, **kwargs):
+        training_loss = loss
+        training_loss.detach_()
 
-        self.requester = requester
+        self._do_detatch_auxiliary_results(auxiliary_results)
 
-        self._gather_loss_func = None
-        if dist.is_initialized():
-            self._log.info(f"Using distributed gather masked loss function")
-            self._gather_loss_func = self._gather_loss_distributed
-        else:
-            self._log.info(f"Using gather masked loss function")
-            self._gather_loss_func = self._gather_loss
-
-    def __call__(self, *args, **kwargs):
-        return self._gather_loss_func(*args, **kwargs)
-
-    def _gather_loss(self, auxiliary_results, **kwargs):
         # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
         if type(auxiliary_results) is BatchChunkingResults:
-            loss_sum = sum([aux[0] for aux in auxiliary_results])
-            num_samples = sum([aux[1] for aux in auxiliary_results])
+            loss_sum = 0
+            num_samples = 0
+            for aux in auxiliary_results:
+                loss_sum += aux[0]
+                num_samples += aux[1]
         else:
             loss_sum = auxiliary_results[0]
             num_samples = auxiliary_results[1]
 
+        loss, loss_sum, num_samples = self._gather_loss_func(loss_sum=loss_sum, num_samples=num_samples, **kwargs)
+
+        if self._delete_training_loss:
+            del training_loss
+
+        if self._delete_auxiliary_results:
+            self._do_delete_auxiliary_results(auxiliary_results)
+
+        return loss, loss_sum, num_samples
+
+    def _gather_loss(self, loss_sum, num_samples, **kwargs):
         loss_sum = loss_sum.item()
         num_samples = num_samples.item()
 
@@ -90,15 +141,7 @@ class GatherMaskedLoss(Base):
 
         return loss, loss_sum, num_samples
 
-    def _gather_loss_distributed(self, auxiliary_results, **kwargs):
-        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
-        if type(auxiliary_results) is BatchChunkingResults:
-            loss_sum = sum([aux[0] for aux in auxiliary_results])
-            num_samples = sum([aux[1] for aux in auxiliary_results])
-        else:
-            loss_sum = auxiliary_results[0]
-            num_samples = auxiliary_results[1]
-
+    def _gather_loss_distributed(self, loss_sum, num_samples, **kwargs):
         dist.reduce(loss_sum, 0)
         dist.reduce(num_samples, 0)
 
@@ -108,8 +151,6 @@ class GatherMaskedLoss(Base):
         loss = loss_sum / num_samples
 
         return loss, loss_sum, num_samples
-
-
 # ############################################
 
 
