@@ -115,13 +115,23 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
     def get_trainer(self):
         return self.trainer
 
-    def start_training(self):
+    def start_training(self, fast_forward_to_batch_step=False):
+        """
+
+        :param fast_forward_to_batch_step: Bool, if True, the data set will naively fast forward to the
+                                           current batch_step. This is useful when continuing training from a
+                                           loaded training checkpoint
+
+                                           Naive fast-forwarding simply fetches the batches from the data set
+                                           in a loop, until batch_step-1 batches are fetched.
+                                           After that training will start.
+        """
         if not self.instance_valid():
             self._log.error('TrainingManager is not valid, unable to start training')
             return
 
         try:
-            self._train()
+            self._train(fast_forward_to_batch_step=fast_forward_to_batch_step)
         except KeyboardInterrupt:
             self._update_cb_success(self._call_callbacks('on_training_ended',
                                                          stopped_early=False,
@@ -344,7 +354,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return True
 
-    def _train(self):
+    def _train(self, fast_forward_to_batch_step=False):
         training_stopped_early = False
         epoch_stopped_early = False
         training_stopped_on_error = False
@@ -392,7 +402,32 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             current = None
             epoch_started = True
             epoch_stopped_early = False
-            for training_batch in iter(training_dataset):
+            fast_fwd_idx = 0
+            for training_batch in training_dataset:
+
+                # TODO : This code should be separated, this will likely
+                #        imply that we have to make the batch training loop a while loop such that we
+                #        can continue using an existing iterator object
+                # ###### FAST FORWARD DATASET #######
+                if fast_forward_to_batch_step:
+                    if fast_fwd_idx == 0:
+                        self._log.info(f"Fast forwarding to batch step {self.batch_step} ... \n\n")
+
+                    if fast_fwd_idx % 100 == 0:
+                        sys.stdout.write(">")
+                        sys.stdout.flush()
+
+                    if fast_fwd_idx < self.batch_step:
+                        fast_fwd_idx += 1
+                        continue  # Fast forward to next batch
+                    else:
+                        sys.stdout.write("\n\n")
+                        sys.stdout.flush()
+
+                # Fast forwarding is only done once.
+                fast_forward_to_batch_step = False
+                # ###################################
+
                 batch_training_start_time = time.time()
 
                 if self._stop_training:
