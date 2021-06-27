@@ -75,7 +75,9 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
 class GatherLossSimple(GatherLossBase):
 
     def __init__(self, delete_training_loss=True, requester=None, name="GatherLossSimple"):
-        super().__init__(name, delete_training_loss, requester)
+        super().__init__(name,
+                         delete_training_loss=delete_training_loss,
+                         requester=requester)
 
     def __call__(self, loss, **kwargs):
         training_loss = loss
