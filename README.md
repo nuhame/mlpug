@@ -22,13 +22,6 @@ Currently, mlpug supports the following deep learning/machine learning library '
 
  * PyTorch
  * Tensorflow (in development, some features not available yet)
-   
-Further, support for the following machine learning library backends are planned: 
- * Microsoft DeepSpeed
- * Apache MXNet
- * Jax
-
-If you like your favorite machine learning library to be supported, please file an issue!
 
 ## Mlpug focus
 Although mlpug should be able to deal with any training job, its functionality is mostly focussed on dealing with  
