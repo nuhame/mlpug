@@ -133,7 +133,6 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return self._monitor('global_iter', logs)
 
     def on_epoch_completed(self, logs):
-        force = False
         iter_name = 'epoch'
 
         force_monitoring = False
@@ -224,9 +223,6 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         current = self._get_logs_base(logs)
 
         training_iter = current[iter_name]
-
-        if not force_monitoring and training_iter == 0:
-            return True
 
         best_model_fname = None
         success = True

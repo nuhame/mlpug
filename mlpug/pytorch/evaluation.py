@@ -32,10 +32,10 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
 
         self._gather_loss_func = None
         if dist.is_initialized():
-            self._log.info(f"Using distributed gather masked loss function")
+            self._log.info(f"Using distributed gather loss function")
             self._gather_loss_func = self._gather_loss_distributed
         else:
-            self._log.info(f"Using gather masked loss function")
+            self._log.info(f"Using gather loss function")
             self._gather_loss_func = self._gather_loss
 
     def _do_detatch_auxiliary_results(self, auxiliary_results):
@@ -74,8 +74,8 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
 
 class GatherLossSimple(GatherLossBase):
 
-    def __init__(self, delete_training_loss=True, requester=None):
-        super().__init__("GatherLossSimple", delete_training_loss, requester)
+    def __init__(self, delete_training_loss=True, requester=None, name="GatherLossSimple"):
+        super().__init__(name, delete_training_loss, requester)
 
     def __call__(self, loss, **kwargs):
         training_loss = loss
@@ -103,8 +103,12 @@ class GatherLossSimple(GatherLossBase):
 
 class GatherMaskedLoss(GatherLossBase):
 
-    def __init__(self, delete_training_loss=True, delete_auxiliary_results=True, requester=None):
-        super().__init__("GatherMaskedLoss", delete_training_loss, delete_auxiliary_results, requester)
+    def __init__(self,
+                 delete_training_loss=True,
+                 delete_auxiliary_results=True,
+                 requester=None,
+                 name="GatherMaskedLoss"):
+        super().__init__(name, delete_training_loss, delete_auxiliary_results, requester)
 
     def __call__(self, loss, auxiliary_results, **kwargs):
         training_loss = loss
