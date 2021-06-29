@@ -165,6 +165,7 @@ class LogProgress(Callback):
         if base_metric is not None:
             log += f"{base_metric:<15}: "
 
+        metric_value_logs = []
         for c, (metric, value) in enumerate(metrics.items()):
             if metric in skip_metric_names:
                 continue
@@ -174,16 +175,18 @@ class LogProgress(Callback):
                 value = value[0]
 
             if type(value) is dict:
-                log += "\n" + self._create_log_for(value, metric, log_depth+1)
+                nested_logs = self._create_log_for(value, metric, log_depth+1)
+                if nested_logs is not None:
+                    metric_value_logs += ["\n" + nested_logs]
             else:
                 try:
                     log_format = self._get_log_format(value)
-                    log += log_format.format(metric, value)
+                    metric_value_logs += [log_format.format(metric, value)]
                 except Exception as e:
-                    log += "[UNKNOWN]"
+                    metric_value_logs += ["[UNKNOWN]"]
 
-            if c < num_metrics - 1:
-                log += ', '
+        if len(metric_value_logs) > 0:
+            log += ', '.join(metric_value_logs)
 
         return log
 
