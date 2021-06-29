@@ -201,7 +201,9 @@ class MetricsLoggerBase(Callback):
                 set_value_at(base_path, current, dataset_batch_logs)
 
             metric_names = self._metric_evaluator.get_metric_names()
-            metric_paths = get_key_paths(dataset_batch_logs, keys_to_consider=metric_names)
+            metric_paths = get_key_paths(dataset_batch_logs,
+                                         keys_to_consider=metric_names,
+                                         keys_not_to_consider=["auxiliary_results"])
 
             self._update_metrics_windows_for(metric_paths, dataset_batch_logs, base_path=base_path)
 

@@ -100,7 +100,10 @@ def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, b
         nested_data[root_key] = value
 
 
-def get_key_paths(data_dict, keys_to_consider=None, root_path=None):
+def get_key_paths(data_dict,
+                  keys_to_consider=None,
+                  keys_not_to_consider=None,
+                  root_path=None):
     """
 
     Example:
@@ -120,6 +123,9 @@ def get_key_paths(data_dict, keys_to_consider=None, root_path=None):
     :param keys_to_consider: list with (root) key names to focus
     :type keys_to_consider: list
 
+    :param keys_not_to_consider: list with key names to discard (on any nesting level)
+    :type keys_not_to_consider: list
+
     :param root_path: root path to prepend.
     :type root_path: string
 
@@ -130,8 +136,14 @@ def get_key_paths(data_dict, keys_to_consider=None, root_path=None):
     if keys_to_consider is None:
         keys_to_consider = list(data_dict.keys())
 
+    if keys_not_to_consider is None:
+        keys_not_to_consider = []
+
     key_paths = []
     for key in keys_to_consider:
+        if key in keys_not_to_consider:
+            continue
+
         value = data_dict[key]
 
         if root_path is not None:
