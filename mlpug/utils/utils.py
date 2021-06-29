@@ -151,11 +151,13 @@ def get_key_paths(data_dict,
         else:
             current_path = key
 
+        path_list = []
         if type(value) is dict:
             path_list = get_key_paths(value,
                                       keys_not_to_consider=keys_not_to_consider,
                                       root_path=current_path)
-        else:
+
+        if len(path_list) == 0:
             path_list = [current_path]
 
         key_paths += path_list
