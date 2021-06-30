@@ -440,7 +440,9 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                 return False
 
             if metric_paths is None:
-                metric_paths = get_key_paths(batch_metric_data_map, keys_to_consider=metric_names)
+                metric_paths = get_key_paths(batch_metric_data_map,
+                                             keys_to_consider=metric_names,
+                                             keys_not_to_consider=["auxiliary_results"])
 
             for metric_path in metric_paths:
                 batch_metric_data = get_value_at(metric_path, batch_metric_data_map)
