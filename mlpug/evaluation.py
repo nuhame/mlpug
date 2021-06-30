@@ -262,6 +262,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
         for metric_name in batch_metric_funcs.keys():
             if metric_name not in batch_metric_reducer_funcs:
+                self._log.debug(f'batch_metric_reducer_funcs: '
+                                f'Adding default_metric_reducer_func for metric {metric_name}')
                 batch_metric_reducer_funcs[metric_name] = default_metric_reducer_func
 
         try:
@@ -272,6 +274,13 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         if batch_chunk_size is not None:
             if batch_chunk_metric_reducer_funcs is None:
                 batch_chunk_metric_reducer_funcs = batch_metric_reducer_funcs.copy()
+
+            # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
+            for metric_name in batch_metric_funcs.keys():
+                if metric_name not in batch_chunk_metric_reducer_funcs:
+                    self._log.debug(f'batch_chunk_metric_reducer_funcs: '
+                                    f'Adding default_metric_reducer_func for metric {metric_name}')
+                    batch_chunk_metric_reducer_funcs[metric_name] = default_metric_reducer_func
 
             try:
                 self.check_funcs(batch_chunk_metric_reducer_funcs, func_names=batch_metric_funcs.keys())
