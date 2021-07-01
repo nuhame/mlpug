@@ -45,37 +45,37 @@ class LogProgress(Callback):
             eta = self._calc_eta(logs)
             average_duration = self._get_average_batch_duration(logs)
 
-            sys.stdout.write('\nEpoch {:d}/{:d} - ETA: {:s}\tBatch {:d}/{:d} '
-                             'Average batch training time {:s}\n'.format(current["epoch"],
-                                                                         logs["final_epoch"],
-                                                                         eta,
-                                                                         current["batch_step"],
-                                                                         logs["final_batch_step"],
-                                                                         average_duration))
+            self._write('\nEpoch {:d}/{:d} - ETA: {:s}\tBatch {:d}/{:d} '
+                        'Average batch training time {:s}\n'.format(current["epoch"],
+                                                                    logs["final_epoch"],
+                                                                    eta,
+                                                                    current["batch_step"],
+                                                                    logs["final_batch_step"],
+                                                                    average_duration))
 
             for metric_level in ['batch', 'window_average', 'dataset', 'epoch']:
                 self._write_metric_logs(metric_level, logs)
-                sys.stdout.write(f'\n')
+                self._write(f'\n')
 
-            sys.stdout.write(f'\n')
+            self._write(f'\n')
 
         return success
 
     def on_epoch_completed(self, logs):
         current = self._get_logs_base(logs)
         duration = self._get_epoch_duration(logs)
-        sys.stdout.write('\n')
-        sys.stdout.write('###############################################################################')
-        sys.stdout.write('\n')
-        sys.stdout.write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
+        self._write('\n')
+        self._write('###############################################################################')
+        self._write('\n')
+        self._write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
                                                                            logs["final_epoch"],
                                                                            duration))
         success = True
         for metric_level in ['window_average', 'dataset', 'epoch']:
             self._write_metric_logs(metric_level, logs)
-            sys.stdout.write(f'\n')
+            self._write(f'\n')
 
-        sys.stdout.write(f'\n')
+        self._write(f'\n')
 
         return success
 
@@ -139,8 +139,8 @@ class LogProgress(Callback):
             metrics_log += f'{set_name:<15}: {set_metrics_log}.\n'
 
         if len(metrics_log) > 0:
-            sys.stdout.write(f'{self.metric_level_names[metric_level]}:\n')
-            sys.stdout.write(metrics_log)
+            self._write(f'{self.metric_level_names[metric_level]}:\n')
+            self._write(metrics_log)
 
     def _create_set_metrics_log_for(self, set_name, metric_level, logs):
         current = self._get_logs_base(logs)
@@ -197,6 +197,10 @@ class LogProgress(Callback):
             log_format = "{:<9s} {:>9.3f}"
 
         return log_format
+
+    def _write(self, text):
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
 
 class BatchSizeLogger(Callback):
