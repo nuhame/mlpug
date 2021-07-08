@@ -5,7 +5,7 @@ import time
 
 from statistics import mean
 
-from basics.base import Base
+from mlpug.base import Base
 import basics.base_utils as _
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow

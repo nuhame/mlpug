@@ -10,7 +10,7 @@ from mlpug.evaluation import default_metric_reducer_func, MetricEvaluatorBase
 
 from mlpug.utils import is_chunkable
 
-from basics.base import Base
+from mlpug.base import Base
 from basics.logging import get_logger
 
 logger = get_logger(os.path.basename(__file__))
