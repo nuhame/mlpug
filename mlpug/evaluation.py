@@ -4,7 +4,7 @@ import abc
 import math
 
 import numpy as np
-from basics.base import Base
+from mlpug.base import Base
 
 import basics.base_utils as _
 

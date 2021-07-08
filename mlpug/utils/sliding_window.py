@@ -1,4 +1,4 @@
-from basics.base import Base
+from mlpug.base import Base
 from mlpug.mlpug_exceptions import StateInvalidException, InvalidParametersException
 
 

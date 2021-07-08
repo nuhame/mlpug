@@ -32,7 +32,8 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                  model_checkpoint_filename_ext="m-ckp",
                  training_checkpoint_filename_ext="t-ckp",
                  backup_before_override=True,
-                 disable_saving_checkpoints=False,
+                 is_primary=True,
+                 disable_logging=False,
                  name="CheckpointManager"):
         """
 
@@ -63,10 +64,14 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                                        overridden by a new version. If backing up fails, no new version will be written
                                        to disk. This gives the user a chance to fix a problem, e.g. disk full, without
                                        interruption of the training process.
-        :param disable_saving_checkpoints: When True no checkpoints at all will be saved, e.g. for testing training
+        :param is_primary: Default True. When False the manager will not copy, save or backup checkpoints.
+                           This is relevant in a multi process situation.
+
+        :param disable_logging: Default False, when true the manager will not output any logs.
+                                This is relevant in a multi process situation.
 
         """
-        super().__init__(name=name)
+        super().__init__(name=name, disable_logging=disable_logging)
 
         self._model_hyper_parameters = model_hyper_parameters
 
@@ -85,14 +90,14 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         self._create_checkpoint_every = create_checkpoint_every
         self._archive_last_model_checkpoint_every = archive_last_model_checkpoint_every
 
-        self._disable_saving_checkpoints = disable_saving_checkpoints
-
         self._force_monitoring_on_epoch = force_monitoring_on_epoch
+
+        self._backup_before_override = backup_before_override
+
+        self._is_primary = is_primary
 
         self._best_model_quality = float('Inf') if self._metric_opt_mode == 'min' else -float('Inf')
         self._best_model_iter = None
-
-        self._backup_before_override = backup_before_override
 
         self._check_settings()
 
@@ -428,10 +433,18 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return self.training_manager.get_state()
 
     def _save_model_checkpoint(self, filename, state):
+        # Do nothing if this is not the master worker
+        if not self._is_primary:
+            return True
+
         with open(filename, 'wb') as f:
             pickle.dump(state, f)
 
     def _save_training_checkpoint(self, filename, state):
+        # Do nothing if this is not the master worker
+        if not self._is_primary:
+            return True
+
         with open(filename, 'wb') as f:
             pickle.dump(state, f)
 
@@ -442,6 +455,10 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
             return True
 
     def _copy(self, source_fname, dest_fname):
+        # Do nothing if this is not the master worker
+        if not self._is_primary:
+            return True
+
         try:
             self._log.debug("Copying model: [%s] ==> [%s]" % (source_fname, dest_fname))
             copyfile(source_fname, dest_fname)

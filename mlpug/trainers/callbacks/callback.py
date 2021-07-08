@@ -1,14 +1,14 @@
 import abc
 
-from basics.base import Base
+from mlpug.base import Base
 
 from mlpug.utils.utils import get_value_at
 
 
 class Callback(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, name, base_logs_path="current"):
-        super(Callback, self).__init__(pybase_logger_name=name)
+    def __init__(self, name, base_logs_path="current", **kwargs):
+        super(Callback, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.name = name
 
