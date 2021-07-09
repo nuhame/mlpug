@@ -2,72 +2,24 @@ import os
 import sys
 
 import torch
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.multiprocessing as mp
-
-import torchvision as tv
-
-from mlpug.examples.documentation.shared_args import base_argument_set
-
-# Import mlpug for Pytorch backend
-import mlpug.pytorch as mlp
+import torch_xla.core.xla_model as xm
+import torch_xla.distributed.xla_multiprocessing as xmp
 
 from basics.logging import get_logger
 
+# Import mlpug for Pytorch/XLA backend
+import mlpug.pytorch.xla as mlp
 
-def load_data():
-    transform = tv.transforms.ToTensor()
-
-    training_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/', train=True, download=True, transform=transform)
-    test_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/', train=False, download=True, transform=transform)
-
-    return training_data, test_data
-
-
-def create_callbacks_for(trainer, is_first_worker, validation_dataset, progress_log_period):
-    # At minimum you want to log the loss in the training progress
-    # By default the batch loss and the moving average of the loss are calculated and logged
-    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
-    callbacks = [
-        mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
-        # Calculate validation loss only once per epoch over the whole dataset
-        mlp.callbacks.TestMetricsLogger(validation_dataset,
-                                        'validation',
-                                        metric_evaluator=loss_evaluator,
-                                        batch_level=False),
-    ]
-
-    # Only first worker needs to log progress
-    if is_first_worker:
-        callbacks += [
-            mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
-        ]
-
-    return callbacks
+from mlpug.examples.documentation.shared_args import base_argument_set
+from mlpug.examples.documentation.pytorch.fashion_mnist import \
+    load_data, \
+    create_callbacks_for, \
+    TrainModel
 
 
-# MLPug needs a TrainModel that outputs the loss
-class TrainModel(torch.nn.Module):
-    def __init__(self, classifier, device):
-        super(TrainModel, self).__init__()
+def worker_fn(rank, flags):
+    args = flags['args']
 
-        self.classifier = classifier
-        self.device = device
-
-        self.loss_func = torch.nn.CrossEntropyLoss()
-
-    def forward(self, batch_data, evaluate_settings, inference_mode=None):
-        images, true_labels = batch_data
-
-        images = images.to(self.device)
-        true_labels = true_labels.to(self.device)
-
-        logits = self.classifier(images)
-        return self.loss_func(logits, true_labels)
-
-
-def worker_fn(rank, args, world_size):
     # ########## TRAINING SETUP  ###########
     batch_size = args.batch_size
     learning_rate = args.learning_rate
@@ -83,13 +35,13 @@ def worker_fn(rank, args, world_size):
     distributed = args.distributed
 
     if distributed:
-        logger_name = f"[GPU {rank}] {os.path.basename(__file__)}"
+        logger_name = f"[TPU {rank}] {os.path.basename(__file__)}"
     else:
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
 
-    is_first_worker = (distributed and rank == 0) or (not distributed)
+    is_first_worker = not distributed or xm.is_master_ordinal()
 
     if is_first_worker:
         logger.info(f"Batch size: {batch_size}")
@@ -102,25 +54,12 @@ def worker_fn(rank, args, world_size):
     # ########################################
 
     # ############## DEVICE SETUP ##############
-    use_cuda = torch.cuda.is_available()
-    if use_cuda:
-        torch.cuda.set_device(rank)
-
-        if distributed:
-            os.environ['MASTER_ADDR'] = 'localhost'
-            os.environ['MASTER_PORT'] = '12355'
-
-            dist.init_process_group(backend='nccl', rank=rank, world_size=world_size)
-        else:
-            logger.info(f"Single device mode : Using GPU {rank} ")
+    if distributed:
+        logger.info(f"Training over multiple XLA devices: Using XLA device {rank} ")
     else:
-        if distributed:
-            logger.error(f"No GPUs available for data distributed training over multiple GPUs")
-            return
+        logger.info(f"Single XLA device mode : Using XLA device {rank} ")
 
-        logger.info(f"Single device mode : Using CPU")
-
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = xm.xla_device(rank)
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
@@ -157,8 +96,6 @@ def worker_fn(rank, args, world_size):
 
     # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
     train_model.to(device)
-    if distributed:
-        train_model = DDP(train_model, device_ids=[rank])
     # ############################################
 
     # ############ SETUP OPTIMIZER #############
@@ -211,6 +148,11 @@ if __name__ == '__main__':
     logger = get_logger(os.path.basename(__file__))
     # ########################################
 
+    xla_available = len(xm.get_xla_supported_devices()) > 0
+    if not xla_available:
+        logger.error("No XLA devices available, unable to train")
+        exit(-1)
+
     # ############## PARSE ARGS ##############
     parser = base_argument_set()
 
@@ -223,12 +165,15 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    flags = {
+        'args': args
+    }
     if args.distributed:
-        world_size = torch.cuda.device_count()
+        world_size = xm.xrt_world_size()
         logger.info(f"Distributed Data Parallel mode : Using {world_size} GPUs")
-        mp.spawn(worker_fn,
-                 args=(args, world_size,),
-                 nprocs=world_size,
-                 join=True)
+        xmp.spawn(worker_fn,
+                  args=(flags,),
+                  nprocs=world_size,
+                  start_method='fork')
     else:
-        worker_fn(0, args=args, world_size=1)
+        worker_fn(0, flags)
