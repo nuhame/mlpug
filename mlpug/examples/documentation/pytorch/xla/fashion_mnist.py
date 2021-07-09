@@ -55,7 +55,7 @@ def worker_fn(rank, flags):
 
     # ############## DEVICE SETUP ##############
     if distributed:
-        logger.info(f"Training over multiple XLA devices: Using XLA device {rank} ")
+        logger.info(f"Training over multiple XLA devices: Using XLA device {rank}")
     else:
         logger.info(f"Single XLA device mode : Using XLA device {rank} ")
 
@@ -63,12 +63,12 @@ def worker_fn(rank, flags):
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
-    if distributed and rank > 0:
+    if distributed and not is_first_worker:
         xm.rendezvous("loading_data")
 
     training_data, test_data = load_data()
 
-    if distributed and rank == 0:
+    if distributed and is_first_worker:
         xm.rendezvous("loading_data")
 
     training_sampler = None
@@ -160,10 +160,10 @@ if __name__ == '__main__':
     logger = get_logger(os.path.basename(__file__))
     # ########################################
 
-    xla_available = len(xm.get_xla_supported_devices()) > 0
-    if not xla_available:
-        logger.error("No XLA devices available, unable to train")
-        exit(-1)
+    #xla_available = len(xm.get_xla_supported_devices()) > 0
+    #if not xla_available:
+    #    logger.error("No XLA devices available, unable to train")
+    #    exit(-1)
 
     # ############## PARSE ARGS ##############
     parser = base_argument_set()
