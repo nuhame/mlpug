@@ -31,12 +31,15 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
         self.requester = requester
 
         self._gather_loss_func = None
-        if dist.is_initialized():
+        if self._is_distributed():
             self._log.info(f"Using distributed gather loss function")
             self._gather_loss_func = self._gather_loss_distributed
         else:
             self._log.info(f"Using gather loss function")
             self._gather_loss_func = self._gather_loss
+
+    def _is_distributed(self):
+        return dist.is_initialized()
 
     def _do_detatch_auxiliary_results(self, auxiliary_results):
         # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
