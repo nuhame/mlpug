@@ -42,7 +42,6 @@ def create_callbacks_for(trainer,
                                                                     # not the latest model
                                         archive_last_model_checkpoint_every=0,  # no archiving
                                         backup_before_override=False,
-                                        disable_logging=False,
                                         model_hyper_parameters=model_hyper_parameters)
     ]
 
