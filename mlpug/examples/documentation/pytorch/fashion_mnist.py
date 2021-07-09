@@ -89,7 +89,7 @@ class TrainModel(torch.nn.Module):
         return self.loss_func(logits, true_labels)
 
 
-def test_model(model_checkpoint_filename, device=None):
+def test_model(model_checkpoint_filename, logger, device=None):
     if device is None:
         device = torch.device("cpu")
 
