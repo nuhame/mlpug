@@ -96,7 +96,7 @@ class GatherLossSimple(GatherLossBase):
 
     def _gather_loss_distributed(self, loss, **kwargs):
         loss_sum = loss
-        dist.reduce(loss_sum, 0)
+        dist.all_reduce(loss_sum)
         num_devices = dist.get_world_size()
         loss = loss_sum / num_devices
 
@@ -148,8 +148,8 @@ class GatherMaskedLoss(GatherLossBase):
         return loss, loss_sum, num_samples
 
     def _gather_loss_distributed(self, loss_sum, num_samples, **kwargs):
-        dist.reduce(loss_sum, 0)
-        dist.reduce(num_samples, 0)
+        dist.all_reduce(loss_sum)
+        dist.all_reduce(num_samples)
 
         loss_sum = loss_sum.item()
         num_samples = num_samples.item()
