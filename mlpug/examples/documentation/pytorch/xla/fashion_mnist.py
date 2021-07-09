@@ -17,7 +17,7 @@ from mlpug.examples.documentation.pytorch.fashion_mnist import \
     TrainModel
 
 
-def worker_fn(rank, flags):
+def worker_fn(worker_index, flags):
     args = flags['args']
 
     # ########## TRAINING SETUP  ###########
@@ -35,7 +35,7 @@ def worker_fn(rank, flags):
     distributed = args.distributed
 
     if distributed:
-        logger_name = f"[TPU {rank}] {os.path.basename(__file__)}"
+        logger_name = f"[Worker {worker_index}] {os.path.basename(__file__)}"
     else:
         logger_name = os.path.basename(__file__)
 
@@ -54,12 +54,14 @@ def worker_fn(rank, flags):
     # ########################################
 
     # ############## DEVICE SETUP ##############
+    rank = xm.get_ordinal()
+    world_size = xm.xrt_world_size()
     if distributed:
-        logger.info(f"Training over multiple XLA devices: Using XLA device {rank}")
+        logger.info(f"Training over multiple XLA devices: Using XLA device {rank}/{world_size}")
     else:
         logger.info(f"Single XLA device mode : Using XLA device {rank} ")
 
-    device = xm.xla_device(rank)
+    device = xm.xla_device()
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
@@ -152,6 +154,8 @@ def worker_fn(rank, flags):
         predicted_label = torch.argmax(probabilities)
 
         logger.info(f"real label = {real_label}, predicted label = {predicted_label}\n")
+
+    xm.rendezvous("worker_ready")
 
 
 if __name__ == '__main__':
