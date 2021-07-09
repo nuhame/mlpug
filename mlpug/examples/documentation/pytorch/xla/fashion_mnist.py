@@ -142,7 +142,8 @@ def worker_fn(worker_index, flags):
     # ##########################################
 
     # ######### USE THE TRAINED MODEL ##########
-    if is_first_worker:
+    # program will freeze if this is not computed on all devices
+    if True:
         logger.info("Using the classifier ...")
         first_sample = next(iter(test_data))
         image = first_sample[0]
@@ -151,14 +152,18 @@ def worker_fn(worker_index, flags):
         # Transfer the image to the assigned device
         image = image.to(device)
 
-        logits = classifier(image)
-        probabilities = torch.softmax(logits, dim=-1)
+        classifier.eval()
+        with torch.no_grad():
+            logits = classifier(image)
+            probabilities = torch.softmax(logits, dim=-1)
 
-        predicted_label = torch.argmax(probabilities)
+            predicted_label = torch.argmax(probabilities)
 
-        logger.info(f"real label = {real_label}, predicted label = {predicted_label}\n")
+            logger.info(f"real label = {real_label}, predicted label = {predicted_label}\n")
 
     xm.rendezvous("worker_ready")
+
+    logger.info("DONE.")
 
 
 if __name__ == '__main__':
