@@ -54,6 +54,11 @@ def worker_fn(worker_index, flags):
     # ########################################
 
     # ############## DEVICE SETUP ##############
+    xla_available = len(xm.get_xla_supported_devices()) > 0
+    if not xla_available:
+        logger.error("No XLA devices available, unable to train")
+        return
+
     rank = xm.get_ordinal()
     world_size = xm.xrt_world_size()
     if distributed:
@@ -164,11 +169,6 @@ if __name__ == '__main__':
     logger = get_logger(os.path.basename(__file__))
     # ########################################
 
-    #xla_available = len(xm.get_xla_supported_devices()) > 0
-    #if not xla_available:
-    #    logger.error("No XLA devices available, unable to train")
-    #    exit(-1)
-
     # ############## PARSE ARGS ##############
     parser = base_argument_set()
 
@@ -176,6 +176,11 @@ if __name__ == '__main__':
         '--distributed',
         action='store_true',
         help='Set to distribute training over multiple GPUs')
+    parser.add_argument(
+        '--num_xla_devices',
+        type=int, required=False, default=8,
+        help='Number of XLA devices to use in distributed mode, '
+             'usually this is the number of TPU cores.')
 
     parser.parse_args()
 
@@ -185,7 +190,7 @@ if __name__ == '__main__':
         'args': args
     }
     if args.distributed:
-        world_size = 8
+        world_size = args.num_xla_devices
         logger.info(f"Distributed Data Parallel mode : Using {world_size} XLA devices")
         xmp.spawn(worker_fn,
                   args=(flags,),
