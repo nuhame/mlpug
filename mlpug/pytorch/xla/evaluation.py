@@ -44,4 +44,4 @@ class MetricEvaluator(MetricEvaluatorPyTorch):
                 "loss": GatherLossSimple(requester=name)
             }
 
-        super().__init__(batch_metric_funcs, *args, name=name, **kwargs)
+        super().__init__(*args, batch_metric_funcs=batch_metric_funcs, name=name, **kwargs)
