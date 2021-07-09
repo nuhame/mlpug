@@ -53,8 +53,13 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         :param create_checkpoint_every: period before saving next training/model checkpoint
                                         (will be overridden after each period)
+                                        A 0 value disables this feature.
+
         :param archive_last_model_checkpoint_every: period before the last available model checkpoint is archived.
                                                     Period must be multiple of create_checkpoint_every period
+
+                                                    A 0 value disables this feature.
+
         :param force_monitoring_on_epoch: When True, the given metric will also be monitored on every epoch
                                           in the case that monitoring level is batch level
         :param base_checkpoint_filename:
@@ -164,10 +169,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         sys.stdout.write("\n")
         sys.stdout.flush()
-        self._log.info(f"Training {status}, ...")
-        self._log.info(f"... storing latest model ...")
-        latest_model_fname = self._create_model_checkpoint()
-        success = (latest_model_fname is not None)
+        self._log.info(f"Training {status}")
+        success = True
+        if self._create_checkpoint_every > 0:
+            self._log.info(f"... storing latest model ...")
+            latest_model_fname = self._create_model_checkpoint()
+            success = (latest_model_fname is not None)
 
         if stopped_early or interrupted:
             self._log.info(f"... storing training checkpoint ...")
@@ -175,8 +182,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
             success &= (training_checkpoint_fname is not None)
 
         if abs(self._best_model_quality) != float('Inf') and self._best_model_iter is not None:
+            iter_name = "global iteration" if self._batch_level else "epoch"
+
             self._log.info(f"Best model quality reached {self._metric_to_monitor}={self._best_model_quality} "
-                           f"at global iteration {self._best_model_iter}")
+                           f"at {iter_name} {self._best_model_iter}")
+        else:
+            self._log.warn(f"No good enough model found, no best model checkpoint saved.")
 
         return success
 
@@ -265,12 +276,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                                        f"current best model training iter ({self._best_model_iter}) is in the future. "
                                        f"Was the right training checkpoint loaded?")
 
-                    best_model_fname = self._disable_saving_checkpoints or self._save_current_model_as_best()
+                    best_model_fname = self._save_current_model_as_best()
                     if best_model_fname:
                         self._best_model_quality = model_quality
                         self._best_model_iter = training_iter
 
-                        data_saved = not self._disable_saving_checkpoints
+                        data_saved = True
                     else:
                         self._log.error("Unable to save improved model checkpoint")
                         success = False
@@ -281,9 +292,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                                 f"skipping ...")
                 success = False
 
-        if not self._disable_saving_checkpoints and \
-                (self._create_checkpoint_every > 0) and \
-                (training_iter % self._create_checkpoint_every == 0):
+        if (self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0):
             # Just copy best model if available
             latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
 
