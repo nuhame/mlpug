@@ -13,9 +13,20 @@ class CheckpointManager(CheckpointManagerBase):
                  is_primary=None,
                  disable_logging=None,
                  **kwargs):
+        """
+
+        Please see CheckpointManagerBase for all constructor arguments
+
+        :param args:
+        :param model_checkpoint_filename_ext:
+        :param training_checkpoint_filename_ext:
+        :param is_primary:
+        :param disable_logging:
+        :param kwargs:
+        """
 
         if is_primary is None:
-            is_primary = dist.is_initialized()
+            is_primary = not dist.is_initialized() or dist.get_rank() == 0
 
         if disable_logging is None:
             disable_logging = not is_primary
