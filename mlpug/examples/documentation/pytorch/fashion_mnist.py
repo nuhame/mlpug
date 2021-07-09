@@ -162,7 +162,7 @@ def worker_fn(rank, args, world_size):
     train_model = TrainModel(classifier, device)
 
     # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
-    train_model.to(device)
+    classifier.to(device)
     if distributed:
         train_model = DDP(train_model, device_ids=[rank])
     # ############################################
