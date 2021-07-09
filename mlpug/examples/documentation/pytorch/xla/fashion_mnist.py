@@ -114,7 +114,7 @@ def worker_fn(worker_index, flags):
     train_model = TrainModel(classifier, device)
 
     # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
-    train_model.to(device)
+    classifier.to(device)
     # ############################################
 
     # ############ SETUP OPTIMIZER #############
@@ -142,8 +142,6 @@ def worker_fn(worker_index, flags):
     # ##########################################
 
     # ######### USE THE TRAINED MODEL ##########
-    sys.stdout.write("\n\n\n\n")
-    sys.stdout.flush()
     if is_first_worker:
         logger.info("Using the classifier ...")
         first_sample = next(iter(test_data))
