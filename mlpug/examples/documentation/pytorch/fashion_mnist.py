@@ -124,7 +124,13 @@ def worker_fn(rank, args, world_size):
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
+    if distributed and rank > 0:
+        dist.barrier()
+
     training_data, test_data = load_data()
+
+    if distributed and rank == 0:
+        dist.barrier()
 
     training_sampler = None
     validation_sampler = None
