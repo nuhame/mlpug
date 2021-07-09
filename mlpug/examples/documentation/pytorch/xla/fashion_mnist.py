@@ -181,8 +181,8 @@ if __name__ == '__main__':
         'args': args
     }
     if args.distributed:
-        world_size = xm.xrt_world_size()
-        logger.info(f"Distributed Data Parallel mode : Using {world_size} GPUs")
+        world_size = 8
+        logger.info(f"Distributed Data Parallel mode : Using {world_size} XLA devices")
         xmp.spawn(worker_fn,
                   args=(flags,),
                   nprocs=world_size,
