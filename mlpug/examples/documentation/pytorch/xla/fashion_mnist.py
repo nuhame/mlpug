@@ -63,13 +63,25 @@ def worker_fn(rank, flags):
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
+    if distributed and rank > 0:
+        xm.rendezvous("loading_data")
+
     training_data, test_data = load_data()
+
+    if distributed and rank == 0:
+        xm.rendezvous("loading_data")
 
     training_sampler = None
     validation_sampler = None
     if distributed:
-        training_sampler = torch.utils.data.distributed.DistributedSampler(training_data)
-        validation_sampler = torch.utils.data.distributed.DistributedSampler(test_data)
+        training_sampler = torch.utils.data.distributed.DistributedSampler(
+            training_data,
+            num_replicas=xm.xrt_world_size(),
+            rank=xm.get_ordinal())
+        validation_sampler = torch.utils.data.distributed.DistributedSampler(
+            test_data,
+            num_replicas=xm.xrt_world_size(),
+            rank=xm.get_ordinal())
 
     training_dataset = torch.utils.data.DataLoader(training_data,
                                                    batch_size=batch_size,
