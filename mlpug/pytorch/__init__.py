@@ -4,5 +4,3 @@ from .trainers import callbacks
 from . import evaluation
 
 import mlpug.logging as logging
-
-from . import xla
