@@ -13,10 +13,47 @@ import mlpug.pytorch.xla as mlp
 from mlpug.examples.documentation.shared_args import base_argument_set
 from mlpug.examples.documentation.pytorch.fashion_mnist import \
     load_data, \
-    create_callbacks_for, \
     build_model, \
     TrainModel, \
     test_model
+
+
+def create_callbacks_for(trainer,
+                         experiment_name,
+                         model_hyper_parameters,
+                         is_primary,
+                         validation_dataset,
+                         progress_log_period):
+    # At minimum you want to log the loss in the training progress
+    # By default the batch loss and the moving average of the loss are calculated and logged
+    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
+    callbacks = [
+        mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
+        # Calculate validation loss only once per epoch over the whole dataset
+        mlp.callbacks.TestMetricsLogger(validation_dataset,
+                                        'validation',
+                                        metric_evaluator=loss_evaluator,
+                                        batch_level=False),
+        mlp.callbacks.CheckpointManager(base_checkpoint_filename=experiment_name,
+                                        batch_level=False,  # monitor per epoch
+                                        metric_to_monitor="validation.dataset.loss",
+                                        metric_monitor_period=1,  # every epoch
+                                        create_checkpoint_every=0,  # We are only interested in the best model,
+                                                                    # not the latest model
+                                        archive_last_model_checkpoint_every=0,  # no archiving
+                                        backup_before_override=False,
+                                        disable_logging=False,
+                                        model_hyper_parameters=model_hyper_parameters)
+    ]
+
+    # Only primary worker needs to log progress
+    if is_primary:
+        callbacks += [
+            mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
+        ]
+
+    return callbacks
+
 
 
 def worker_fn(worker_index, flags):
@@ -193,4 +230,4 @@ if __name__ == '__main__':
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    test_model(model_checkpoint_filename, device=device)
+    test_model(model_checkpoint_filename, logger, device=device)
