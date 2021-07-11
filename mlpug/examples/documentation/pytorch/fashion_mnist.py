@@ -117,6 +117,10 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 
 def worker_fn(rank, args, world_size):
+
+    # import pydevd
+    # pydevd.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+
     distributed = args.distributed
     torch.random.manual_seed(args.seed)
 
