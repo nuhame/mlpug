@@ -1,9 +1,10 @@
+from mlpug.pytorch.multi_processing import MultiProcessingMixin
 from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapperBase
 
 from statistics import mean
 
 
-class LRSchedulerWrapper(LRSchedulerWrapperBase):
+class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperBase):
 
     def get_state(self):
         """

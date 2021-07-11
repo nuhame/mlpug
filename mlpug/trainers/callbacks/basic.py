@@ -10,8 +10,14 @@ import basics.base_utils as _
 
 class LogProgress(Callback):
 
-    def __init__(self, log_period=200, set_names=None, batch_level=True, logs_base_path="current", name="LogProgress"):
-        super(LogProgress, self).__init__(name=name)
+    def __init__(self,
+                 log_period=200,
+                 set_names=None,
+                 batch_level=True,
+                 logs_base_path="current",
+                 name="LogProgress",
+                 **kwargs):
+        super(LogProgress, self).__init__(name=name, **kwargs)
 
         self.log_period = log_period
         self.set_names = set_names or ["training"]
@@ -205,8 +211,8 @@ class LogProgress(Callback):
 
 class BatchSizeLogger(Callback):
 
-    def __init__(self, batch_dimension=1, name="BatchSizeLogger"):
-        super().__init__(name=name)
+    def __init__(self, batch_dimension=1, name="BatchSizeLogger", **kwargs):
+        super().__init__(name=name, **kwargs)
 
         self._batch_dimension = batch_dimension
 

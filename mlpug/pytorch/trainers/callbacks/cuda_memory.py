@@ -3,15 +3,15 @@ import sys
 import torch
 import torch.distributed as dist
 
-from mlpug.trainers.callbacks.callback import Callback
+from mlpug.pytorch.trainers.callbacks import Callback
 
 from mlpug.mlpug_exceptions import CallbackInvalidException
 
 
 class EmptyCudaCache(Callback):
 
-    def __init__(self, on_batch_training_complete=True, on_epoch_complete=True, name="EmptyCudaCache"):
-        super(EmptyCudaCache, self).__init__(name=name)
+    def __init__(self, on_batch_training_complete=True, on_epoch_complete=True, name="EmptyCudaCache", **kwargs):
+        super(EmptyCudaCache, self).__init__(name=name, **kwargs)
 
         self._on_batch_training_complete = on_batch_training_complete
         self._on_epoch_complete = on_epoch_complete
@@ -42,7 +42,8 @@ class LogCudaMemory(Callback):
                  devices=None,
                  on_batch_training_start=False,
                  on_batch_training_complete=True,
-                 name="LogCudaMemory"):
+                 name="LogCudaMemory",
+                 **kwargs):
         """
 
         TODO: add memory statistics to log
@@ -53,7 +54,7 @@ class LogCudaMemory(Callback):
         :param name:
         """
 
-        super(LogCudaMemory, self).__init__(name=name)
+        super(LogCudaMemory, self).__init__(name=name, **kwargs)
 
         try:
             self._pynvml = __import__('pynvml')

@@ -11,19 +11,24 @@ from mlpug.evaluation import default_metric_reducer_func, MetricEvaluatorBase
 from mlpug.utils import is_chunkable
 
 from mlpug.base import Base
-from basics.logging import get_logger
 
-logger = get_logger(os.path.basename(__file__))
+from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 # ####### DEFAULT GATHER LOSS METHODS ########
-class GatherLossBase(Base, metaclass=abc.ABCMeta):
+class GatherLossBase(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, name, delete_training_loss=True, delete_auxiliary_results=True, requester=None):
+    def __init__(self,
+                 name,
+                 delete_training_loss=True,
+                 delete_auxiliary_results=True,
+                 requester=None,
+                 **kwargs):
+
         if requester is not None:
             name += f'[{requester}]'
 
-        super(GatherLossBase, self).__init__(pybase_logger_name=name)
+        super(GatherLossBase, self).__init__(pybase_logger_name=name, **kwargs)
 
         self._delete_training_loss = delete_training_loss
         self._delete_auxiliary_results = delete_auxiliary_results
@@ -31,15 +36,12 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
         self.requester = requester
 
         self._gather_loss_func = None
-        if self._is_distributed():
+        if self.is_distributed:
             self._log.info(f"Using distributed gather loss function")
             self._gather_loss_func = self._gather_loss_distributed
         else:
             self._log.info(f"Using gather loss function")
             self._gather_loss_func = self._gather_loss
-
-    def _is_distributed(self):
-        return dist.is_initialized()
 
     def _do_detatch_auxiliary_results(self, auxiliary_results):
         # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
@@ -77,10 +79,11 @@ class GatherLossBase(Base, metaclass=abc.ABCMeta):
 
 class GatherLossSimple(GatherLossBase):
 
-    def __init__(self, delete_training_loss=True, requester=None, name="GatherLossSimple"):
+    def __init__(self, delete_training_loss=True, requester=None, name="GatherLossSimple", **kwargs):
         super().__init__(name,
                          delete_training_loss=delete_training_loss,
-                         requester=requester)
+                         requester=requester,
+                         **kwargs)
 
     def __call__(self, loss, **kwargs):
         training_loss = loss
@@ -112,8 +115,9 @@ class GatherMaskedLoss(GatherLossBase):
                  delete_training_loss=True,
                  delete_auxiliary_results=True,
                  requester=None,
-                 name="GatherMaskedLoss"):
-        super().__init__(name, delete_training_loss, delete_auxiliary_results, requester)
+                 name="GatherMaskedLoss",
+                 **kwargs):
+        super().__init__(name, delete_training_loss, delete_auxiliary_results, requester, **kwargs)
 
     def __call__(self, loss, auxiliary_results, **kwargs):
         training_loss = loss
@@ -163,7 +167,7 @@ class GatherMaskedLoss(GatherLossBase):
 # ############################################
 
 
-class MetricEvaluator(MetricEvaluatorBase):
+class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
 
     def __init__(self, *args, batch_metric_funcs=None, name="MetricEvaluator", **kwargs):
 

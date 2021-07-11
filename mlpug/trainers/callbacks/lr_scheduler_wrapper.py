@@ -12,7 +12,8 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
                  schedulers,
                  batch_level=True,
                  metric_to_monitor=None,
-                 name="LRSchedulerWrapper"):
+                 name="LRSchedulerWrapper",
+                 **kwargs):
         """
 
         Calls given schedulers, per batch or per epoch, optionally using the current model quality
@@ -24,7 +25,7 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
                                   e.g. `validation.window_average.perplexity`, used by the schedulers. If None, it is
                                   assumed that the schedulers don't monitor any metric.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
 
         schedulers = convert_to_dict("scheduler", schedulers)
 

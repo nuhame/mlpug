@@ -7,12 +7,23 @@ from functools import reduce
 import basics.base_utils as _
 
 from mlpug.trainers.training import *
+from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
 from mlpug.utils import is_chunkable
 
+from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
-class PTTrainerMixin:
+
+class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class PTTrainerMixin(MultiProcessingMixin):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def _activate_inference_mode(self, inference_mode):
         if inference_mode:
@@ -40,7 +51,7 @@ class Trainer(PTTrainerMixin, TrainerBase):
 class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args, scaler=None, name="DefaultTrainer", **kwargs):
-        super(DefaultTrainer, self).__init__(*args, **kwargs)
+        super(DefaultTrainer, self).__init__(*args, name=name, **kwargs)
 
         self._scaler = scaler
 
