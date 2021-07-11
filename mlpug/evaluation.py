@@ -79,7 +79,8 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                  batch_chunk_size=None,
                  batch_chunk_metric_reducer_funcs=None,
                  show_dataset_evaluation_progress=False,
-                 name="MetricEvaluatorBase"):
+                 name="MetricEvaluatorBase",
+                 **kwargs):
         """
 
         TODO : Add more documentation
@@ -230,7 +231,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         :type show_dataset_evaluation_progress
         """
 
-        super().__init__()
+        super().__init__(**kwargs)
 
         if trainer is not None:
             if model_evaluate_func is not None:

@@ -1,14 +1,21 @@
+from mlpug.logging import python_logging
+
 from basics.base import Base as PyBase
 
 
 class Base(PyBase):
 
     def __init__(self, *args, disable_logging=False, **kwargs):
+        # print(f"mlpug.Base(*args={args}, kwargs={kwargs})")
         super().__init__(*args, **kwargs)
 
-        self._log.disabled = disable_logging
-        self._logging_disabled = disable_logging
+        self._logging_disabled = None
+        self._set_logging_disabled(disable_logging)
 
     @property
     def logging_disabled(self):
         return self._logging_disabled
+
+    def _set_logging_disabled(self, disable):
+        self._log.setLevel(python_logging.WARN if disable else python_logging.DEBUG)
+        self._logging_disabled = disable

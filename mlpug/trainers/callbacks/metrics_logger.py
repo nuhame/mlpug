@@ -82,6 +82,7 @@ class MetricsLoggerBase(Callback):
         :param name:
         :type name:
         """
+        # print(f"mlpug.MetricsLoggerBase(kwargs={kwargs})")
 
         if name is None:
             name = self.__class__.__name__
@@ -371,6 +372,8 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                  batch_level=True,
                  logging_mode=MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
                  **kwargs):
+
+        # print(f"mlpug.TrainingMetricsLogger(kwargs={kwargs})")
 
         super().__init__(
             metric_evaluator=metric_evaluator,

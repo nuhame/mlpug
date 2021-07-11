@@ -119,10 +119,12 @@ def test_model(model_checkpoint_filename, logger, device=None):
 def worker_fn(rank, args, world_size):
     distributed = args.distributed
     torch.random.manual_seed(args.seed)
+
+    mlp.logging.use_fancy_colors()
     
     # ########## TRAINING SETUP  ###########
     if distributed:
-        logger_name = f"[GPU {rank}] {os.path.basename(__file__)}"
+        logger_name = f"[Worker {rank}] {os.path.basename(__file__)}"
     else:
         logger_name = os.path.basename(__file__)
 
@@ -277,4 +279,4 @@ if __name__ == '__main__':
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    test_model(model_checkpoint_filename, device=device)
+    test_model(model_checkpoint_filename, device=device, logger=logger)

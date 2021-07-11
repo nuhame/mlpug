@@ -16,6 +16,15 @@ class CallbackInvalidException(MLPugException):
         super().__init__(err_msg)
 
 
+class CallbackBadUseException(MLPugException):
+    def __init__(self, callback_name, message=None):
+        err_msg = f"Bad use of Callback {callback_name}"
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
+
+
 class TrainerInvalidException(MLPugException):
     def __init__(self, message=None):
         err_msg = "Trainer is invalid"

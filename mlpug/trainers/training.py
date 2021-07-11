@@ -39,7 +39,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                  num_epochs=50,
                  num_batches_per_epoch=None,
                  callbacks=None,
-                 experiment_data=None):
+                 experiment_data=None,
+                 **kwargs):
         """
         Implements a simple training loop in the `_train` method. Although simple in nature, the use of callbacks
         (see the `Callback` class), provide the means to monitor, control and customize the training.
@@ -60,7 +61,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                                 This could contain additional training/model experiment data
 
         """
-        super(TrainingManager, self).__init__()
+        super(TrainingManager, self).__init__(**kwargs)
 
         self.trainer = trainer
 
@@ -599,14 +600,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
 class TrainerBase(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, model_components, optimizers):
+    def __init__(self, model_components, optimizers, name="TrainerBase", **kwargs):
         """
 
         :param model_components: dict with model components
         :param optimizers: dict with optimizers
 
         """
-        super(TrainerBase, self).__init__()
+        super(TrainerBase, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.model_components = model_components
         self.optimizers = optimizers
@@ -888,7 +889,9 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
                  optimizers,
                  model_components=None,
                  batch_chunk_size=None,
-                 use_mixed_precision=False):
+                 use_mixed_precision=False,
+                 name="DefaultTrainerBase",
+                 **kwargs):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
 
@@ -915,7 +918,7 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         model_components = convert_to_dict("model", model_components)
         optimizers = convert_to_dict("optimizer", optimizers)
 
-        super().__init__(model_components, optimizers)
+        super().__init__(model_components, optimizers, name=name, **kwargs)
 
         self.batch_chunk_size = batch_chunk_size
         if self.batch_chunk_size is not None:

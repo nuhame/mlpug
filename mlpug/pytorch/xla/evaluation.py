@@ -14,12 +14,7 @@ from mlpug.pytorch.evaluation import \
     GatherMaskedLoss as GatherMaskedLossPyTorch
 
 
-class PTGatherLossMixin:
-    def _is_distributed(self):
-        return xm.xrt_world_size() > 1
-
-
-class GatherLossSimple(PTGatherLossMixin, GatherLossSimplePytorch):
+class GatherLossSimple(GatherLossSimplePytorch):
 
     def _gather_loss_distributed(self, loss, **kwargs):
         loss_sum = xm.mesh_reduce('gather_loss', loss, np.sum)
@@ -29,7 +24,7 @@ class GatherLossSimple(PTGatherLossMixin, GatherLossSimplePytorch):
         return loss, loss_sum, num_devices
 
 
-class GatherMaskedLoss(PTGatherLossMixin, GatherMaskedLossPyTorch):
+class GatherMaskedLoss(GatherMaskedLossPyTorch):
 
     def _gather_loss_distributed(self, loss_sum, num_samples, **kwargs):
         loss_sum = xm.mesh_reduce('gather_loss', loss_sum, np.sum)

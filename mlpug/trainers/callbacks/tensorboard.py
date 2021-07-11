@@ -36,7 +36,8 @@ class Tensorboard(Callback):
                  log_dir='../training-logs/',
                  tensorboard_options=None,
                  ignore_missing_metrics=False,
-                 name="Tensorboard"):
+                 name="Tensorboard",
+                 **kwargs):
         """
 
         Shows batch-level or epoch-level metrics, as defined by the metric key paths in `metric_paths`.
@@ -255,7 +256,7 @@ class Tensorboard(Callback):
         :param name:
         """
 
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
 
         self._metric_paths = metric_paths
 
@@ -472,7 +473,8 @@ class AutoTensorboard(Callback):
                  log_dir='../training-logs/',
                  tensorboard_options=None,
                  ignore_missing_metrics=False,
-                 name="AutoTensorboard"):
+                 name="AutoTensorboard",
+                 **kwargs):
         """
 
         Shows batch-level metrics, and/or averaged batch-level (metrics), and/or epoch level metrics.
@@ -562,7 +564,7 @@ class AutoTensorboard(Callback):
 
         :param name:
         """
-        super().__init__(name=name)
+        super().__init__(name=name, **kwargs)
 
         self._experiment_name = experiment_name
         self._dataset_name = dataset_name
