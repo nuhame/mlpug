@@ -2,7 +2,7 @@ import logging
 
 from basics.logging import LOGGING_FORMAT
 
-from mlpug.logging.base import FG_COLOR_CODE, BG_COLOR_CODE, FormatterBase
+from mlpug.mlpug_logging.base import FG_COLOR_CODE, BG_COLOR_CODE, FormatterBase
 
 WHITE = 15
 PINK = 13
