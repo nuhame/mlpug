@@ -7,7 +7,7 @@ from mlpug.multi_processing import \
 
 class XLADistributedContext(MultiProcessingContextBase):
 
-    def __init__(self, name="PyTorchDistributedContext"):
+    def __init__(self, name="XLADistributedContext"):
         super().__init__(name=name)
 
     def is_distributed(self):
@@ -16,6 +16,8 @@ class XLADistributedContext(MultiProcessingContextBase):
     def is_primary(self):
         return xm.is_master_ordinal()
 
-    def process_index(self):
+    def device_rank(self):
         return xm.get_ordinal()
 
+    def world_size(self):
+        return xm.xrt_world_size()
