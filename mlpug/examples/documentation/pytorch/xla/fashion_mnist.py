@@ -42,7 +42,6 @@ def create_callbacks_for(trainer,
                                                                     # not the latest model
                                         archive_last_model_checkpoint_every=0,  # no archiving
                                         backup_before_override=False,
-                                        disable_logging=False,
                                         model_hyper_parameters=model_hyper_parameters)
     ]
 
@@ -55,23 +54,24 @@ def create_callbacks_for(trainer,
     return callbacks
 
 
-
-def worker_fn(worker_index, flags):
+def worker_fn(rank, flags):
     args = flags['args']
+    world_size = flags['world_size']
 
     distributed = args.distributed
+    is_primary = rank == 0
 
-    # ########## TRAINING SETUP  ###########
+    mlp.logging.use_fancy_colors()
+
+    # ########## EXPERIMENT SETUP  ###########
     torch.random.manual_seed(args.seed)
 
     if distributed:
-        logger_name = f"[Worker {worker_index}] {os.path.basename(__file__)}"
+        logger_name = f"[Device {rank}] {os.path.basename(__file__)}"
     else:
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
-
-    is_primary = not distributed or xm.is_master_ordinal()
 
     if is_primary:
         logger.info(f"Experiment name: {args.experiment_name}")
@@ -91,8 +91,6 @@ def worker_fn(worker_index, flags):
         logger.error("No XLA devices available, unable to train")
         return
 
-    rank = xm.get_ordinal()
-    world_size = xm.xrt_world_size()
     if distributed:
         logger.info(f"Training over multiple XLA devices: Using XLA device {rank}/{world_size}")
     else:
@@ -115,12 +113,12 @@ def worker_fn(worker_index, flags):
     if distributed:
         training_sampler = torch.utils.data.distributed.DistributedSampler(
             training_data,
-            num_replicas=xm.xrt_world_size(),
-            rank=xm.get_ordinal())
+            num_replicas=world_size,
+            rank=rank)
         validation_sampler = torch.utils.data.distributed.DistributedSampler(
             test_data,
-            num_replicas=xm.xrt_world_size(),
-            rank=xm.get_ordinal())
+            num_replicas=world_size,
+            rank=rank)
 
     training_dataset = torch.utils.data.DataLoader(training_data,
                                                    batch_size=args.batch_size,
@@ -210,11 +208,11 @@ if __name__ == '__main__':
         'args': args
     }
     if args.distributed:
-        world_size = args.num_xla_devices
-        logger.info(f"Distributed Data Parallel mode : Using {world_size} XLA devices")
+        flags['world_size'] = args.num_xla_devices
+        logger.info(f"Distributed Data Parallel mode : Using {flags['world_size']} XLA devices")
         xmp.spawn(worker_fn,
                   args=(flags,),
-                  nprocs=world_size,
+                  nprocs=flags['world_size'],
                   start_method='fork')
     else:
         worker_fn(0, flags)
