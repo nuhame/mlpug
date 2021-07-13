@@ -16,6 +16,10 @@ class PyTorchDistributedContext(MultiProcessingContextBase):
     def is_primary(self):
         return dist.get_rank() == 0
 
-    def process_index(self):
+    def device_rank(self):
         return dist.get_rank()
+
+    def world_size(self):
+        return dist.get_world_size()
+
 
