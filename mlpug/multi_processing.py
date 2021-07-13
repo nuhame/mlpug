@@ -24,7 +24,11 @@ class MultiProcessingContextBase(Base, metaclass=abc.ABCMeta):
         raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
-    def process_index(self):
+    def device_rank(self):
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def world_size(self):
         raise NotImplemented("Please implement this method in your child class")
 
 
@@ -38,7 +42,8 @@ class MultiProcessingManager:
     def set_context(cls, context):
         cls._context = context
 
-        cls._log.info(f"Using multi-processing context {str(context)}.")
+        if bool(DEBUG_MULTI_PROCESSING) is True:
+            cls._log.info(f"Using multi-processing context {str(context)}.")
 
     @classmethod
     def get_context(cls):
@@ -50,7 +55,7 @@ class MultiProcessingMixin:
     def __init__(self, *args,
                  is_distributed=None,
                  is_primary=None,
-                 process_index=None,
+                 device_rank=None,
                  disable_logging=None,
                  **kwargs):
 
@@ -59,8 +64,8 @@ class MultiProcessingMixin:
         if is_distributed is None:
             is_distributed = mp_context.is_distributed()
 
-        if process_index is None:
-            process_index = mp_context.process_index() if is_distributed else 0
+        if device_rank is None:
+            device_rank = mp_context.device_rank() if is_distributed else 0
 
         if is_primary is None:
             is_primary = (not is_distributed) or mp_context.is_primary()
@@ -72,7 +77,7 @@ class MultiProcessingMixin:
             disable_logging = is_distributed and not is_primary
 
         self._is_distributed = is_distributed
-        self._process_index = process_index
+        self._device_rank = device_rank
         self._is_primary = is_primary
 
         super().__init__(*args, disable_logging=disable_logging, **kwargs)
@@ -86,11 +91,11 @@ class MultiProcessingMixin:
         return self._is_primary
 
     @property
-    def process_index(self):
-        return self._process_index
+    def device_rank(self):
+        return self._device_rank
 
     def _pybase_get_logger_name(self):
         if self.is_distributed:
-            return f"[Worker {self.process_index}] {super()._pybase_get_logger_name()}"
+            return f"[Device {self.device_rank}] {super()._pybase_get_logger_name()}"
 
         return super()._pybase_get_logger_name()
