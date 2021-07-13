@@ -92,7 +92,7 @@ def worker_fn(rank, flags):
         return
 
     if distributed:
-        logger.info(f"Training over multiple XLA devices: Using XLA device {rank}/{world_size}")
+        logger.info(f"Training using multiple XLA devices: Using XLA device {rank}/{world_size}")
     else:
         logger.info(f"Single XLA device mode : Using XLA device {rank} ")
 

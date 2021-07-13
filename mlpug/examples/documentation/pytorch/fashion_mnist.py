@@ -155,6 +155,8 @@ def worker_fn(rank, args, world_size):
             os.environ['MASTER_PORT'] = '12355'
 
             dist.init_process_group(backend='nccl', rank=rank, world_size=world_size)
+
+            logger.info(f"Training using multiple GPUs: Using GPU {rank}/{world_size}")
         else:
             logger.info(f"Single device mode : Using GPU {rank} ")
     else:
@@ -239,6 +241,8 @@ def worker_fn(rank, args, world_size):
     # ################# START! #################
     manager.start_training()
     # ##########################################
+
+    logger.info("DONE.")
 
 
 if __name__ == '__main__':
