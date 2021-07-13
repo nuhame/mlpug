@@ -118,23 +118,20 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 def worker_fn(rank, args, world_size):
 
-    # import pydevd
-    # pydevd.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
-
     distributed = args.distributed
-    torch.random.manual_seed(args.seed)
+    is_primary = rank == 0
 
     mlp.logging.use_fancy_colors()
     
-    # ########## TRAINING SETUP  ###########
+    # ########### EXPERIMENT SETUP ############
+    torch.random.manual_seed(args.seed)
+
     if distributed:
-        logger_name = f"[Worker {rank}] {os.path.basename(__file__)}"
+        logger_name = f"[Device {rank}] {os.path.basename(__file__)}"
     else:
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
-
-    is_primary = (distributed and rank == 0) or (not distributed)
 
     if is_primary:
         logger.info(f"Experiment name: {args.experiment_name}")
@@ -171,12 +168,12 @@ def worker_fn(rank, args, world_size):
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
-    if distributed and rank > 0:
+    if distributed and not is_primary:
         dist.barrier()
 
     training_data, test_data = load_data()
 
-    if distributed and rank == 0:
+    if distributed and is_primary:
         dist.barrier()
 
     training_sampler = None
