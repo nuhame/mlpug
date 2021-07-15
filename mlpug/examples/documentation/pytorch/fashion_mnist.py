@@ -18,15 +18,8 @@ import mlpug.pytorch as mlp
 from basics.logging import get_logger
 
 
-# Fix given NumPy array is not writeable warning
-class ToTensor(tv.transforms.ToTensor):
-
-    def __call__(self, pic):
-        return super().__call__(np.array(pic))
-
-
 def load_data():
-    transform = ToTensor()
+    transform = tv.transforms.ToTensor()
 
     training_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/',
                                              train=True,
