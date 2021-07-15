@@ -215,6 +215,7 @@ if __name__ == '__main__':
                   nprocs=flags['world_size'],
                   start_method='fork')
     else:
+        flags['world_size'] = 1
         worker_fn(0, flags)
 
     # ######### USE THE TRAINED MODEL ##########
