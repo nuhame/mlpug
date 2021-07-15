@@ -1,6 +1,8 @@
 import os
 import sys
 
+import numpy as np
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -16,11 +18,24 @@ import mlpug.pytorch as mlp
 from basics.logging import get_logger
 
 
-def load_data():
-    transform = tv.transforms.ToTensor()
+# Fix given NumPy array is not writeable warning
+class ToTensor(tv.transforms.ToTensor):
 
-    training_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/', train=True, download=True, transform=transform)
-    test_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/', train=False, download=True, transform=transform)
+    def __call__(self, pic):
+        return super().__call__(np.array(pic))
+
+
+def load_data():
+    transform = ToTensor()
+
+    training_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/',
+                                             train=True,
+                                             download=True,
+                                             transform=transform)
+    test_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/',
+                                         train=False,
+                                         download=True,
+                                         transform=transform)
 
     return training_data, test_data
 
