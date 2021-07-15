@@ -15,10 +15,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'visionscaper-pybase',
-        'tensorboardX',
-        # required for tensorboard, else this error occurs : ModuleNotFoundError: No module named 'past'
-        # TODO : still required?
-        'future'
+        'tensorboardX'
     ],
     dependency_links=['git+https://github.com/visionscaper/pybase.git'],
     classifiers=[

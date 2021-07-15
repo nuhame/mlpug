@@ -10,14 +10,14 @@ from mlpug.trainers.training import *
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
-from mlpug.utils import is_chunkable
+from mlpug.pytorch.utils import is_chunkable, SlidingWindow
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, sliding_window_factory=SlidingWindow, **kwargs):
+        super().__init__(*args, sliding_window_factory=sliding_window_factory, **kwargs)
 
 
 class PTTrainerMixin(MultiProcessingMixin):

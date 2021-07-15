@@ -40,6 +40,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                  num_batches_per_epoch=None,
                  callbacks=None,
                  experiment_data=None,
+                 sliding_window_factory=None,
                  **kwargs):
         """
         Implements a simple training loop in the `_train` method. Although simple in nature, the use of callbacks
@@ -59,6 +60,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         :param callbacks:
         :param experiment_data: Data object that will be added to the training manager state.
                                 This could contain additional training/model experiment data
+        :param sliding_window_factory: Optional. Function to create SlidingWindow instances
 
         """
         super(TrainingManager, self).__init__(**kwargs)
@@ -79,6 +81,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.callbacks_map = None
 
         self.experiment_data = experiment_data
+
+        self.sliding_window_factory = SlidingWindow if not callable(sliding_window_factory) else sliding_window_factory
 
         self.init_logs = None
         self.logs = {
@@ -101,7 +105,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             # TODO : deal with the case when we don't have SlidingWindows
             if float(self.num_batches_per_epoch) != math.inf and self.num_batches_per_epoch > 0:
                 self._metric_windows['training_params.batch.duration'] = \
-                    SlidingWindow(length=self.num_batches_per_epoch, name='training_params.batch.duration')
+                    self.sliding_window_factory(length=self.num_batches_per_epoch,
+                                                name='training_params.batch.duration')
+
         except Exception as e:
             self._valid = False
             _.log_exception(self._log,
@@ -307,11 +313,11 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             if self.num_batches_per_epoch and (window_length != self.num_batches_per_epoch):
                 # override when different number of batches per epoch is given (or calculated)
                 # during construction
-                window = SlidingWindow(length=self.num_batches_per_epoch,
-                                       init_window_values=window_state['window'],
-                                       name=metric_path)
+                window = self.sliding_window_factory(length=self.num_batches_per_epoch,
+                                                     init_window_values=window_state['window'],
+                                                     name=metric_path)
             else:
-                window = SlidingWindow(state=window_state)
+                window = self.sliding_window_factory(state=window_state)
 
             self._metric_windows[metric_path] = window
         except Exception as e:

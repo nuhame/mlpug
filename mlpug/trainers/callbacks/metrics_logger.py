@@ -39,6 +39,7 @@ class MetricsLoggerBase(Callback):
                  evaluate_settings=None,
                  batch_averaging_window=None,
                  log_condition_func=None,
+                 sliding_window_factory=None,
                  name=None,
                  **kwargs):
         """
@@ -79,6 +80,8 @@ class MetricsLoggerBase(Callback):
         :param batch_averaging_window: Window length in batches, over which the average metric must be calculated
         :type batch_averaging_window: Int
 
+        :param sliding_window_factory: Optional. Function to create SlidingWindow instances
+
         :param name:
         :type name:
         """
@@ -106,6 +109,8 @@ class MetricsLoggerBase(Callback):
         self._batch_averaging_window = batch_averaging_window
 
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
+
+        self._sliding_window_factory = SlidingWindow if not callable(sliding_window_factory) else sliding_window_factory
 
         self._name = name
 
@@ -137,7 +142,7 @@ class MetricsLoggerBase(Callback):
             self._log.error('Given state is invalid, unable to set state')
             return False
 
-        self._metric_windows = {metric_path: SlidingWindow(state=window_state)
+        self._metric_windows = {metric_path: self._sliding_window_factory(state=window_state)
                                 for metric_path, window_state in state["metric_windows"].items()}
 
         return True
@@ -300,7 +305,7 @@ class MetricsLoggerBase(Callback):
             if sliding_window is None:
                 self._log.debug(f"Creating sliding window for {full_metric_path}")
 
-                sliding_window = SlidingWindow(length=self._batch_averaging_window, name=full_metric_path)
+                sliding_window = self._sliding_window_factory(length=self._batch_averaging_window, name=full_metric_path)
                 self._metric_windows[metric_path] = sliding_window
 
             sliding_window.slide(metric_value)
