@@ -139,9 +139,11 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             sys.stdout.write("\n")
             self._log.info('Training process interrupted by you ... 🤷🏻‍♂️\n')
             sys.stdout.flush()
-            # TODO : deal with the distributed training case, wait to return until
-            #  all workers have stopped training
+
             self.stop_training()
+
+        self._training_ended()
+
 
     def stop_training(self):
         self._stop_training = True
@@ -596,6 +598,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 self._log.warn(err_msg)
         except Exception as e:
             _.log_exception(self._log, err_msg, e)
+
+    def _training_ended(self):
+        pass
 
     def _validate(self):
         # TODO
