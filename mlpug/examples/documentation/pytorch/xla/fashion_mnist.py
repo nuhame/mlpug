@@ -176,8 +176,6 @@ def worker_fn(rank, flags):
     manager.start_training()
     # ##########################################
 
-    xm.rendezvous("worker_ready")
-
     logger.info("DONE.")
 
 
