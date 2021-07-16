@@ -3,9 +3,17 @@ import torch_xla.core.xla_model as xm
 from mlpug.pytorch.trainers import \
     Trainer, \
     DefaultTrainer as DefaultTrainerPyTorch, \
-    TrainingManager
+    TrainingManager as TrainingManagerPyTorch
 
 from mlpug.mlpug_exceptions import TrainerInvalidException
+
+
+class TrainingManager(TrainingManagerPyTorch):
+
+    def _training_ended(self):
+        if self.is_distributed:
+            # Wait for all processes to finish
+            xm.rendezvous("mlpug-training-ended")
 
 
 class DefaultTrainer(DefaultTrainerPyTorch):

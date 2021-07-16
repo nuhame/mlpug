@@ -1,6 +1,7 @@
 import torch
 
 from torch.cuda.amp import autocast
+import torch.distributed as dist
 
 from functools import reduce
 
@@ -18,6 +19,11 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
     def __init__(self, *args, sliding_window_factory=SlidingWindow, **kwargs):
         super().__init__(*args, sliding_window_factory=sliding_window_factory, **kwargs)
+
+    def _training_ended(self):
+        if self.is_distributed:
+            # Wait for all processes to finish
+            dist.barrier()
 
 
 class PTTrainerMixin(MultiProcessingMixin):
