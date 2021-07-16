@@ -141,21 +141,21 @@ if __name__ == '__main__':
     with strategy.scope():
         # ############ BUILD THE MODEL #############
 
-        classifier = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(32, 3, activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(64, 3, activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(10)
-        ])
-
         # classifier = tf.keras.Sequential([
-        #     tf.keras.layers.Flatten(input_shape=(28, 28)),
-        #     tf.keras.layers.Dense(128, activation='relu'),
+        #     tf.keras.layers.Conv2D(32, 3, activation='relu'),
+        #     tf.keras.layers.MaxPooling2D(),
+        #     tf.keras.layers.Conv2D(64, 3, activation='relu'),
+        #     tf.keras.layers.MaxPooling2D(),
+        #     tf.keras.layers.Flatten(),
+        #     tf.keras.layers.Dense(64, activation='relu'),
         #     tf.keras.layers.Dense(10)
         # ])
+
+        classifier = tf.keras.Sequential([
+            tf.keras.layers.Flatten(input_shape=(28, 28)),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(10)
+        ])
 
         train_model = TrainModel(classifier, global_batch_size)
         # ##########################################
