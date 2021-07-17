@@ -10,7 +10,7 @@ import torch.multiprocessing as mp
 
 import torchvision as tv
 
-from mlpug.examples.documentation.shared_args import base_argument_set
+from mlpug.examples.documentation.shared_args import base_argument_set, describe_args
 
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp
@@ -97,33 +97,6 @@ class TrainModel(torch.nn.Module):
         return self.loss_func(logits, true_labels)
 
 
-def test_model(model_checkpoint_filename, logger, device=None):
-    if device is None:
-        device = torch.device("cpu")
-
-    logger.info(f'Loading model checkpoint ...')
-    checkpoint = torch.load(model_checkpoint_filename, map_location=device)
-
-    # Contains 'hidden_size'
-    classifier = build_model(**checkpoint['hyper_parameters'])
-    classifier.load_state_dict(checkpoint['model'])
-
-    _, test_data = load_data()
-
-    first_sample = next(iter(test_data))
-    image = first_sample[0]
-    real_label = first_sample[1]
-
-    classifier.eval()
-    with torch.no_grad():
-        logits = classifier(image)
-        probabilities = torch.softmax(logits, dim=-1)
-
-        predicted_label = torch.argmax(probabilities)
-
-        logger.info(f"real label = {real_label}, predicted label = {predicted_label}\n")
-
-
 def worker_fn(rank, args, world_size):
 
     distributed = args.distributed
@@ -132,7 +105,7 @@ def worker_fn(rank, args, world_size):
     mlp.logging.use_fancy_colors()
     
     # ########### EXPERIMENT SETUP ############
-    torch.random.manual_seed(args.seed)
+    torch.random.manual_seed(args.seed)  # For reproducibility
 
     if distributed:
         logger_name = f"[Device {rank}] {os.path.basename(__file__)}"
@@ -140,17 +113,6 @@ def worker_fn(rank, args, world_size):
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
-
-    if is_primary:
-        logger.info(f"Experiment name: {args.experiment_name}")
-        logger.info(f"Model hidden size: {args.hidden_size}")
-        logger.info(f"Batch size: {args.batch_size}")
-        logger.info(f"Learning rate: {args.learning_rate}")
-        logger.info(f"Progress log period: {args.progress_log_period}")
-        logger.info(f"Num. training epochs: {args.num_epochs}")
-        logger.info(f"Random seed: {args.seed}")
-        logger.info(f"Distributed: {distributed}")
-
     # ########################################
 
     # ############## DEVICE SETUP ##############
@@ -253,6 +215,33 @@ def worker_fn(rank, args, world_size):
     logger.info("DONE.")
 
 
+def test_model(model_checkpoint_filename, logger, device=None):
+    if device is None:
+        device = torch.device("cpu")
+
+    logger.info(f'Loading model checkpoint ...')
+    checkpoint = torch.load(model_checkpoint_filename, map_location=device)
+
+    # Contains 'hidden_size'
+    classifier = build_model(**checkpoint['hyper_parameters'])
+    classifier.load_state_dict(checkpoint['model'])
+
+    _, test_data = load_data()
+
+    first_sample = next(iter(test_data))
+    image = first_sample[0]
+    real_label = first_sample[1]
+
+    classifier.eval()
+    with torch.no_grad():
+        logits = classifier(image)
+        probabilities = torch.softmax(logits, dim=-1)
+
+        predicted_label = torch.argmax(probabilities)
+
+        logger.info(f"real label = {real_label}, predicted label = {predicted_label}\n")
+
+
 if __name__ == '__main__':
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
@@ -262,23 +251,32 @@ if __name__ == '__main__':
     # ############## PARSE ARGS ##############
     parser = base_argument_set()
 
-    parser.add_argument(
-        '--distributed',
-        action='store_true',
-        help='Set to distribute training over multiple GPUs')
-
     parser.parse_args()
 
     args = parser.parse_args()
 
+    describe_args(args, logger)
+
+    # ############## TRAIN MODEL ##############
     if args.distributed:
-        world_size = torch.cuda.device_count()
+        num_gpus_available = torch.cuda.device_count()
+        world_size = args.num_devices if args.num_devices > 0 else num_gpus_available
+        if world_size > num_gpus_available:
+            logger.warn(f"Number of requested GPUs is lower than available GPUs, "
+                        f"limiting training to {num_gpus_available} GPUS")
+            world_size = num_gpus_available
+
         logger.info(f"Distributed Data Parallel mode : Using {world_size} GPUs")
+        logger.info(f"Global batch size: {args.batch_size*world_size}")
+
         mp.spawn(worker_fn,
                  args=(args, world_size,),
                  nprocs=world_size,
                  join=True)
     else:
+        logger.info(f"Single device mode.")
+        logger.info(f"Global batch size: {args.batch_size}")
+
         worker_fn(0, args=args, world_size=1)
 
     # ######### USE THE TRAINED MODEL ##########

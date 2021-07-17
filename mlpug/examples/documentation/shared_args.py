@@ -15,6 +15,17 @@ def base_argument_set(description='Train model'):
         help='Model hidden size')
 
     parser.add_argument(
+        '--distributed',
+        action='store_true',
+        help='Set to distribute training over multiple computing devices')
+
+    parser.add_argument(
+        '--num_devices',
+        type=int, required=False, default=-1,
+        help='Number of computing devices to use in distributed mode. '
+             'Default is all available devices')
+
+    parser.add_argument(
         '--batch_size',
         type=int, required=False, default=64,
         help='Batch size (per process/replica)')
@@ -40,3 +51,17 @@ def base_argument_set(description='Train model'):
         help='Random seed to use to ensure same random split at each restart')
 
     return parser
+
+
+def describe_args(args, logger):
+    logger.info(f"Experiment name: {args.experiment_name}")
+    logger.info(f"Model hidden size: {args.hidden_size}")
+    logger.info(f"Batch size: {args.batch_size}")
+    logger.info(f"Learning rate: {args.learning_rate}")
+    logger.info(f"Progress log period: {args.progress_log_period}")
+    logger.info(f"Num. training epochs: {args.num_epochs}")
+    logger.info(f"Random seed: {args.seed}")
+    logger.info(f"Distributed: {args.distributed}")
+
+    num_devices_str = args.num_devices if args.num_devices > 0 else "Use all available"
+    logger.info(f"Number of computing devices: {num_devices_str}")

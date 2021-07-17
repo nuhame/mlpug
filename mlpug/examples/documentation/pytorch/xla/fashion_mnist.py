@@ -10,7 +10,7 @@ from basics.logging import get_logger
 # Import mlpug for Pytorch/XLA backend
 import mlpug.pytorch.xla as mlp
 
-from mlpug.examples.documentation.shared_args import base_argument_set
+from mlpug.examples.documentation.shared_args import base_argument_set, describe_args
 from mlpug.examples.documentation.pytorch.fashion_mnist import \
     load_data, \
     build_model, \
@@ -64,7 +64,7 @@ def worker_fn(rank, flags):
     mlp.logging.use_fancy_colors()
 
     # ########## EXPERIMENT SETUP  ###########
-    torch.random.manual_seed(args.seed)
+    torch.random.manual_seed(args.seed)  # For reproducibility
 
     if distributed:
         logger_name = f"[Device {rank}] {os.path.basename(__file__)}"
@@ -72,17 +72,6 @@ def worker_fn(rank, flags):
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
-
-    if is_primary:
-        logger.info(f"Experiment name: {args.experiment_name}")
-        logger.info(f"Model hidden size: {args.hidden_size}")
-        logger.info(f"Batch size: {args.batch_size}")
-        logger.info(f"Learning rate: {args.learning_rate}")
-        logger.info(f"Progress log period: {args.progress_log_period}")
-        logger.info(f"Num. training epochs: {args.num_epochs}")
-        logger.info(f"Random seed: {args.seed}")
-        logger.info(f"Distributed: {distributed}")
-
     # ########################################
 
     # ############## DEVICE SETUP ##############
@@ -188,32 +177,36 @@ if __name__ == '__main__':
     # ############## PARSE ARGS ##############
     parser = base_argument_set()
 
-    parser.add_argument(
-        '--distributed',
-        action='store_true',
-        help='Set to distribute training over multiple GPUs')
-    parser.add_argument(
-        '--num_xla_devices',
-        type=int, required=False, default=8,
-        help='Number of XLA devices to use in distributed mode, '
-             'usually this is the number of TPU cores.')
-
     parser.parse_args()
 
     args = parser.parse_args()
 
+    describe_args(args, logger)
+
+    # ############## TRAIN MODEL ##############
     flags = {
         'args': args
     }
     if args.distributed:
-        flags['world_size'] = args.num_xla_devices
+        num_xla_devices_available = 8
+        flags['world_size'] = args.num_devices if args.num_devices > 0 else num_xla_devices_available
+        if flags['world_size'] > num_xla_devices_available:
+            logger.warn(f"Number of requested XLA devices is lower than available XLA devices, "
+                        f"limiting training to {num_xla_devices_available} XLA devices")
+            world_size = num_xla_devices_available
+
         logger.info(f"Distributed Data Parallel mode : Using {flags['world_size']} XLA devices")
+        logger.info(f"Global batch size: {args.batch_size * flags['world_size']}")
+
         xmp.spawn(worker_fn,
                   args=(flags,),
                   nprocs=flags['world_size'],
                   start_method='fork')
     else:
         flags['world_size'] = 1
+        logger.info(f"Single device mode.")
+        logger.info(f"Global batch size: {args.batch_size}")
+
         worker_fn(0, flags)
 
     # ######### USE THE TRAINED MODEL ##########
