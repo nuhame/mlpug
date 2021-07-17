@@ -21,7 +21,7 @@ you can reuse your training code with no, or minimal, changes.
 Currently, mlpug supports the following deep learning/machine learning library 'backends':
 
  * PyTorch
- * PyTorch/XLA (TPUs)
+ * PyTorch/XLA (Training with Pytorch on TPUs)
  * Tensorflow (in development, some features not available yet)
 
 ## Mlpug focus
@@ -35,11 +35,11 @@ when you have found a bug, please file an issue.
 ## Contents
 [Installing mlpug](#installing-mlpug) \
 \
-[Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | [TF](#hello-world-with-tensorflow))
+[Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | [XLA](#hello-world-with-pytorch-xla) | [TF](#hello-world-with-tensorflow))
 \
 \
 \
-The following sections are documentation ToDo's, but provide insight in to mlpug's features: \
+The following sections are documentation **ToDo's**, but provide insight in to mlpug's features: \
 [The `logs` object](#the-logs-object) \
 \
 [Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
@@ -98,13 +98,20 @@ pip install tensorflow
 ```
 
 ## Hello World!
-This is the Hello World of training with mlpug. You will see that the usage of mlpug with Pytorch and Tensorflow is 
-very similar.
+This is the Hello World of training with mlpug. You will see that the usage of mlpug with Pytorch, 
+Pytorch/XLA and Tensorflow is very similar.
 
-For details please see [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py), 
-[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py) and [pytorch/hello_world.py](mlpug/examples/documentation/pytorch/hello_world.py)
+For details please see :
 
-I suggest you download and run these examples.
+ * [pytorch/hello_world.py](mlpug/examples/documentation/pytorch/hello_world.py),
+
+ * [pytorch/xla/hello_world.py](mlpug/examples/documentation/pytorch/xla/hello_world.py), 
+
+ * [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py) and 
+[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py) 
+
+
+You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
 
 When reading through the explanation below it might be that you still have a lot of questions about the why and how of
 training with mlpug, however I will expand the mlpug documentation soon, so you will get better insight.
@@ -218,6 +225,28 @@ INFO    : TrainingManager::_train : Training completed. All good! ❤️
 
 Using the classifier ...
 real label = 9, predicted label = 9
+```
+
+### 'Hello World' with PyTorch/XLA
+
+The Hello World example with PyTorch/XLA, is largely the same as with PyTorch. There are only
+two small differences.
+
+To use mlpug with Pytorch/XLA, load the correct backend
+```python
+import mlpug.pytorch.xla as mlp
+```
+
+Load your model on a TPU core:
+```python
+import torch_xla.core.xla_model as xm
+
+...
+
+device = xm.xla_device()
+
+train_model = TrainModel(classifier, device)
+classifier.to(device)
 ```
 
 ### 'Hello World' with Tensorflow
