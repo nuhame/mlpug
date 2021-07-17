@@ -36,7 +36,7 @@ when you have found a bug, please file an issue.
 [Installing mlpug](#installing-mlpug) \
 \
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
-[XLA](#hello-world-with-pytorch-/-xla) | 
+[XLA](#hello-world-with-pytorchxla) | 
 [TF](#hello-world-with-tensorflow))
 \
 \
