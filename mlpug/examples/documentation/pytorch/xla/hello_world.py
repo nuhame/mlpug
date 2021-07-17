@@ -49,24 +49,29 @@ classifier = torch.nn.Sequential(
 
 # MLPug needs a TrainModel that outputs the loss
 class TrainModel(torch.nn.Module):
-    def __init__(self, classifier):
+    def __init__(self, classifier, device):
         super(TrainModel, self).__init__()
 
         self.classifier = classifier
+        self.device = device
+
         self.loss_func = torch.nn.CrossEntropyLoss()
 
     def forward(self, batch_data, evaluate_settings, inference_mode=None):
         images, true_labels = batch_data
 
+        images = images.to(self.device)
+        true_labels = true_labels.to(self.device)
+
         logits = self.classifier(images)
         return self.loss_func(logits, true_labels)
 
 
-# Transfer to TPU core
 device = xm.xla_device()
+
+train_model = TrainModel(classifier, device)
 classifier.to(device)
 
-train_model = TrainModel(classifier)
 # ############################################
 
 
