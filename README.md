@@ -233,7 +233,7 @@ real label = 9, predicted label = 9
 
 ### 'Hello World' with PyTorch/XLA
 
-The Hello World example with PyTorch/XLA, is largely the same as with PyTorch. There are only
+The Hello World example with PyTorch/XLA, is largely the same as with [PyTorch](#hello-world-with-pytorch). There are only
 two small differences.
 
 To use mlpug with Pytorch/XLA, load the correct backend
