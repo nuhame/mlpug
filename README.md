@@ -35,7 +35,9 @@ when you have found a bug, please file an issue.
 ## Contents
 [Installing mlpug](#installing-mlpug) \
 \
-[Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | [XLA](#hello-world-with-pytorch-xla) | [TF](#hello-world-with-tensorflow))
+[Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
+[XLA](#hello-world-with-pytorch-/-xla) | 
+[TF](#hello-world-with-tensorflow))
 \
 \
 \
@@ -47,6 +49,8 @@ The following sections are documentation **ToDo's**, but provide insight in to m
 [Progress Logging](#progress-logging) \
 \
 [Model components vs Training model](#model-components-vs-training-model) \
+\
+[Distributed training](#distributed-training) \
 \
 [Checkpoint management](#checkpoint-management) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using the CheckpointManager](#using-the-checkpointmanager) \
