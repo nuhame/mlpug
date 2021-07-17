@@ -231,6 +231,8 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         training_iter = current[iter_name]
 
+        pretty_iter_name = self.pretty_iter_name(iter_name)
+
         best_model_fname = None
         success = True
         data_saved = False
@@ -247,25 +249,27 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                     model_quality_good_enough = model_quality >= self._metric_checkpoint_threshold
 
             if not model_quality_good_enough:
-                self._log.debug("Iter : %s : model quality not good enough : %s : %3e " % (training_iter,
-                                                                                           self._metric_to_monitor,
-                                                                                           model_quality))
+                self._log.debug("%s : %s : model quality not good enough : %s : %3e " % (pretty_iter_name,
+                                                                                         training_iter,
+                                                                                         self._metric_to_monitor,
+                                                                                         model_quality))
 
             if model_quality_valid and model_quality_good_enough:
                 model_improved = ((self._metric_opt_mode == 'min') and (model_quality < self._best_model_quality)) or \
                                  ((self._metric_opt_mode == 'max') and (model_quality > self._best_model_quality))
 
                 if model_improved:
-                    self._log.debug("Iter : %s : Model improved : %s : %3e " % (training_iter,
-                                                                                self._metric_to_monitor,
-                                                                                model_quality))
+                    self._log.debug("%s : %s : Model improved : %s : %3e " % (pretty_iter_name,
+                                                                              training_iter,
+                                                                              self._metric_to_monitor,
+                                                                              model_quality))
 
                     if (self._best_model_iter is not None) and \
                             (iter_name == 'epoch') and \
                             (training_iter < self._best_model_iter):
-                        self._log.warn(f"Inconsistency: according to the current training iter ({training_iter}), "
-                                       f"current best model training iter ({self._best_model_iter}) is in the future. "
-                                       f"Was the right training checkpoint loaded?")
+                        self._log.warn(f"Inconsistency: according to the current training {pretty_iter_name} "
+                                       f"({training_iter}), current best model training iter ({self._best_model_iter}) "
+                                       f"is in the future. Was the right training checkpoint loaded?")
 
                     best_model_fname = self._save_current_model_as_best()
                     if best_model_fname:
@@ -475,3 +479,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                            f"exact multiple of _create_checkpoint_every, "
                            f"changing archive_last_model_checkpoint_every to "
                            f"[{self._archive_last_model_checkpoint_every}]")
+
+    @staticmethod
+    def pretty_iter_name(iter_name):
+        if iter_name == "epoch":
+            return "Epoch"
+        elif iter_name == "global_iter":
+            return "Global iter"
+        else:
+            return iter_name
