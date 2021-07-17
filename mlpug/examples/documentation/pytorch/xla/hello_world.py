@@ -114,6 +114,8 @@ if __name__ == '__main__':
     image = first_sample[0]
     real_label = first_sample[1]
 
+    image = image.to(device)
+
     logits = classifier(image)
     probabilities = torch.softmax(logits, dim=-1)
 
