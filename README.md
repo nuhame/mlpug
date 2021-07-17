@@ -38,7 +38,7 @@ when you have found a bug, please file an issue.
 [Installing mlpug](#installing-mlpug) \
 \
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
-[XLA](#hello-world-with-pytorch-/-xla) | 
+[XLA](#hello-world-with-pytorchxla) | 
 [TF](#hello-world-with-tensorflow))
 \
 \
@@ -235,7 +235,7 @@ real label = 9, predicted label = 9
 
 ### 'Hello World' with PyTorch/XLA
 
-The Hello World example with PyTorch/XLA, is largely the same as with PyTorch. There are only
+The Hello World example with PyTorch/XLA, is largely the same as with [PyTorch](#hello-world-with-pytorch). There are only
 two small differences.
 
 To use mlpug with Pytorch/XLA, load the correct backend
