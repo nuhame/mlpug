@@ -1,3 +1,5 @@
+**If you are eager to dive in to training scripts that use mlpug, checkout the [examples](mlpug/examples/documentation/) directory!**
+
 # mlpug
 Mlpug is a machine learning library agnostic framework for model training.
 
