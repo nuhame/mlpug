@@ -21,6 +21,7 @@ you can reuse your training code with no, or minimal, changes.
 Currently, mlpug supports the following deep learning/machine learning library 'backends':
 
  * PyTorch
+ * PyTorch/XLA (TPUs)
  * Tensorflow (in development, some features not available yet)
 
 ## Mlpug focus
