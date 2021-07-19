@@ -1,7 +1,7 @@
-**If you are eager to dive in to training scripts that use mlpug, checkout the [examples](mlpug/examples/documentation/) directory!**
+**If you are eager to dive in to training scripts that use MLpug, checkout the [examples](mlpug/examples/documentation/) directory!**
 
-# mlpug
-Mlpug is a machine learning library agnostic framework for model training.
+# MLpug
+MLpug is a machine learning library agnostic framework for model training.
 
 A lot of the functionality you need to train your machine learning model is 
 independent of the machine learning library you're using, e.g. PyTorch and Tensorflow.
@@ -15,27 +15,27 @@ For instance,
 
 You need such functionality no matter what machine learning framework you are using.
 
-Mlpug provides a single framework with a unified API for all such training functionality,
+MLpug provides a single framework with a unified API for all such training functionality,
 independent of the machine learning library you are using. This also implies that when you switch library
 you can reuse your training code with no, or minimal, changes.
 
 ## Supported backends
-Currently, mlpug supports the following deep learning/machine learning library 'backends':
+Currently, MLpug supports the following deep learning/machine learning library 'backends':
 
  * PyTorch
  * PyTorch/XLA (Training with Pytorch on TPUs)
  * Tensorflow (in development, some features not available yet)
 
-## Mlpug focus
-Although mlpug should be able to deal with any training job, its functionality is mostly focussed on dealing with  
+## MLpug focus
+Although MLpug should be able to deal with any training job, its functionality is mostly focussed on dealing with  
 training large models on large datasets, using limited hardware (GPU or TPU) resources and memory.
 
 ## Almost at version 0.1!
-Mlpug is still in development. If you are having trouble using mlpug for your use case, or 
+MLpug is still in development. If you are having trouble using MLpug for your use case, or 
 when you have found a bug, please file an issue.
 
 ## Contents
-[Installing mlpug](#installing-mlpug) \
+[Installing MLpug](#installing-mlpug) \
 \
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
 [XLA](#hello-world-with-pytorchxla) | 
@@ -43,7 +43,7 @@ when you have found a bug, please file an issue.
 \
 \
 \
-The following sections are documentation **ToDo's**, but provide insight in to mlpug's features: \
+The following sections are documentation **ToDo's**, but provide insight in to MLpug's features: \
 [The `logs` object](#the-logs-object) \
 \
 [Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
@@ -60,7 +60,7 @@ The following sections are documentation **ToDo's**, but provide insight in to m
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Using model checkpoints](#using-model-checkpoints) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Checkpointing on error or interrupt](#checkpointing-on-error-or-interrupt) \
 \
-[Mlpug metric evaluators](#mlpug-metric-evaluators) \
+[MLpug metric evaluators](#mlpug-metric-evaluators) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Auxiliary batch training results](#auxiliary-batch-training-results) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Calculating custom metrics](#calculating-custom-metrics) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Conditional computation of metrics](#conditional-computation-of-metrics) \
@@ -83,7 +83,7 @@ The following sections are documentation **ToDo's**, but provide insight in to m
 \
 [Using multiple optimizers](#using-multiple-optimizers)
 
-## Installing mlpug
+## Installing MLpug
 Please ensure that you are using Python3.7+.
 
 Install as follows:
@@ -92,19 +92,19 @@ pip install mlpug
 ```
 
 ### Usage with PyTorch
-When you want to use mlpug with PyTorch, you will need to install it:
+When you want to use MLpug with PyTorch, you will need to install it:
 ```
 pip install torch torchvision
 ```
 
 ### Usage with Tensorflow
-When you want to use mlpug with Tensorflow, you will need to install it:
+When you want to use MLpug with Tensorflow, you will need to install it:
 ```
 pip install tensorflow
 ```
 
 ## Hello World!
-This is the Hello World of training with mlpug. You will see that the usage of mlpug with Pytorch, 
+This is the Hello World of training with MLpug. You will see that the usage of MLpug with Pytorch, 
 Pytorch/XLA and Tensorflow is very similar.
 
 For details please see :
@@ -119,10 +119,10 @@ For details please see :
 You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
 
 When reading through the explanation below it might be that you still have a lot of questions about the why and how of
-training with mlpug, however I will expand the mlpug documentation soon, so you will get better insight.
+training with MLpug, however I will expand the MLpug documentation soon, so you will get better insight.
 
 ### 'Hello World' with PyTorch
-To use mlpug with Pytorch
+To use MLpug with Pytorch
 ```python
 import mlpug.pytorch as mlp
 ```
@@ -145,7 +145,7 @@ classifier = torch.nn.Sequential(
     torch.nn.Linear(128, 10))
 ```
 
-Mlpug needs a way to evaluate the loss of the model. One way to do that is to define a `TrainModel` that 
+MLpug needs a way to evaluate the loss of the model. One way to do that is to define a `TrainModel` that 
 outputs the loss 
 ```python
 class TrainModel(torch.nn.Module):
@@ -169,12 +169,12 @@ To train the model we will also need an optimizer
 optimizer = torch.optim.Adam(classifier.parameters(), eps=1e-7)
 ```
 
-To now use mlpug to start training, we need to create a `Trainer` which will be used by a `TrainingManager`.
+To now use MLpug to start training, we need to create a `Trainer` which will be used by a `TrainingManager`.
 ```python
 trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
 ```
 
-Mlpug uses a callback system allowing you to customize and extend the training functionality. 
+MLpug uses a callback system allowing you to customize and extend the training functionality. 
 The list of callback instances you provide the `TrainingManager` will be called using hooks at different stages of the 
 training process.
 ```python
@@ -237,7 +237,7 @@ real label = 9, predicted label = 9
 The Hello World example with PyTorch/XLA, is largely the same as with [PyTorch](#hello-world-with-pytorch). There are only
 two small differences.
 
-To use mlpug with Pytorch/XLA, load the correct backend
+To use MLpug with Pytorch/XLA, load the correct backend
 ```python
 import mlpug.pytorch.xla as mlp
 ```
@@ -255,9 +255,9 @@ classifier.to(device)
 ```
 
 ### 'Hello World' with Tensorflow
-Below we will focus only on the minor differences between using mlpug with [PyTorch](#hello-world-with-pytorch) and Tensorflow.
+Below we will focus only on the minor differences between using MLpug with [PyTorch](#hello-world-with-pytorch) and Tensorflow.
 
-To use mlpug with Tensorflow
+To use MLpug with Tensorflow
 ```python
 import mlpug.tensorflow as mlp
 ```
