@@ -114,9 +114,8 @@ For details please see :
  * [pytorch/xla/hello_world.py](mlpug/examples/documentation/pytorch/xla/hello_world.py), 
 
  * [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py) and 
-[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py) 
-
-
+[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py)
+   
 You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
 
 When reading through the explanation below it might be that you still have a lot of questions about the why and how of
