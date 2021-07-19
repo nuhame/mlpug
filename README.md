@@ -255,7 +255,7 @@ classifier.to(device)
 ```
 
 ### 'Hello World' with Tensorflow
-Below we will focus only on the minor differences between using mlpug with PyTorch and Tensorflow.
+Below we will focus only on the minor differences between using mlpug with [PyTorch](#hello-world-with-pytorch) and Tensorflow.
 
 To use mlpug with Tensorflow
 ```python
