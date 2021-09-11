@@ -3,6 +3,10 @@ import abc
 import math
 import time
 
+from typing import Any, Optional, Iterable, Collection, Union, Tuple, Callable
+from trainers.callbacks import Callback
+
+
 from statistics import mean
 
 from mlpug.base import Base
@@ -13,7 +17,7 @@ from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, Sl
 from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
-def normalize_evaluation(results):
+def normalize_evaluation(results: Any) -> dict:
     if type(results) is dict:
         return results
     elif type(results) is tuple:
@@ -31,16 +35,308 @@ class BatchChunkingResults(list):
     pass
 
 
+class TrainerBase(Base, metaclass=abc.ABCMeta):
+
+    def __init__(self,
+                 model_components: dict,
+                 optimizers: dict,
+                 name: Optional[str] = "TrainerBase",
+                 **kwargs):
+        """
+
+        :param model_components: dict with model components
+        :param optimizers: dict with optimizers
+
+        """
+        super().__init__(pybase_logger_name=name, **kwargs)
+
+        self.model_components = model_components
+        self.optimizers = optimizers
+
+        self._validate()
+
+    def get_state(self) -> Tuple[dict, bool]:
+        """
+
+        :return: state, success
+        """
+
+        model_components_state, mcs_success = self.get_model_components_state()
+        optimizers_state, os_success = self.get_optimizers_state()
+
+        return {
+            "model_components": model_components_state,
+            "optimizers": optimizers_state,
+        }, mcs_success & os_success
+
+    def set_state(self, state: dict) -> bool:
+        """
+
+        :param state:
+        :return: success (True or False)
+        """
+        if not self.instance_valid():
+            self._log.error('Trainer is not valid, unable to set trainer state')
+            return False
+
+        if not self._check_state(state):
+            self._log.error("Invalid state object, unable to set state")
+            return False
+
+        success = self.set_model_components_state(state["model_components"])
+        success = self.set_optimizers_state(state["optimizers"]) & success
+
+        return success
+
+    def get_optimizers(self) -> dict:
+        return self.optimizers
+
+    def get_optimizer(self, name: str) -> Any:
+        return get_value_at(name, self.get_optimizers())
+
+    def get_model_components(self) -> dict:
+        return self.model_components
+
+    def get_model_component(self, name: str) -> Any:
+        return get_value_at(name, self.get_model_components())
+
+    def get_model_components_state(self) -> Tuple[dict, bool]:
+        """
+
+        :return: state, success (True or False)
+        """
+        state = {}
+
+        model_components = self.get_model_components()
+
+        success = True
+        for name, model in model_components.items():
+            try:
+                state[name] = self._get_model_state(model, name)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to get state for model {name}", e)
+                success = False
+
+        return state, success
+
+    def set_model_components_state(self, state: dict) -> bool:
+        """
+
+        :param state:
+        :return: success (True or False)
+        """
+        if not _.is_callable(getattr(state, 'items', None)):
+            self._log.error("State is invalid, unable to set model components state")
+            return False
+
+        success = True
+        for name, model_state in state.items():
+            model = self.get_model_component(name)
+            if model is None:
+                self._log.error(f"No {name} model not found, unable to set state")
+                success = False
+                continue
+
+            try:
+                self._set_model_state(model, model_state, name)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to set state for model {name}", e)
+                success = False
+
+        return success
+
+    def get_optimizers_state(self) -> Tuple[dict, bool]:
+        """
+
+        :return: state, success (True of False)
+        """
+        state = {}
+
+        optimizers = self.get_optimizers()
+
+        success = True
+        for name, optimizer in optimizers.items():
+            try:
+                state[name] = self._get_optimizer_state(optimizer, name)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to get state for optimizer {name}", e)
+                success = False
+
+        return state, success
+
+    def set_optimizers_state(self, state: dict) -> bool:
+        """
+
+        :param state:
+        :return: success (True, False)
+        """
+        if not _.is_callable(getattr(state, 'items', None)):
+            self._log.error("State is invalid, unable to set optimizers state")
+            return False
+
+        success = True
+        for name, optimizer_state in state.items():
+            optimizer = self.get_optimizer(name)
+            if optimizer is None:
+                self._log.error(f"No {name} optmizer not found, unable to set state")
+                success = False
+                continue
+
+            try:
+                self._set_optimizer_state(optimizer, optimizer_state, name)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to set state for optimizer {name}", e)
+                success = False
+
+        return success
+
+    def set_learning_rate(self, lr: float) -> bool:
+        """
+        Convenience method to set the learning rate of all optimizers to `lr`
+
+        :param lr: Learning rate to set
+        :return: True on success else False
+        """
+        success = True
+
+        optimizer_names = self.get_optimizers().keys()
+        for opt_name in optimizer_names:
+            try:
+                success &= self.set_learning_rate_for(opt_name, lr)
+            except Exception as e:
+                _.log_exception(self._log, f"Unable to set learning rate for optimizer {opt_name}", e)
+                success = False
+
+        return success
+
+    @abc.abstractmethod
+    def set_learning_rate_for(self, optimizer_name: str, lr: float) -> bool:
+        """
+
+        Set learning rate for specific optimizer `optimizer_name` to `lr`
+
+        :param optimizer_name:
+        :param lr:
+
+        :return: True on success, else False
+        """
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def train_on(self, batch_data: Any, training_settings: Optional[Any] = None) -> Tuple[Any, Optional[Any]]:
+        """
+        TODO : Should this also return only one dict with 'loss' and 'auxiliary_results' keys?
+               (Just like evaluate_loss)
+
+        Use batch_data to perform a training iteration
+
+        :param batch_data: batch_data object (e.g. dict, list, tuple)
+        :param training_settings: optional training_settings object (usually dict)
+
+        :return: loss, auxiliary_results
+
+        loss : number (e.g. float)
+        auxiliary_results : can be anything, e.g dict or list with values or data items
+        """
+        raise NotImplemented("Please implement this method in your child class")
+
+    def evaluate_loss(self, batch_data: Any, inference_mode: bool, evaluate_settings: Optional[Any] = None) -> dict:
+        """
+
+        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
+        :param inference_mode: If True the loss will be evaluated in inference mode (e.g. no Dropout).
+                               If False the loss will be evaluated in training mode
+        :param evaluate_settings: optional evaluate_settings object (usually dict)
+
+        :return: dict:
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
+
+        """
+
+        self._activate_inference_mode(inference_mode)
+
+        if evaluate_settings is None:
+            evaluate_settings = {}
+
+        results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
+        return normalize_evaluation(results)
+
+    @abc.abstractmethod
+    def _evaluate_loss(self,
+                       batch_data: Any,
+                       evaluate_settings: Optional[Any] = None,
+                       inference_mode: Optional[bool] = None) -> Any:
+        """
+        Evaluates the given training model on the  given batch_data, using the optional training_settings
+        Depending on the Deep learning backend you might need to use inference mode here
+
+        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
+        :param evaluate_settings: optional evaluate_settings object (usually dict)
+        :param inference_mode: bool, important when inference mode not set in `_activate_inference_mode`
+                               Pytorch:     inference_mode not required here
+                               Tensorflow:  inference_mode required here
+
+        :return: dict or tuple
+            {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
+
+            (loss, ... auxiliary results ...)
+        """
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def _activate_inference_mode(self, inference_mode: bool) -> None:
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def _get_model_state(self, model: Any, model_name: Optional[str] = None) -> dict:
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def _get_optimizer_state(self, optimizer: Any, optimizer_name: Optional[str] = None) -> dict:
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def _set_model_state(self, model: Any, state: dict, model_name: Optional[str] = None) -> None:
+        raise NotImplemented("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def _set_optimizer_state(self, optimizer: Any, state: dict, optimizer_name: Optional[str] = None) -> None:
+        raise NotImplemented("Please implement this method in your child class")
+
+    def _check_state(self, state: dict) -> bool:
+        state_attributes = ['model_components', 'optimizers']
+
+        for attr in state_attributes:
+            v = get_value_at(attr, state, warn_on_failure=False)
+            if v is None:
+                self._log.error(f"Given state does not have a value for {attr}, state is invalid")
+                return False
+
+        return True
+
+    def _validate(self) -> bool:
+        # TODO
+        self._valid = True
+
+        return self._valid
+
+
 class TrainingManager(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 trainer,
-                 training_dataset,
-                 num_epochs=50,
-                 num_batches_per_epoch=None,
-                 callbacks=None,
-                 experiment_data=None,
-                 sliding_window_factory=None,
+                 trainer: TrainerBase,
+                 training_dataset: Collection,
+                 num_epochs: int = 50,
+                 num_batches_per_epoch: Optional[int] = None,
+                 callbacks: Optional[Iterable[Callback]] = None,
+                 experiment_data: Optional[Any] = None,
+                 sliding_window_factory: Optional[Union[SlidingWindow, callable]] = None,
                  **kwargs):
         """
         Implements a simple training loop in the `_train` method. Although simple in nature, the use of callbacks
@@ -48,8 +344,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         During each epoch a new `logs` dict is created that is passed from callback event to callback event during
         batch-wise training. Before calling the given `Trainer` instance to train on a batch, `training_settings` are
-        retrieved from the `logs` dict, if available. These `training_settings` are then passed to the trainer `train_on`
-        method. Also see the `Trainer` class.
+        retrieved from the `logs` dict, if available. These `training_settings` are then passed to
+        the trainer `train_on` method. Also see the `Trainer` class.
 
         The provided `training_dataset` should be iterable, and provide a batch per iteration.
 
@@ -119,10 +415,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             self._log.error("One or more issues occurred while providing this training manager instance "
                             "to the provided callbacks")
 
-    def get_trainer(self):
+    def get_trainer(self) -> TrainerBase:
         return self.trainer
 
-    def start_training(self):
+    def start_training(self) -> None:
         if not self.instance_valid():
             self._log.error('TrainingManager is not valid, unable to start training')
             return
@@ -144,11 +440,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         self._training_ended()
 
-
-    def stop_training(self):
+    def stop_training(self) -> None:
         self._stop_training = True
 
-    def get_state(self):
+    def get_state(self) -> Tuple[Optional[dict], bool]:
         """
 
         :return: state, success
@@ -198,7 +493,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return state, success
 
-    def get_state_for_model_checkpoint(self):
+    def get_state_for_model_checkpoint(self) -> Tuple[Optional[dict], bool]:
 
         if not self.instance_valid():
             self._log.error('TrainingManager is not valid, unable to get training manager state for model checkpoint')
@@ -212,7 +507,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                    "experiment_data": self.experiment_data
                }, True
 
-    def set_state(self, state):
+    def set_state(self, state: dict) -> bool:
         """
         WARNING: the start batch_step in the state only controls how many batches will be trained on in the
                  the current epoch, it does not control the exact batch data that will be used for training.
@@ -284,14 +579,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _get_metric_windows_state(self):
+    def _get_metric_windows_state(self) -> dict:
         state = {}
         for metric_path, metric_window in self._metric_windows.items():
             state[metric_path] = metric_window.get_state()
 
         return state
 
-    def _set_metric_windows_states(self, state):
+    def _set_metric_windows_states(self, state: dict) -> bool:
         success = True
         try:
             metric_windows_state = get_value_at("manager.metric_windows", state)
@@ -307,7 +602,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _set_metric_window_state(self, metric_path, window_state):
+    def _set_metric_window_state(self, metric_path: str, window_state: dict) -> bool:
         success = True
         try:
             window_length = window_state['length']
@@ -328,7 +623,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _check_state(self, state):
+    def _check_state(self, state: dict) -> bool:
         state_attributes = ['manager',
                             'manager.epoch',
                             'manager.batch_step',
@@ -353,7 +648,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return True
 
-    def _train(self):
+    def _train(self) -> None:
         training_stopped_early = False
         epoch_stopped_early = False
         training_stopped_on_error = False
@@ -492,7 +787,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         else:
             self._log.warn("Training stopped on error. 🥺️")
 
-    def _init_current_logs(self):
+    def _init_current_logs(self) -> dict:
         return {
             "epoch": self.epoch,
             "batch_step": self.batch_step,
@@ -517,7 +812,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             }
         }
 
-    def _call_callbacks(self, event, *args, **kwargs):
+    def _call_callbacks(self, event: str, *args, **kwargs) -> bool:
         success = True
         for callback in self.callbacks:
             func_name = event
@@ -537,10 +832,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _update_cb_success(self, cb_calls_success):
+    def _update_cb_success(self, cb_calls_success: bool) -> None:
         self.logs["cb_calls_success"] &= cb_calls_success
 
-    def _update_window(self, metric_path):
+    def _update_window(self, metric_path: str) -> None:
         try:
             window = self._metric_windows[metric_path]
             if window is None:
@@ -552,7 +847,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         except Exception as e:
             _.log_exception(self._log, f"Exception occurred updating sliding window {metric_path}, skipped...", e)
 
-    def _calc_window_average(self, metric_path):
+    def _calc_window_average(self, metric_path: str) -> Optional[float]:
         try:
             window = self._metric_windows[metric_path]
             if window is None:
@@ -564,7 +859,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None
 
-    def _calc_window_sum(self, metric_path):
+    def _calc_window_sum(self, metric_path: str) -> Optional[float]:
         try:
             window = self._metric_windows[metric_path]
             if window is None:
@@ -576,10 +871,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None
 
-    def _prepare_training_dataset(self):
+    def _prepare_training_dataset(self) -> Collection:
         return self.training_dataset
 
-    def _assess_num_batches_per_epoch(self):
+    def _assess_num_batches_per_epoch(self) -> None:
         if self.num_batches_per_epoch:
             # num_batches_per_epoch given, nothing to do
             return
@@ -599,295 +894,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         except Exception as e:
             _.log_exception(self._log, err_msg, e)
 
-    def _training_ended(self):
+    def _training_ended(self) -> None:
         pass
 
-    def _validate(self):
-        # TODO
-        self._valid = True
-
-        return self._valid
-
-
-class TrainerBase(Base, metaclass=abc.ABCMeta):
-
-    def __init__(self, model_components, optimizers, name="TrainerBase", **kwargs):
-        """
-
-        :param model_components: dict with model components
-        :param optimizers: dict with optimizers
-
-        """
-        super(TrainerBase, self).__init__(pybase_logger_name=name, **kwargs)
-
-        self.model_components = model_components
-        self.optimizers = optimizers
-
-        self._validate()
-
-    def get_state(self):
-        """
-
-        :return: state, success
-        """
-
-        model_components_state, mcs_success = self.get_model_components_state()
-        optimizers_state, os_success = self.get_optimizers_state()
-
-        return {
-            "model_components": model_components_state,
-            "optimizers": optimizers_state,
-        }, mcs_success & os_success
-
-    def set_state(self, state):
-        """
-
-        :param state:
-        :return: success (True or False)
-        """
-        if not self.instance_valid():
-            self._log.error('Trainer is not valid, unable to set trainer state')
-            return False
-
-        if not self._check_state(state):
-            self._log.error("Invalid state object, unable to set state")
-            return False
-
-        success = self.set_model_components_state(state["model_components"])
-        success = self.set_optimizers_state(state["optimizers"]) & success
-
-        return success
-
-    def get_optimizers(self):
-        return self.optimizers
-
-    def get_optimizer(self, name):
-        return get_value_at(name, self.get_optimizers())
-
-    def get_model_components(self):
-        return self.model_components
-
-    def get_model_component(self, name):
-        return get_value_at(name, self.get_model_components())
-
-    def get_model_components_state(self):
-        """
-
-        :return: state, success (True or False)
-        """
-        state = {}
-
-        model_components = self.get_model_components()
-
-        success = True
-        for name, model in model_components.items():
-            try:
-                state[name] = self._get_model_state(model, name)
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to get state for model {name}", e)
-                success = False
-
-        return state, success
-
-    def set_model_components_state(self, state):
-        """
-
-        :param state:
-        :return: success (True or False)
-        """
-        if not _.is_callable(getattr(state, 'items', None)):
-            self._log.error("State is invalid, unable to set model components state")
-            return False
-
-        success = True
-        for name, model_state in state.items():
-            model = self.get_model_component(name)
-            if model is None:
-                self._log.error(f"No {name} model not found, unable to set state")
-                success = False
-                continue
-
-            try:
-                self._set_model_state(model, model_state, name)
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to set state for model {name}", e)
-                success = False
-
-        return success
-
-    def get_optimizers_state(self):
-        """
-
-        :return: state, success (True of False)
-        """
-        state = {}
-
-        optimizers = self.get_optimizers()
-
-        success = True
-        for name, optimizer in optimizers.items():
-            try:
-                state[name] = self._get_optimizer_state(optimizer, name)
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to get state for optimizer {name}", e)
-                success = False
-
-        return state, success
-
-    def set_optimizers_state(self, state):
-        """
-
-        :param state:
-        :return: success (True, False)
-        """
-        if not _.is_callable(getattr(state, 'items', None)):
-            self._log.error("State is invalid, unable to set optimizers state")
-            return False
-
-        success = True
-        for name, optimizer_state in state.items():
-            optimizer = self.get_optimizer(name)
-            if optimizer is None:
-                self._log.error(f"No {name} optmizer not found, unable to set state")
-                success = False
-                continue
-
-            try:
-                self._set_optimizer_state(optimizer, optimizer_state, name)
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to set state for optimizer {name}", e)
-                success = False
-
-        return success
-
-    def set_learning_rate(self, lr):
-        """
-        Convenience method to set the learning rate of all optimizers to `lr`
-
-        :param lr: Learning rate to set
-        :return: True on success else False
-        """
-        success = True
-
-        optimizer_names = self.get_optimizers().keys()
-        for opt_name in optimizer_names:
-            try:
-                success &= self.set_learning_rate_for(opt_name, lr)
-            except Exception as e:
-                _.log_exception(self._log, f"Unable to set learning rate for optimizer {opt_name}", e)
-                success = False
-
-        return success
-
-    @abc.abstractmethod
-    def set_learning_rate_for(self, optimizer_name, lr):
-        """
-
-        Set learning rate for specific optimizer `optimizer_name` to `lr`
-
-        :param optimizer_name:
-        :param lr:
-
-        :return: True on success, else False
-        """
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def train_on(self, batch_data, training_settings=None):
-        """
-        TODO : Should this also return only one dict with 'loss' and 'auxiliary_results' keys?
-               (Just like evaluate_loss)
-
-        Use batch_data to perform a training iteration
-
-        :param batch_data: batch_data object (e.g. dict, list, tuple)
-        :param training_settings: optional training_settings object (usually dict)
-
-        :return: loss, auxiliary_results
-
-        loss : number (e.g. float)
-        auxiliary_results : can be anything, e.g dict or list with values or data items
-        """
-        raise NotImplemented("Please implement this method in your child class")
-
-    def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
-        """
-
-        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
-        :param inference_mode: If True the loss will be evaluated in inference mode (e.g. no Dropout).
-                               If False the loss will be evaluated in training mode
-        :param evaluate_settings: optional evaluate_settings object (usually dict)
-
-        :return: dict:
-            {
-                "loss": <Tensor>,
-                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
-            }
-
-        """
-
-        self._activate_inference_mode(inference_mode)
-
-        if evaluate_settings is None:
-            evaluate_settings = {}
-
-        results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
-        return normalize_evaluation(results)
-
-    @abc.abstractmethod
-    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
-        """
-        Evaluates the given training model on the  given batch_data, using the optional training_settings
-        Depending on the Deep learning backend you might need to use inference mode here
-
-        :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
-        :param evaluate_settings: optional evaluate_settings object (usually dict)
-        :param inference_mode: bool, important when inference mode not set in `_activate_inference_mode`
-                               Pytorch:     inference_mode not required here
-                               Tensorflow:  inference_mode required here
-
-        :return: dict or tuple
-            {
-                "loss": <Tensor>,
-                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
-            }
-
-            (loss, ... auxiliary results ...)
-        """
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def _activate_inference_mode(self, inference_mode):
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def _get_model_state(self, model, model_name=None):
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def _get_optimizer_state(self, optimizer, optimizer_name=None):
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def _set_model_state(self, model, state, model_name=None):
-        raise NotImplemented("Please implement this method in your child class")
-
-    @abc.abstractmethod
-    def _set_optimizer_state(self, optimizer, state, optimizer_name):
-        raise NotImplemented("Please implement this method in your child class")
-
-    def _check_state(self, state):
-        state_attributes = ['model_components', 'optimizers']
-
-        for attr in state_attributes:
-            v = get_value_at(attr, state, warn_on_failure=False)
-            if v is None:
-                self._log.error(f"Given state does not have a value for {attr}, state is invalid")
-                return False
-
-        return True
-
-    def _validate(self):
+    def _validate(self) -> bool:
         # TODO
         self._valid = True
 
@@ -897,11 +907,11 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 optimizers,
-                 model_components=None,
-                 batch_chunk_size=None,
-                 use_mixed_precision=False,
-                 name="DefaultTrainerBase",
+                 optimizers: Union[Any, list, dict],
+                 model_components: Optional[Union[Any, list, dict]] = None,
+                 batch_chunk_size: Optional[int] = None,
+                 use_mixed_precision: bool = False,
+                 name: Optional[str] = "DefaultTrainerBase",
                  **kwargs):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
@@ -941,19 +951,19 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         self.training_model = None
 
-    def set_training_model(self, model):
+    def set_training_model(self, model: Callable) -> None:
         """
-        :param model: nn.Module that returns the loss based on the given batch
+        :param model: Model that returns the loss based on the given batch
                       The forward method of the training model must be callable and the following signature:
 
-                      model(self, batch_data, training_settings) -> {
+                      model(batch_data, training_settings) -> {
                         "loss": <Tensor>,
                         "auxiliary_results": <can be anything, e.g dict or list with values or data items>
                       }
 
                       or
 
-                      model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
+                      model(batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
 
         :return:
         """
@@ -963,7 +973,10 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
 
-    def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
+    def _evaluate_loss(self,
+                       batch_data: Any,
+                       evaluate_settings: Optional[Any] = None,
+                       inference_mode: Optional[bool] = None) -> Any:
         """
         Evaluates the given training model on the  given batch_data, using the optional training_settings
         Depending on the Deep learning backend you might need to use inference mode here
@@ -985,7 +998,7 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 
-    def _validate_model(self):
+    def _validate_model(self) -> bool:
         # TODO : this is framework dependent
         model_valid = callable(self.training_model)
         if not model_valid:
