@@ -3,7 +3,6 @@ import abc
 
 import math
 
-import numpy as np
 from mlpug.base import Base
 
 import basics.base_utils as _
