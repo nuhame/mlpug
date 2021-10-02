@@ -3,7 +3,7 @@ import abc
 import math
 import time
 
-from typing import Any, Optional, Iterable, Collection, Union, Tuple, Callable
+from typing import Any, Optional, Iterable, Mapping, Collection, Union, Tuple, Callable
 from trainers.callbacks import Callback
 
 
@@ -18,8 +18,8 @@ from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
 def normalize_evaluation(results: Any) -> dict:
-    if type(results) is dict:
-        return results
+    if _.is_mapping(results):
+        return dict(results)
     elif type(results) is tuple:
         return {
             "loss": results[0],
@@ -38,8 +38,8 @@ class BatchChunkingResults(list):
 class TrainerBase(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 model_components: dict,
-                 optimizers: dict,
+                 model_components: Mapping,
+                 optimizers: Mapping,
                  name: Optional[str] = None,
                  **kwargs):
         """
@@ -69,7 +69,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
             "optimizers": optimizers_state,
         }, mcs_success & os_success
 
-    def set_state(self, state: dict) -> bool:
+    def set_state(self, state: Mapping) -> bool:
         """
 
         :param state:
@@ -88,19 +88,19 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def get_optimizers(self) -> dict:
+    def get_optimizers(self) -> Mapping:
         return self.optimizers
 
     def get_optimizer(self, name: str) -> Any:
         return get_value_at(name, self.get_optimizers())
 
-    def get_model_components(self) -> dict:
+    def get_model_components(self) -> Mapping:
         return self.model_components
 
     def get_model_component(self, name: str) -> Any:
         return get_value_at(name, self.get_model_components())
 
-    def get_model_components_state(self) -> Tuple[dict, bool]:
+    def get_model_components_state(self) -> Tuple[Mapping, bool]:
         """
 
         :return: state, success (True or False)
@@ -119,7 +119,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         return state, success
 
-    def set_model_components_state(self, state: dict) -> bool:
+    def set_model_components_state(self, state: Mapping) -> bool:
         """
 
         :param state:
@@ -164,7 +164,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
 
         return state, success
 
-    def set_optimizers_state(self, state: dict) -> bool:
+    def set_optimizers_state(self, state: Mapping) -> bool:
         """
 
         :param state:
@@ -309,7 +309,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
     def _set_optimizer_state(self, optimizer: Any, state: dict, optimizer_name: Optional[str] = None) -> None:
         raise NotImplemented("Please implement this method in your child class")
 
-    def _check_state(self, state: dict) -> bool:
+    def _check_state(self, state: Mapping) -> bool:
         state_attributes = ['model_components', 'optimizers']
 
         for attr in state_attributes:
@@ -507,7 +507,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                    "experiment_data": self.experiment_data
                }, True
 
-    def set_state(self, state: dict) -> bool:
+    def set_state(self, state: Mapping) -> bool:
         """
         WARNING: the start batch_step in the state only controls how many batches will be trained on in the
                  the current epoch, it does not control the exact batch data that will be used for training.
@@ -586,7 +586,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return state
 
-    def _set_metric_windows_states(self, state: dict) -> bool:
+    def _set_metric_windows_states(self, state: Mapping) -> bool:
         success = True
         try:
             metric_windows_state = get_value_at("manager.metric_windows", state)
@@ -602,7 +602,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _set_metric_window_state(self, metric_path: str, window_state: dict) -> bool:
+    def _set_metric_window_state(self, metric_path: str, window_state: Mapping) -> bool:
         success = True
         try:
             window_length = window_state['length']
@@ -623,7 +623,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _check_state(self, state: dict) -> bool:
+    def _check_state(self, state: Mapping) -> bool:
         state_attributes = ['manager',
                             'manager.epoch',
                             'manager.batch_step',
@@ -812,7 +812,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             }
         }
 
-    def _call_callbacks(self, event: str, *args, **kwargs) -> bool:
+    def _call_callbacks(self, event: str, *args: Any, **kwargs: Any) -> bool:
         success = True
         for callback in self.callbacks:
             func_name = event
@@ -871,7 +871,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None
 
-    def _prepare_training_dataset(self) -> Collection:
+    def _prepare_training_dataset(self) -> Iterable:
         return self.training_dataset
 
     def _assess_num_batches_per_epoch(self) -> None:
@@ -907,8 +907,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 optimizers: Union[Any, list, dict],
-                 model_components: Optional[Union[Any, list, dict]] = None,
+                 optimizers: Union[Any, Iterable, Mapping],
+                 model_components: Optional[Union[Any, Iterable, Mapping]] = None,
                  batch_chunk_size: Optional[int] = None,
                  use_mixed_precision: bool = False,
                  name: Optional[str] = "DefaultTrainerBase",
