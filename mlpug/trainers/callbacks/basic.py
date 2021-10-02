@@ -2,6 +2,8 @@ import sys
 
 import datetime
 
+from typing import Any, Optional, List, Mapping
+
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at, is_chunkable
 
@@ -11,12 +13,12 @@ import basics.base_utils as _
 class LogProgress(Callback):
 
     def __init__(self,
-                 log_period=200,
-                 set_names=None,
-                 batch_level=True,
-                 logs_base_path="current",
-                 name="LogProgress",
-                 **kwargs):
+                 log_period: int = 200,
+                 set_names: Optional[List[str]] = None,
+                 batch_level: bool = True,
+                 logs_base_path: str = "current",
+                 name: Optional[str] = None,
+                 **kwargs: Any):
         super(LogProgress, self).__init__(name=name, **kwargs)
 
         self.log_period = log_period
@@ -31,7 +33,7 @@ class LogProgress(Callback):
             'epoch': "Epoch"
         }
 
-    def on_batch_training_completed(self, training_batch, logs):
+    def on_batch_training_completed(self, training_batch: Any, logs: dict) -> bool:
         if not self.batch_level:
             return True
 
@@ -67,15 +69,15 @@ class LogProgress(Callback):
 
         return success
 
-    def on_epoch_completed(self, logs):
+    def on_epoch_completed(self, logs: dict) -> bool:
         current = self._get_logs_base(logs)
         duration = self._get_epoch_duration(logs)
         self._write('\n')
         self._write('###############################################################################')
         self._write('\n')
         self._write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
-                                                                           logs["final_epoch"],
-                                                                           duration))
+                                                                      logs["final_epoch"],
+                                                                      duration))
         success = True
         for metric_level in ['window_average', 'dataset', 'epoch']:
             self._write_metric_logs(metric_level, logs)
@@ -85,11 +87,11 @@ class LogProgress(Callback):
 
         return success
 
-    def _calc_eta(self, logs):
+    def _calc_eta(self, logs: dict) -> str:
 
         current = self._get_logs_base(logs)
 
-        eta_str = None
+        eta_str = "[UNKNOWN]"
         try:
             training_params = current["training_params"]
 
@@ -102,14 +104,12 @@ class LogProgress(Callback):
                 eta_seconds = int(round(average_batch_duration * num_batches_to_go))
 
                 eta_str = str(datetime.timedelta(seconds=eta_seconds))
-            else:
-                eta_str = "[UNKNOWN]"
         except Exception as e:
             _.log_exception(self._log, "Unable to calculate epoch ETA", e)
 
         return eta_str
 
-    def _get_average_batch_duration(self, logs):
+    def _get_average_batch_duration(self, logs: dict) -> str:
         current = self._get_logs_base(logs)
 
         duration_str = "[UNKNOWN]"
@@ -123,10 +123,10 @@ class LogProgress(Callback):
 
         return duration_str
 
-    def _get_epoch_duration(self, logs):
+    def _get_epoch_duration(self, logs: dict) -> str:
         current = self._get_logs_base(logs)
 
-        duration_str = None
+        duration_str = "[UNKNOWN]"
         try:
             epoch_duration = int(round(current["training_params"]["epoch"]["duration"]))
             duration_str = str(datetime.timedelta(seconds=epoch_duration))
@@ -135,7 +135,7 @@ class LogProgress(Callback):
 
         return duration_str
 
-    def _write_metric_logs(self, metric_level, logs):
+    def _write_metric_logs(self, metric_level: str, logs: dict) -> None:
         metrics_log = ''
         for set_name in self.set_names:
             set_metrics_log = self._create_set_metrics_log_for(set_name, metric_level, logs)
@@ -148,15 +148,15 @@ class LogProgress(Callback):
             self._write(f'{self.metric_level_names[metric_level]}:\n')
             self._write(metrics_log)
 
-    def _create_set_metrics_log_for(self, set_name, metric_level, logs):
+    def _create_set_metrics_log_for(self, set_name: str, metric_level: str, logs: dict) -> str:
         current = self._get_logs_base(logs)
 
         key_path = f"{set_name}.{metric_level}"
         metrics = get_value_at(key_path, current, warn_on_failure=False)
         return self._create_log_for(metrics)
 
-    def _create_log_for(self, metrics, base_metric=None, log_depth=0):
-        if not _.is_dict(metrics):
+    def _create_log_for(self, metrics: Mapping, base_metric: Optional[str] = None, log_depth: int = 0) -> Optional[str]:
+        if not _.is_mapping(metrics):
             return None
 
         metric_names = set(metrics.keys())
@@ -188,7 +188,7 @@ class LogProgress(Callback):
                 try:
                     log_format = self._get_log_format(value)
                     metric_value_logs += [log_format.format(metric, value)]
-                except Exception as e:
+                except Exception:
                     metric_value_logs += ["[UNKNOWN]"]
 
         if len(metric_value_logs) > 0:
@@ -196,7 +196,7 @@ class LogProgress(Callback):
 
         return log
 
-    def _get_log_format(self, value):
+    def _get_log_format(self, value) -> str:
         if abs(value) < 0.1:
             log_format = "{:<9s} {:.3e}"
         else:
@@ -204,19 +204,19 @@ class LogProgress(Callback):
 
         return log_format
 
-    def _write(self, text):
+    def _write(self, text: str) -> None:
         sys.stdout.write(text)
         sys.stdout.flush()
 
 
 class BatchSizeLogger(Callback):
 
-    def __init__(self, batch_dimension=1, name="BatchSizeLogger", **kwargs):
+    def __init__(self, batch_dimension: int = 1, name: str = "BatchSizeLogger", **kwargs: Any):
         super().__init__(name=name, **kwargs)
 
         self._batch_dimension = batch_dimension
 
-    def on_batch_training_start(self, training_batch, logs):
+    def on_batch_training_start(self, training_batch: Any, logs: dict) -> bool:
         """
 
         :param training_batch:
@@ -232,4 +232,3 @@ class BatchSizeLogger(Callback):
             training_batch[0].size(self._batch_dimension)
 
         return True
-

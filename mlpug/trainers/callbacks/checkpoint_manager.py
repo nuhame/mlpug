@@ -5,6 +5,8 @@ import json
 
 import abc
 
+from typing import Any, Tuple, Optional, Mapping, Dict
+
 import pickle
 
 from shutil import copyfile
@@ -18,22 +20,22 @@ import basics.base_utils as _
 class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 model_hyper_parameters=None,
-                 checkpoints_path="../trained-models/",
-                 batch_level=True,
-                 metric_to_monitor="validation.window_average.perplexity",
-                 metric_opt_mode='min',
-                 metric_monitor_period=200,  # batches or epochs
-                 metric_checkpoint_threshold=None,
-                 create_checkpoint_every=200,  # batches or epochs
-                 archive_last_model_checkpoint_every=2000,  # batches or epochs
-                 force_monitoring_on_epoch=True,
-                 base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
-                 model_checkpoint_filename_ext="m-ckp",
-                 training_checkpoint_filename_ext="t-ckp",
-                 backup_before_override=True,
-                 name="CheckpointManager",
-                 **kwargs):
+                 model_hyper_parameters: Optional[Mapping] = None,
+                 checkpoints_path: str = "../trained-models/",
+                 batch_level: bool = True,
+                 metric_to_monitor: str = "validation.window_average.perplexity",
+                 metric_opt_mode: str = 'min',
+                 metric_monitor_period: int = 200,  # batches or epochs
+                 metric_checkpoint_threshold: Optional[Any] = None,
+                 create_checkpoint_every: int = 200,  # batches or epochs
+                 archive_last_model_checkpoint_every: int = 2000,  # batches or epochs
+                 force_monitoring_on_epoch: bool = True,
+                 base_checkpoint_filename: str = time.strftime("%d-%m-%Y_%H-%M-%S"),
+                 model_checkpoint_filename_ext: str = "m-ckp",
+                 training_checkpoint_filename_ext: str = "t-ckp",
+                 backup_before_override: bool = True,
+                 name: str = "CheckpointManager",
+                 **kwargs: Any):
         """
 
         :param model_hyper_parameters: Dict with hyper parameters of the model, this will be saved as part of
@@ -99,20 +101,20 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         self._describe_setup()
 
-    def get_state(self):
+    def get_state(self) -> Tuple[Dict, bool]:
         return {
             "best_model_quality": self._best_model_quality,
             "best_model_iter": self._best_model_iter
         }, True
 
-    def set_state(self, state):
+    def set_state(self, state: Mapping) -> bool:
         """
 
         :param state Dict with saved checkpoint state to continue tracking the best model during training
         :return:
         """
         success = True
-        if not _.is_dict(state):
+        if not _.is_mapping(state):
             self._log.debug("No initial checkpoint state given, starting with clean slate ...")
             return success
 
@@ -127,13 +129,13 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return success
 
-    def on_batch_training_completed(self, training_batch, logs):
+    def on_batch_training_completed(self, training_batch: Any, logs: dict) -> bool:
         if not self._batch_level:
             return True
 
         return self._monitor('global_iter', logs)
 
-    def on_epoch_completed(self, logs):
+    def on_epoch_completed(self, logs: dict) -> bool:
         iter_name = 'epoch'
 
         force_monitoring = False
@@ -147,7 +149,11 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return self._monitor(iter_name, logs, force_monitoring=force_monitoring)
 
-    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
+    def on_training_ended(self,
+                          stopped_early: bool,
+                          stopped_on_error: bool,
+                          interrupted: bool,
+                          callback_calls_success: bool) -> bool:
         status = 'ended'
         if stopped_early:
             status = 'stopped early'
@@ -182,31 +188,31 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return success
 
-    def training_checkpoint_file_name(self):
+    def training_checkpoint_file_name(self) -> str:
         b_fn = self._base_filename
         ext = self._training_checkpoint_filename_ext
 
         return os.path.join(self._checkpoints_path, f'{b_fn}-training-checkpoint.{ext}')
 
-    def current_model_file_name(self, training_iter):
+    def current_model_file_name(self, training_iter: int) -> str:
         b_fn = self._base_filename
         ext = self._model_checkpoint_filename_ext
 
         return os.path.join(self._checkpoints_path, f'{b_fn}-model-checkpoint-{training_iter}.{ext}')
 
-    def latest_model_file_name(self):
+    def latest_model_file_name(self) -> str:
         b_fn = self._base_filename
         ext = self._model_checkpoint_filename_ext
 
         return os.path.join(self._checkpoints_path, f'{b_fn}-latest-model-checkpoint.{ext}')
 
-    def best_model_file_name(self):
+    def best_model_file_name(self) -> str:
         b_fn = self._base_filename
         ext = self._model_checkpoint_filename_ext
 
         return os.path.join(self._checkpoints_path, f'{b_fn}-best-model-checkpoint.{ext}')
 
-    def _describe_setup(self):
+    def _describe_setup(self) -> None:
         self._log.info(f"Metric to monitor : {self._metric_to_monitor}")
         self._log.info(f"Metric monitor period : {self._metric_monitor_period}")
 
@@ -216,7 +222,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         self._log.info(f"Archive last model checkpoint every "
                        f"{self._archive_last_model_checkpoint_every} {time_scale}")
 
-    def _get_model_quality(self, current_logs):
+    def _get_model_quality(self, current_logs: dict) -> Any:
         model_quality = get_value_at(self._metric_to_monitor, current_logs)
 
         if type(model_quality) is tuple:
@@ -226,7 +232,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return model_quality
 
     # TODO : it would maybe be better to split the monitoring and the checkpointing in to two separated methods
-    def _monitor(self, iter_name, logs, force_monitoring=False):
+    def _monitor(self, iter_name: str, logs: dict, force_monitoring: bool = False) -> bool:
         current = self._get_logs_base(logs)
 
         training_iter = current[iter_name]
@@ -319,7 +325,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return success
 
-    def _save_current_model_as_best(self):
+    def _save_current_model_as_best(self) -> Optional[str]:
         model_fn = self.best_model_file_name()
 
         if self._backup_before_override:
@@ -332,13 +338,15 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return self._create_model_checkpoint(model_fn=model_fn)
 
-    def _update_logs(self, model_improved, logs, current):
+    def _update_logs(self, model_improved: bool, logs: dict, current: dict) -> None:
         if model_improved:
             logs["best"] = current.copy()
 
         current["is_best"] = model_improved
 
-    def _create_model_checkpoint(self, model_fn=None, file_to_copy=None):
+    def _create_model_checkpoint(self,
+                                 model_fn: Optional[str] = None,
+                                 file_to_copy: Optional[str] = None) -> Optional[str]:
         if model_fn is None:
             model_fn = self.latest_model_file_name()
 
@@ -364,7 +372,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return model_fn
 
-    def _create_training_checkpoint(self):
+    def _create_training_checkpoint(self) -> Optional[str]:
         checkpoint_fname = self.training_checkpoint_file_name()
 
         if self._backup_before_override:
@@ -395,7 +403,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return checkpoint_fname
 
-    def _gather_model_checkpoint_data(self):
+    def _gather_model_checkpoint_data(self) -> Tuple[Mapping, bool]:
         """
 
         :return: state, success
@@ -429,28 +437,28 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return state, success
 
-    def _gather_training_checkpoint_data(self):
+    def _gather_training_checkpoint_data(self) -> Tuple[Optional[dict], bool]:
         """
 
         :return: state, success
         """
         return self.training_manager.get_state()
 
-    def _save_model_checkpoint(self, filename, state):
+    def _save_model_checkpoint(self, filename: str, state: Mapping) -> None:
         with open(filename, 'wb') as f:
             pickle.dump(state, f)
 
-    def _save_training_checkpoint(self, filename, state):
+    def _save_training_checkpoint(self, filename: str, state: Mapping) -> None:
         with open(filename, 'wb') as f:
             pickle.dump(state, f)
 
-    def _backup_checkpoint(self, filename):
+    def _backup_checkpoint(self, filename: str) -> bool:
         if os.path.isfile(filename):
             return self._copy(filename, f"{filename}.backup")
         else:
             return True
 
-    def _copy(self, source_fname, dest_fname):
+    def _copy(self, source_fname: str, dest_fname: str) -> bool:
         try:
             self._log.debug("Copying model: [%s] ==> [%s]" % (source_fname, dest_fname))
             copyfile(source_fname, dest_fname)
@@ -460,7 +468,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         return True
 
-    def _check_settings(self):
+    def _check_settings(self) -> None:
         if not os.path.exists(self._checkpoints_path):
             self._log.info(f"Creating checkpoint directory : {self._checkpoints_path}")
             os.makedirs(self._checkpoints_path)
@@ -481,7 +489,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                            f"[{self._archive_last_model_checkpoint_every}]")
 
     @staticmethod
-    def pretty_iter_name(iter_name):
+    def pretty_iter_name(iter_name: str) -> str:
         if iter_name == "epoch":
             return "Epoch"
         elif iter_name == "global_iter":

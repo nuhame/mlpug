@@ -68,7 +68,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_epoch_start(self, logs: Mapping) -> bool:
+    def on_epoch_start(self, logs: dict) -> bool:
         """
 
         :param logs:
@@ -77,7 +77,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_start(self, training_batch: Any, logs: Mapping) -> bool:
+    def on_batch_training_start(self, training_batch: Any, logs: dict) -> bool:
         """
 
         :param training_batch:
@@ -87,7 +87,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_failed(self, exception: BaseException, logs: Mapping) -> bool:
+    def on_batch_training_failed(self, exception: BaseException, logs: dict) -> bool:
         """
 
         :param exception:
@@ -97,7 +97,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_completed(self, training_batch: Any, logs: Mapping) -> bool:
+    def on_batch_training_completed(self, training_batch: Any, logs: dict) -> bool:
         """
 
         :param training_batch:
@@ -107,7 +107,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_epoch_completed(self, logs: Mapping) -> bool:
+    def on_epoch_completed(self, logs: dict) -> bool:
         """
 
         :param logs:
@@ -132,7 +132,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def _get_logs_base(self, logs: Mapping):
+    def _get_logs_base(self, logs: dict) -> dict:
         if self.base_log_path is None:
             return logs
         else:
