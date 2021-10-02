@@ -3,7 +3,10 @@ import abc
 
 import math
 
+from typing import Any, Optional, List, Dict, Iterable, Sequence, Tuple, Callable
+
 from mlpug.base import Base
+from mlpug.trainers.training import TrainerBase
 
 import basics.base_utils as _
 
@@ -11,11 +14,11 @@ from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidParameters
 from mlpug.utils import *
 
 
-def forward_loss(loss, **kwargs):
+def forward_loss(loss: float, **kwargs):
     return loss, 1
 
 
-def default_metric_reducer_func(batch_metrics_list):
+def default_metric_reducer_func(batch_metrics_list: list[Tuple]) -> Tuple[float, float, int]:
     # unzip
     _, metric_sum_list, num_samples_list = list(zip(*batch_metrics_list))
 
@@ -29,7 +32,7 @@ def default_metric_reducer_func(batch_metrics_list):
 
 class ChunkableBatchDataset(Base):
 
-    def __init__(self, batch, batch_chunk_size):
+    def __init__(self, batch: Sequence[Any], batch_chunk_size: int):
         """
         Turns a chunkable batch in to an iterable dataset
         
@@ -71,14 +74,14 @@ class ChunkableBatchDataset(Base):
 class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 batch_metric_funcs,
-                 model_evaluate_func=None,
-                 trainer=None,
-                 batch_metric_reducer_funcs=None,
-                 batch_chunk_size=None,
-                 batch_chunk_metric_reducer_funcs=None,
-                 show_dataset_evaluation_progress=False,
-                 name="MetricEvaluatorBase",
+                 batch_metric_funcs: Dict[str, Callable],
+                 model_evaluate_func: Optional[Callable] = None,
+                 trainer: Optional[TrainerBase] = None,
+                 batch_metric_reducer_funcs: Dict[str, Callable] = None,
+                 batch_chunk_size: Optional[int] = None,
+                 batch_chunk_metric_reducer_funcs: Dict[str, Callable] = None,
+                 show_dataset_evaluation_progress: bool = False,
+                 name: Optional[str] = None,
                  **kwargs):
         """
 
@@ -297,10 +300,10 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         self._name = name
 
-    def get_name(self):
+    def get_name(self) -> str:
         return self._name
 
-    def get_metric_names(self):
+    def get_metric_names(self) -> List[str]:
         """
         Get the names of the metrics that are calculated by this `MetricEvaluator`.
 
@@ -310,11 +313,11 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         return list(self._batch_metric_funcs.keys())
 
     def calc_batch_metrics_for(self,
-                               batch_data,
-                               metrics_output,
-                               evaluate_settings=None,
-                               model_output=None,
-                               force_no_chunking=False):
+                               batch_data: Any,
+                               metrics_output: Dict[str, Any],
+                               evaluate_settings: Optional[Any] = None,
+                               model_output: Optional[Any] = None,
+                               force_no_chunking: bool = False) -> bool:
         """
 
         Calculate metrics of given batch, optionally applying evaluate_settings
@@ -361,7 +364,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                 model_output = self._model_evaluate_func(batch_data, evaluate_settings)
             except Exception as e:
                 _.log_exception(self._log, "Evaluating model on batch input data failed", e)
-                return None, False
+                return False
 
         metric_func_args = {**model_output, **{
             'batch': batch_data,
@@ -379,13 +382,13 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         return success
 
     def calc_dataset_metrics_for(self,
-                                 dataset,
-                                 metrics_output,
-                                 evaluate_settings=None,
-                                 dataset_name=None,
-                                 batch_metric_reducer_funcs=None,
-                                 show_dataset_evaluation_progress=None,
-                                 force_no_chunking=False):
+                                 dataset: Iterable,
+                                 metrics_output: Dict[str, Any],
+                                 evaluate_settings: Optional[Any] = None,
+                                 dataset_name: Optional[str] = None,
+                                 batch_metric_reducer_funcs: Optional[Dict[str, Callable]] = None,
+                                 show_dataset_evaluation_progress: Optional[bool] = None,
+                                 force_no_chunking: bool = False) -> bool:
         """
         Calculate metrics over whole dataset, by looping over the batches in the given dataset, optionally
         applying evaluate_settings
@@ -478,15 +481,19 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                            batch_metric_reducer_funcs=batch_metric_reducer_funcs,
                            dataset_name=dataset_name)
 
-    def reduce(self, batch_metric_data_lists, metrics_output, batch_metric_reducer_funcs=None, dataset_name=None):
+    def reduce(self,
+               batch_metric_data_lists: Dict[str, List[Any]],
+               metrics_output: Dict[str, Any],
+               batch_metric_reducer_funcs: Optional[Dict[str, Callable]] = None,
+               dataset_name:Optional[str] = None) -> bool:
         """
 
         Use the `batch_metric_reducer_funcs` to reduce the lists available in the `batch_metric_data_lists` dict
 
         The keys of `batch_metric_data_lists` must be the key path to the reduced metrics. Example:
         batch_metric_data_lists = {
-            'loss': [ ... data to use to calculated loss ... ],
-            'classification.F1': [ ... data to use to calculated F1 ... ]
+            'loss': [ ... data to use to calculate loss ... ],
+            'classification.F1': [ ... data to use to calculate F1 ... ]
         }
 
         To get the correct key paths you can use the `get_key_paths` as a utility
@@ -523,7 +530,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         return success
 
-    def _create_default_model_evaluate_func(self):
+    def _create_default_model_evaluate_func(self) -> Callable:
         """
         Creates function that evaluates model using the provided trainer instance.
         This needs to be implemented for any specific deep learning framework
@@ -538,11 +545,19 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                                                                         inference_mode=True,
                                                                         evaluate_settings=settings)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.get_name()
 
     @staticmethod
-    def check_funcs(fdict, func_names=None):
+    def check_funcs(fdict: Any, func_names: Optional[Sequence[str]] = None) -> None:
+        """
+
+        :param fdict:
+        :param func_names:
+        :return:
+
+        :raises InvalidParametersException
+        """
         if is_empty(fdict) or not can_get_items(fdict):
             raise InvalidParametersException("A dict with one or more functions must be provided")
 
@@ -557,7 +572,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                                                  f"The values of the function dictionary must be functions")
 
     @staticmethod
-    def is_valid(ev):
+    def is_valid(ev: Any) -> bool:
         return has_method(ev, 'get_metric_names') and \
                has_method(ev, 'calc_batch_metrics_for') and \
                has_method(ev, 'calc_dataset_metrics_for') and \
