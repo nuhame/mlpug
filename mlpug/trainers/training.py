@@ -40,7 +40,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
     def __init__(self,
                  model_components: dict,
                  optimizers: dict,
-                 name: Optional[str] = "TrainerBase",
+                 name: Optional[str] = None,
                  **kwargs):
         """
 
