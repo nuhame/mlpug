@@ -1,10 +1,17 @@
+from typing import Any, Dict, Optional, Sequence
+
 from mlpug.base import Base
 from mlpug.mlpug_exceptions import StateInvalidException, InvalidParametersException
 
 
 class SlidingWindow(Base):
 
-    def __init__(self, length=None, init_window_values=None, name=None, state=None, **kwargs):
+    def __init__(self,
+                 length: Optional[int] = None,
+                 init_window_values: Optional[Sequence[Any]] = None,
+                 name: Optional[str] = None,
+                 state: Optional[Dict] = None,
+                 **kwargs: Any):
         """
 
         Can raise StateInvalidException or InvalidParametersException
@@ -65,17 +72,17 @@ class SlidingWindow(Base):
         else:
             self.window = list()
 
-    def get_state(self):
+    def get_state(self) -> Dict:
         return {
             "window": self.window,
             "length": self.length,
             "name": self.name
         }
 
-    def flush(self):
+    def flush(self) -> None:
         self.window.clear()
 
-    def center(self):
+    def center(self) -> Any:
 
         if not self.is_filled():
             self._log.error("Window not completely filled yet, unable to get center")
@@ -87,19 +94,19 @@ class SlidingWindow(Base):
 
         return self.window[self.center_index]
 
-    def last(self):
+    def last(self) -> Any:
         return self.window[-1]
 
-    def first(self):
+    def first(self) -> Any:
         return self.window[0]
 
-    def is_filled(self):
+    def is_filled(self) -> bool:
         return len(self.window) >= self.length
 
-    def is_empty(self):
+    def is_empty(self) -> bool:
         return len(self.window) == 0
 
-    def slide(self, value):
+    def slide(self, value: Any) -> None:
         if self.is_filled():
             self.window = self.window[1:]
 

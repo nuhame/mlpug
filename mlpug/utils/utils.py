@@ -1,30 +1,35 @@
 import os
 import traceback
 
+from typing import Any, Optional, Iterable, Dict, Mapping, List, Sequence
+
 import basics.base_utils as _
 from basics.logging import get_logger
 
 logger = get_logger(os.path.basename(__file__))
 
 
-def convert_to_dict(type, components):
+def convert_to_dict(component_type: str, components: Any) -> Dict:
     if _.is_sequence(components):
         if len(components) == 1:
             components = {
-                type: components[0]
+                component_type: components[0]
             }
         elif len(components) > 1:
-            components = {f"{type}_{i}": component for i, component in enumerate(components)}
+            components = {f"{component_type}_{i}": component for i, component in enumerate(components)}
     elif not _.is_dict(components):
         # Assuming single optimizer
         components = {
-            type: components
+            component_type: components
         }
 
     return components
 
 
-def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
+def get_value_at(key_path: str,
+                 nested_data: Mapping,
+                 default: Optional[Any] = None,
+                 warn_on_failure: bool = True) -> Any:
     """
     Safe way to get value from nested data structure (e.g. nested dict) based on a key path
 
@@ -57,7 +62,11 @@ def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
     return value
 
 
-def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, base_path=None):
+def set_value_at(key_path: str,
+                 nested_data: Dict,
+                 value: Any,
+                 warn_on_path_unavailable: bool = False,
+                 base_path: Optional[str] = None) -> None:
     """
     Safe way to set value in nested data structure (e.g. nested dict) based on a key path
 
@@ -100,10 +109,10 @@ def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, b
         nested_data[root_key] = value
 
 
-def get_key_paths(data_dict,
-                  keys_to_consider=None,
-                  keys_not_to_consider=None,
-                  root_path=None):
+def get_key_paths(data_dict: Mapping,
+                  keys_to_consider: Optional[Sequence[str]] = None,
+                  keys_not_to_consider: Optional[Sequence[str]] = None,
+                  root_path: Optional[str] = None) -> List[str]:
     """
 
     Example:
@@ -165,11 +174,11 @@ def get_key_paths(data_dict,
     return key_paths
 
 
-def is_empty(o):
+def is_empty(o: Any):
     return o is None or (hasattr(o, "__len__") and callable(o.__len__) and len(o) == 0)
 
 
-def has_key(o, key):
+def has_key(o: Iterable, key: str):
     """
     TODO migrate to PyBase
     :param o:
@@ -179,24 +188,24 @@ def has_key(o, key):
     return hasattr(o, '__iter__') and (key in o)
 
 
-def can_get_items(o):
+def can_get_items(o: Any):
     return (o is not None) and hasattr(o, "__getitem__") and callable(o.__getitem__)
 
 
-def can_get_and_set_items(o):
+def can_get_and_set_items(o: Any):
     return (o is not None) and \
         hasattr(o, "__getitem__") and callable(o.__getitem__) and \
         hasattr(o, "__setitem__") and callable(o.__setitem__)
 
 
-def is_chunkable(batch):
+def is_chunkable(batch: Any):
     return batch is not None and \
            not isinstance(batch, (tuple, list)) and \
            hasattr(batch, "__len__") and callable(batch.__len__) and \
            hasattr(batch, "__getitem__") and callable(batch.__getitem__)
 
 
-def has_method(o, method_name):
+def has_method(o: Any, method_name: str):
     return o is not None and \
         hasattr(o, method_name) and \
         callable(getattr(o, method_name))

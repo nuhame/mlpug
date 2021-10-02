@@ -3,6 +3,8 @@ class MLPugException(Exception):
     def __init__(self, message):
         self.message = message
 
+        super().__init__(message)
+
     def __str__(self):
         return f"{self.message} :\n\n{self.__cause__}"
 
@@ -79,4 +81,3 @@ class LossNotAvailableException(MLPugException):
             err_msg += f" : {message}"
 
         super().__init__(err_msg)
-
