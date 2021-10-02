@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from mlpug.base import Base
 from mlpug.mlpug_exceptions import StateInvalidException, InvalidParametersException
@@ -10,7 +10,7 @@ class SlidingWindow(Base):
                  length: Optional[int] = None,
                  init_window_values: Optional[Sequence[Any]] = None,
                  name: Optional[str] = None,
-                 state: Optional[Dict] = None,
+                 state: Optional[Mapping] = None,
                  **kwargs: Any):
         """
 
