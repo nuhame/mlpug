@@ -3,7 +3,7 @@ import abc
 
 import math
 
-from typing import Any, Optional, List, Dict, Iterable, Sequence, Tuple, Callable
+from typing import Dict, Tuple, Callable
 
 from mlpug.base import Base
 from mlpug.trainers.training import TrainerBase
@@ -485,7 +485,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                batch_metric_data_lists: Dict[str, List[Any]],
                metrics_output: Dict[str, Any],
                batch_metric_reducer_funcs: Optional[Dict[str, Callable]] = None,
-               dataset_name:Optional[str] = None) -> bool:
+               dataset_name: Optional[str] = None) -> bool:
         """
 
         Use the `batch_metric_reducer_funcs` to reduce the lists available in the `batch_metric_data_lists` dict
@@ -549,7 +549,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
         return self.get_name()
 
     @staticmethod
-    def check_funcs(fdict: Any, func_names: Optional[Sequence[str]] = None) -> None:
+    def check_funcs(fdict: Any, func_names: Optional[Iterable[str]] = None) -> None:
         """
 
         :param fdict:
