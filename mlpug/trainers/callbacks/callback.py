@@ -1,13 +1,18 @@
 import abc
 
-from mlpug.base import Base
+from typing import Any, Optional, Tuple, Mapping
 
+from mlpug.base import Base
+from mlpug.trainers.training import TrainingManager
 from mlpug.utils.utils import get_value_at
 
 
 class Callback(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, name, base_logs_path="current", **kwargs):
+    def __init__(self,
+                 name: str,
+                 base_logs_path: str = "current",
+                 **kwargs: Any):
         super(Callback, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.name = name
@@ -19,7 +24,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         self.model_components = None
         self.optimizers = None
 
-    def set_training_manager(self, manager):
+    def set_training_manager(self, manager: TrainingManager):
         self.training_manager = manager
         self.trainer = manager.get_trainer()
         self.model_components = self.trainer.get_model_components()
@@ -27,17 +32,17 @@ class Callback(Base, metaclass=abc.ABCMeta):
 
         return True
 
-    def get_name(self):
+    def get_name(self) -> str:
         return self.name
 
-    def get_state(self):
+    def get_state(self) -> Tuple[Optional[Mapping], bool]:
         """
 
         :return: state, success (True or False)
         """
         return None, True
 
-    def set_state(self, state):
+    def set_state(self, state: Mapping) -> bool:
         """
 
         :param state:
@@ -46,11 +51,11 @@ class Callback(Base, metaclass=abc.ABCMeta):
         return True
 
     def on_training_start(self,
-                          num_epochs,
-                          num_batches_per_epoch,
-                          start_epoch,
-                          start_batch,
-                          start_update_iter):
+                          num_epochs: int,
+                          num_batches_per_epoch: int,
+                          start_epoch: int,
+                          start_batch: int,
+                          start_update_iter: int) -> bool:
         """
 
         :param num_epochs:
@@ -63,7 +68,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_epoch_start(self, logs):
+    def on_epoch_start(self, logs: Mapping) -> bool:
         """
 
         :param logs:
@@ -72,7 +77,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_start(self, training_batch, logs):
+    def on_batch_training_start(self, training_batch: Any, logs: Mapping) -> bool:
         """
 
         :param training_batch:
@@ -82,7 +87,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_failed(self, exception, logs):
+    def on_batch_training_failed(self, exception: BaseException, logs: Mapping) -> bool:
         """
 
         :param exception:
@@ -92,7 +97,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_batch_training_completed(self, training_batch, logs):
+    def on_batch_training_completed(self, training_batch: Any, logs: Mapping) -> bool:
         """
 
         :param training_batch:
@@ -102,7 +107,7 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_epoch_completed(self, logs):
+    def on_epoch_completed(self, logs: Mapping) -> bool:
         """
 
         :param logs:
@@ -111,7 +116,11 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
+    def on_training_ended(self,
+                          stopped_early: bool,
+                          stopped_on_error: bool,
+                          interrupted: bool,
+                          callback_calls_success: bool) -> bool:
         """
 
         :param stopped_early:
@@ -123,9 +132,8 @@ class Callback(Base, metaclass=abc.ABCMeta):
         """
         return True
 
-    def _get_logs_base(self, logs):
+    def _get_logs_base(self, logs: Mapping):
         if self.base_log_path is None:
             return logs
         else:
             return get_value_at(self.base_log_path, logs)
-
