@@ -4,7 +4,13 @@ import math
 import time
 
 from typing import Any, Optional, Iterable, Mapping, Collection, Union, Tuple, Callable
-from trainers.callbacks import Callback
+# from typing import TYPE_CHECKING
+# if TYPE_CHECKING:
+#     from mlpug.trainers.callbacks import Callback
+
+
+class Callback:
+    pass
 
 
 from statistics import mean

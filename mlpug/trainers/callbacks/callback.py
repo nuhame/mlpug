@@ -2,8 +2,12 @@ import abc
 
 from typing import Any, Optional, Tuple, Mapping
 
+
+class TrainingManager:
+    pass
+
+
 from mlpug.base import Base
-from mlpug.trainers.training import TrainingManager
 from mlpug.utils.utils import get_value_at
 
 
