@@ -30,7 +30,7 @@ def default_metric_reducer_func(batch_metrics_list):
 
 class ChunkableTupleBatchDim0(Base):
 
-    def __init__(self, batch):
+    def __init__(self, *batch):
         super().__init__()
 
         self._batch = batch
@@ -45,7 +45,7 @@ class ChunkableTupleBatchDim0(Base):
 
 class ChunkableTupleBatchDim1(Base):
 
-    def __init__(self, batch):
+    def __init__(self, *batch):
         super().__init__()
 
         self._batch = batch
