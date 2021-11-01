@@ -28,6 +28,36 @@ def default_metric_reducer_func(batch_metrics_list):
     return metric, metric_sum, num_samples
 
 
+class ChunkableTupleBatchDim0(Base):
+
+    def __init__(self, batch):
+        super().__init__()
+
+        self._batch = batch
+
+    def __len__(self):
+        # get batch size
+        return self._batch[0].size(0)
+
+    def __getitem__(self, sample_slice):
+        return (v[sample_slice, ...] for v in self._batch)
+
+
+class ChunkableTupleBatchDim1(Base):
+
+    def __init__(self, batch):
+        super().__init__()
+
+        self._batch = batch
+
+    def __len__(self):
+        # get batch size
+        return self._batch[0].size(1)
+
+    def __getitem__(self, sample_slice):
+        return (v[:, sample_slice, ...] for v in self._batch)
+
+
 class ChunkableBatchDataset(Base):
 
     def __init__(self, batch, batch_chunk_size):
