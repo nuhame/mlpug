@@ -223,7 +223,10 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def _describe_setup(self):
         self._log.info(f"Metric to monitor : {self._metric_to_monitor}")
-        self._log.info(f"Metric monitor period : {self._metric_monitor_period}")
+        if self._metric_monitor_period is not None:
+            self._log.info(f"Metric monitor period : {self._metric_monitor_period}")
+        else:
+            self._log.info(f"Metric monitor period : Metric checked whenever it is available")
 
         time_scale = 'batches' if self._batch_level else 'epochs'
         self._log.info(f"Create last training & model checkpoints every "
