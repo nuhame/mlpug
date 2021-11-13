@@ -23,15 +23,15 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                  batch_level=True,
                  metric_to_monitor="validation.window_average.perplexity",
                  metric_opt_mode='min',
-                 metric_monitor_period=200,  # batches or epochs
+                 metric_monitor_period=None,  # batches or epochs
                  metric_checkpoint_threshold=None,
                  create_checkpoint_every=200,  # batches or epochs
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
-                 force_monitoring_on_epoch=True,
                  base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
                  model_checkpoint_filename_ext="m-ckp",
                  training_checkpoint_filename_ext="t-ckp",
                  backup_before_override=True,
+                 warn_on_model_quality_not_available=None,
                  name="CheckpointManager",
                  **kwargs):
         """
@@ -43,9 +43,13 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                             on the epoch level
         :param metric_to_monitor: key path to metric value in the log object, e.g. `validation.batch.perplexity`
         :param metric_opt_mode: 'max', 'min'
-        :param metric_monitor_period: The period between checks for model quality improvement.
+        :param metric_monitor_period: If give, this is the period between checks for model quality improvement.
                                       This is in number of batches if `batch_level = True`, else it is a
                                       number of epochs.
+
+                                      If not given, every time a value is available for the given metric_to_monitor
+                                      the metric will be checked for improvement.
+
         :param metric_checkpoint_threshold: when given, the model quality must be below (or above, depending on
                                             metric_opt_mode) this threshold before a new best model checkpoint can be
                                             saved
@@ -68,6 +72,13 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                                        overridden by a new version. If backing up fails, no new version will be written
                                        to disk. This gives the user a chance to fix a problem, e.g. disk full, without
                                        interruption of the training process.
+
+        :param warn_on_model_quality_not_available: Default is True when metric_monitor_period given else False.
+                                                    If set to true and the metric_to_monitor is not available in
+                                                    the logs, a warning will be logged.
+
+                                                    This is useful for debugging purposes
+
         """
         super().__init__(name=name, **kwargs)
 
@@ -88,9 +99,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         self._create_checkpoint_every = create_checkpoint_every
         self._archive_last_model_checkpoint_every = archive_last_model_checkpoint_every
 
-        self._force_monitoring_on_epoch = force_monitoring_on_epoch
-
         self._backup_before_override = backup_before_override
+
+        if warn_on_model_quality_not_available is None:
+            warn_on_model_quality_not_available = self._metric_monitor_period is not None
+
+        self._warn_on_model_quality_not_available = warn_on_model_quality_not_available
 
         self._best_model_quality = float('Inf') if self._metric_opt_mode == 'min' else -float('Inf')
         self._best_model_iter = None
@@ -134,18 +148,19 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return self._monitor('global_iter', logs)
 
     def on_epoch_completed(self, logs):
-        iter_name = 'epoch'
+        create_latest_checkpoint = True
+        if not self._batch_level:
+            iter_name = 'epoch'
+        else:
+            # Monitor on epoch for batch level because checkpointing might be driven by
+            # availability of metric_to_monitor value (which could also have been calculated specifically
+            # at epoch ends.
+            iter_name = 'global_iter'
+            # ... but when monitoring on batch_level latest checkpoint might already be created
+            create_latest_checkpoint = False
 
-        force_monitoring = False
-        if self._batch_level:
-            if self._force_monitoring_on_epoch:
-                self._log.debug("Epoch completed : checking if model improved and creating checkpoints ... ")
-                iter_name = 'global_iter'
-                force_monitoring = True
-            else:
-                return True
-
-        return self._monitor(iter_name, logs, force_monitoring=force_monitoring)
+        self._log.debug("Epoch complete, checking if model quality improved ...")
+        return self._monitor(iter_name, logs, create_latest_checkpoint=create_latest_checkpoint)
 
     def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
         status = 'ended'
@@ -217,7 +232,9 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                        f"{self._archive_last_model_checkpoint_every} {time_scale}")
 
     def _get_model_quality(self, current_logs):
-        model_quality = get_value_at(self._metric_to_monitor, current_logs)
+        model_quality = get_value_at(self._metric_to_monitor,
+                                     current_logs,
+                                     warn_on_failure=self._warn_on_model_quality_not_available)
 
         if type(model_quality) is tuple:
             # use the first value as metric value, the other values are auxiliary results meant for other purposes
@@ -226,7 +243,37 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return model_quality
 
     # TODO : it would maybe be better to split the monitoring and the checkpointing in to two separated methods
-    def _monitor(self, iter_name, logs, force_monitoring=False):
+    def _monitor(self, iter_name, logs, create_latest_checkpoint=True):
+        monitor_success = True
+        data_saved = False
+
+        success, best_model_fname = self._monitor_for_best_checkpoint(iter_name, logs)
+        monitor_success &= success
+        data_saved |= best_model_fname is not None
+
+        if create_latest_checkpoint:
+            success, \
+                latest_model_fname, \
+                training_checkpoint_fname = self._monitor_for_latest_checkpoint(iter_name,
+                                                                                logs,
+                                                                                best_model_fname=best_model_fname)
+            monitor_success &= success
+            data_saved |= latest_model_fname is not None
+            data_saved |= training_checkpoint_fname is not None
+
+            success, \
+                archived_model_fname = self._monitor_for_checkpoint_archiving(iter_name,
+                                                                              logs,
+                                                                              latest_model_fname=latest_model_fname)
+            monitor_success &= success
+            data_saved |= archived_model_fname is not None
+
+        if data_saved:
+            self._log.debug("Saving of data done.\n\n")
+
+        return monitor_success
+
+    def _monitor_for_best_checkpoint(self, iter_name, logs):
         current = self._get_logs_base(logs)
 
         training_iter = current[iter_name]
@@ -235,89 +282,112 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         best_model_fname = None
         success = True
-        data_saved = False
-        if force_monitoring or \
-                ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0)):
-            model_quality = self._get_model_quality(current)
 
-            model_quality_valid = model_quality is not None
-            model_quality_good_enough = True
-            if model_quality_valid and self._metric_checkpoint_threshold is not None:
-                if self._metric_opt_mode == 'min':
-                    model_quality_good_enough = model_quality <= self._metric_checkpoint_threshold
-                elif self._metric_opt_mode == 'max':
-                    model_quality_good_enough = model_quality >= self._metric_checkpoint_threshold
+        check_model_quality = self._metric_monitor_period is None or \
+                ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0))
 
-            if not model_quality_good_enough:
-                self._log.debug("%s : %s : model quality not good enough : %s : %3e " % (pretty_iter_name,
-                                                                                         training_iter,
-                                                                                         self._metric_to_monitor,
-                                                                                         model_quality))
+        if not check_model_quality:
+            return success, best_model_fname
 
-            if model_quality_valid and model_quality_good_enough:
-                model_improved = ((self._metric_opt_mode == 'min') and (model_quality < self._best_model_quality)) or \
-                                 ((self._metric_opt_mode == 'max') and (model_quality > self._best_model_quality))
+        model_quality = self._get_model_quality(current)
 
-                if model_improved:
-                    self._log.debug("%s : %s : Model improved : %s : %3e " % (pretty_iter_name,
-                                                                              training_iter,
-                                                                              self._metric_to_monitor,
-                                                                              model_quality))
+        model_quality_available = model_quality is not None
+        model_quality_good_enough = True
+        if model_quality_available and self._metric_checkpoint_threshold is not None:
+            if self._metric_opt_mode == 'min':
+                model_quality_good_enough = model_quality <= self._metric_checkpoint_threshold
+            elif self._metric_opt_mode == 'max':
+                model_quality_good_enough = model_quality >= self._metric_checkpoint_threshold
 
-                    if (self._best_model_iter is not None) and \
-                            (iter_name == 'epoch') and \
-                            (training_iter < self._best_model_iter):
-                        self._log.warn(f"Inconsistency: according to the current training {pretty_iter_name} "
-                                       f"({training_iter}), current best model training iter ({self._best_model_iter}) "
-                                       f"is in the future. Was the right training checkpoint loaded?")
+        if not model_quality_good_enough:
+            self._log.debug("%s : %s : model quality not good enough : %s : %3e " % (pretty_iter_name,
+                                                                                     training_iter,
+                                                                                     self._metric_to_monitor,
+                                                                                     model_quality))
 
-                    best_model_fname = self._save_current_model_as_best()
-                    if best_model_fname:
-                        self._best_model_quality = model_quality
-                        self._best_model_iter = training_iter
+        if model_quality_available and model_quality_good_enough:
+            model_improved = ((self._metric_opt_mode == 'min') and (model_quality < self._best_model_quality)) or \
+                             ((self._metric_opt_mode == 'max') and (model_quality > self._best_model_quality))
 
-                        data_saved = True
-                    else:
-                        self._log.error("Unable to save improved model checkpoint")
-                        success = False
+            if model_improved:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
 
-                self._update_logs(model_improved, logs, current)
-            elif not model_quality_valid:
-                self._log.error(f"No model quality available, unable to check if we need to save a checkpoint, "
-                                f"skipping ...")
-                success = False
+                self._log.info("%s : %s : Model improved : %s : %3e " % (pretty_iter_name,
+                                                                         training_iter,
+                                                                         self._metric_to_monitor,
+                                                                         model_quality))
 
-        if (self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0):
-            # Just copy best model if available
-            latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
+                if (self._best_model_iter is not None) and (training_iter < self._best_model_iter):
+                    self._log.warn(f"Inconsistency: according to the current training {pretty_iter_name.lower()} "
+                                   f"({training_iter}), current best model training {pretty_iter_name.lower()} "
+                                   f"({self._best_model_iter}) is in the future. "
+                                   f"Was the right training checkpoint loaded?")
 
-            latest_model_saved = (latest_model_fname is not None)
-            success &= latest_model_saved
-
-            data_saved |= latest_model_saved
-
-            if (self._archive_last_model_checkpoint_every > 0) and \
-                    (training_iter % self._archive_last_model_checkpoint_every == 0):
-                if latest_model_saved:
-                    copy_success = self._copy(latest_model_fname, self.current_model_file_name(training_iter))
-
-                    success &= copy_success
-
-                    data_saved |= copy_success
+                best_model_fname = self._save_current_model_as_best()
+                if best_model_fname is not None:
+                    self._best_model_quality = model_quality
+                    self._best_model_iter = training_iter
                 else:
-                    self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
+                    self._log.error("Unable to save improved model checkpoint")
                     success = False
 
-            training_checkpoint_fname = self._create_training_checkpoint()
-            training_checkpoint_success = (training_checkpoint_fname is not None)
-            data_saved |= training_checkpoint_success
+            self._update_logs(model_improved, logs, current)
 
-            success &= training_checkpoint_success
+        return success, best_model_fname
 
-        if data_saved:
-            self._log.debug("Saving of data done.\n\n")
+    def _monitor_for_latest_checkpoint(self, iter_name, logs, best_model_fname=None):
+        current = self._get_logs_base(logs)
+        training_iter = current[iter_name]
 
-        return success
+        success = True
+        save_latest_model = (self._create_checkpoint_every > 0) and (training_iter % self._create_checkpoint_every == 0)
+
+        if not save_latest_model:
+            return success, None, None
+
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+        # Just copy best model if available
+        latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
+        success &= latest_model_fname is not None
+
+        # Also save latest training checkpoint
+        training_checkpoint_fname = self._create_training_checkpoint()
+        training_checkpoint_success = (training_checkpoint_fname is not None)
+
+        success &= training_checkpoint_success
+
+        return success, latest_model_fname, training_checkpoint_fname
+
+    def _monitor_for_checkpoint_archiving(self, iter_name, logs, latest_model_fname):
+        current = self._get_logs_base(logs)
+        training_iter = current[iter_name]
+
+        archive_last_model = (self._archive_last_model_checkpoint_every > 0) and \
+                             (training_iter % self._archive_last_model_checkpoint_every == 0)
+
+        success = True
+        if not archive_last_model:
+            return success, None
+
+        archived_model_fname = None
+        if latest_model_fname is not None:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+
+            model_fname = self.current_model_file_name(training_iter)
+            copy_success = self._copy(latest_model_fname, model_fname)
+            if copy_success:
+                archived_model_fname = model_fname
+
+            success &= copy_success
+        else:
+            self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
+            success = False
+
+        return success, archived_model_fname
 
     def _save_current_model_as_best(self):
         model_fn = self.best_model_file_name()
@@ -452,7 +522,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def _copy(self, source_fname, dest_fname):
         try:
-            self._log.debug("Copying model: [%s] ==> [%s]" % (source_fname, dest_fname))
+            self._log.debug("Copying model:\n[%s] ==> \n[%s]\n" % (source_fname, dest_fname))
             copyfile(source_fname, dest_fname)
         except Exception as e:
             _.log_exception(self._log, "Unable to copy [%s]" % source_fname, e)
