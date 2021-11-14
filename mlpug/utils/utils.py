@@ -200,3 +200,5 @@ def has_method(o, method_name):
     return o is not None and \
         hasattr(o, method_name) and \
         callable(getattr(o, method_name))
+
+

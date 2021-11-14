@@ -165,5 +165,25 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         self._log.error("This method is not implemented, implement it in your child class implementation")
         return None
 
+    def _get_callback_properties_for_hash(self):
+        """
+        This is used to create the unique callback hash.
+
+        Returns a dict with properties describing the setup of the callback.
+        It should at least contain the properties that influence the callback state.
+
+        Property values should only be simple types, such as int, float, boolean and strings.
+        Convert any object and function values (or similar) into a booleans
+        (True = available, False = None, not available)
+
+        :return: dict
+        """
+        props = super()._get_callback_properties_for_hash()
+        return {
+            **props,
+            "batch_level": self._batch_level,
+            "metric_to_monitor": self._metric_to_monitor
+        }
+
 
 

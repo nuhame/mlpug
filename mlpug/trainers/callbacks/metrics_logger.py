@@ -85,13 +85,9 @@ class MetricsLoggerBase(Callback):
         :param name:
         :type name:
         """
-        # print(f"mlpug.MetricsLoggerBase(kwargs={kwargs})")
-
         if name is None:
             name = self.__class__.__name__
-
-            logging_level = "Batch level" if batch_level else "Epoch level"
-            name = f"{name}[{dataset_name} dataset][{logging_level}][{str(logging_mode)}]"
+            name = f"{name}[{dataset_name}]"
 
         super().__init__(name=name, **kwargs)
 
@@ -315,6 +311,33 @@ class MetricsLoggerBase(Callback):
         return self._metric_evaluator.reduce(batch_metric_data_lists,
                                              reduced_metrics_log,
                                              dataset_name=self._dataset_name)
+
+    def _get_callback_properties_for_hash(self):
+        """
+        This is used to create the unique callback hash.
+
+        Returns a dict with properties describing the setup of the callback.
+        It should at least contain the properties that influence the callback state.
+
+        Property values should only be simple types, such as int, float, boolean and strings.
+        Convert any object and function values (or similar) into a booleans
+        (True = available, False = None, not available)
+
+        :return: dict
+        """
+        props = super()._get_callback_properties_for_hash()
+        return {
+            **props,
+            "metric_evaluator": self._metric_evaluator is not None,
+            "dataset_name": self._dataset_name,
+            "batch_level": self._batch_level,
+            "logging_mode": self._logging_mode,
+            "dataset": self._dataset is not None,
+            "evaluate_settings": self._evaluate_settings is not None,
+            "batch_averaging_window": self._batch_averaging_window,
+            "log_condition_func": self._log_condition_func is not None,
+            "sliding_window_factory": self._sliding_window_factory is not None
+        }
 
     def _check_state(self, state):
         state_attributes = ['metric_windows']
