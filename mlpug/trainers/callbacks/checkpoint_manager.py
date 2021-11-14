@@ -553,6 +553,28 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                            f"changing archive_last_model_checkpoint_every to "
                            f"[{self._archive_last_model_checkpoint_every}]")
 
+    def _get_callback_properties_for_hash(self):
+        """
+        This is used to create the unique callback hash.
+
+        Returns a dict with properties describing the setup of the callback.
+        It should at least contain the properties that influence the callback state.
+
+        Property values should only be simple types, such as int, float, boolean and strings.
+        Convert any object and function values (or similar) into a booleans (True = available, False = None)
+
+        :return: dict
+        """
+        props = super()._get_callback_properties_for_hash()
+        return {
+            **props,
+            "batch_level": self._batch_level,
+            "metric_to_monitor": self._metric_to_monitor,
+            "metric_opt_mode": self._metric_opt_mode,
+            "metric_monitor_period": self._metric_monitor_period,
+            "metric_checkpoint_threshold": self._metric_checkpoint_threshold,
+        }
+
     @staticmethod
     def pretty_iter_name(iter_name):
         if iter_name == "epoch":

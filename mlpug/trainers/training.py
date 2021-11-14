@@ -78,7 +78,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.epoch = 0
 
         self.callbacks = callbacks or []
-        self.callbacks_map = None
+        self.cb_names = None
+        self.cb_hashes = None
 
         self.experiment_data = experiment_data
 
@@ -113,6 +114,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             _.log_exception(self._log,
                             "Unable to setup sliding window for training loss and batch training duration", e)
 
+        # populates cb_names and cb_hashes
+        self._check_callback_hashes()
+
         if not self._call_callbacks("set_training_manager", self):
             self._valid = False
             self.logs["cb_calls_success"] = False
@@ -144,7 +148,6 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         self._training_ended()
 
-
     def stop_training(self):
         self._stop_training = True
 
@@ -173,24 +176,29 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         }
 
         success = True
-        for callback in self.callbacks:
-            cb_name = None
+        for cb_idx, callback in enumerate(self.callbacks):
+            cb_name = self.cb_names[cb_idx]
+            cb_hash = self.cb_hashes[cb_idx]
+
             try:
-                cb_name = str(callback)
                 cb_state, cb_success = callback.get_state()
 
                 success &= cb_success
 
-                if cb_name in state["callbacks"] and cb_state != state["callbacks"][cb_name]:
-                    self._log.error(f"There is already a callback in the TrainingManager state "
-                                    f"with the name {cb_name}, this state will be overridden now. "
-                                    f"Please ensure that all your callbacks have a unique name")
+                if cb_hash in state["callbacks"] and cb_state != state["callbacks"][cb_hash]:
+                    self._log.error(f"There is already a callback {cb_name} in the TrainingManager state "
+                                    f"with exactly the same hash, this state will be overridden now. "
+                                    f"Please ensure that all your callbacks have a unique names/hashes.\n"
+                                    f"Callback index = {cb_idx}\n"
+                                    f"Callback hash  = {cb_hash}\n")
                     success = False
 
-                state["callbacks"][cb_name] = cb_state
+                state["callbacks"][cb_hash] = cb_state
             except Exception as e:
                 _.log_exception(self._log, f"Failed to get state of callback {cb_name}, "
-                                           f"unable to add callback state to Training Manager state", e)
+                                           f"unable to add callback state to Training Manager state.\n"
+                                           f"Callback index = {cb_idx}\n"
+                                           f"Callback hash  = {cb_hash}\n", e)
                 success = False
 
         state["trainer"], get_trainer_state_success = self.trainer.get_state()
@@ -212,12 +220,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                    "experiment_data": self.experiment_data
                }, True
 
-    def set_state(self, state):
+    def set_state(self, state, allow_missing_callbacks=False):
         """
         WARNING: the start batch_step in the state only controls how many batches will be trained on in the
                  the current epoch, it does not control the exact batch data that will be used for training.
 
         :param state:
+        :param allow_missing_callbacks:
         :return: success (True or False)
         """
         if not self.instance_valid():
@@ -257,19 +266,24 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             self._set_metric_window_state("training_params.batch.duration", state["manager"]["batch_duration_window"])
 
         try:
-            callbacks_map = {str(callback): callback for callback in self.callbacks}
+            callbacks_map = {cb_hash: callback for cb_hash, callback in zip(self.cb_hashes, self.callbacks)}
+            callback_names = {cb_hash: cb_name for cb_hash, cb_name in zip(self.cb_hashes, self.cb_names)}
 
             callbacks_state = state["callbacks"] or {}
-            for cb_name, cb_state in callbacks_state.items():
-                if cb_name not in callbacks_map:
-                    self._log.warn(f"Callback {cb_name} not given, unable to set callback state, skipping ...")
+            for cb_hash, cb_state in callbacks_state.items():
+                if cb_hash not in callbacks_map and not allow_missing_callbacks:
+                    self._log.warn(f"No registered callback found for available callback state in "
+                                   f"Training Manager state. Unable to set callback state, skipping...\n"
+                                   f"Callback state hash = {cb_hash}")
                     continue
 
-                callback = callbacks_map[cb_name]
+                callback = callbacks_map[cb_hash]
+                cb_name = callback_names[cb_hash]
                 try:
                     success &= callback.set_state(cb_state)
                 except Exception as e:
-                    _.log_exception(self._log, f"Unable to set state for callback {cb_name}", e)
+                    _.log_exception(self._log, f"Unable to set state for callback {cb_name}. "
+                                               f"Callback hash = {cb_hash}", e)
                     success = False
 
         except Exception as e:
@@ -283,6 +297,39 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             success = False
 
         return success
+
+    def _check_callback_hashes(self):
+        """
+        Check if we can get the names and hashes of the registered callbacks
+        Store the names and hashes for later use.
+        """
+        self.cb_names = []
+        self.cb_hashes = []
+        max_cb_name_len = -1
+        for cb_idx, callback in enumerate(self.callbacks):
+            cb_name = "[UNKNOWN]"
+            try:
+                cb_name = callback.get_name()
+            except Exception as e:
+                _.log_exception(self._log, f"Failed to get callback name (callback index {cb_idx}), "
+                                           f"this is not good, but it is not fatal ...", e)
+
+            try:
+                cb_hash = callback.get_hash()
+            except Exception as e:
+                raise Exception(f"Failed to get hash of callback {cb_name} (callback index {cb_idx}), "
+                                f"unable to set callback state from Training Manager state") from e
+
+            len_cb_name = len(cb_name)
+            if max_cb_name_len < len_cb_name:
+                max_cb_name_len = len_cb_name
+
+            self.cb_names += [cb_name]
+            self.cb_hashes += [cb_hash]
+
+        self._log.debug(f"Hashes of registered callbacks:")
+        for cb_idx, callback in enumerate(self.callbacks):
+            self._log.debug(f"{cb_idx}\t: {self.cb_names[cb_idx]:{max_cb_name_len}}\t: {self.cb_hashes[cb_idx]}")
 
     def _get_metric_windows_state(self):
         state = {}

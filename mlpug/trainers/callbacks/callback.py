@@ -1,4 +1,5 @@
 import abc
+import hashlib
 
 from mlpug.base import Base
 
@@ -29,6 +30,15 @@ class Callback(Base, metaclass=abc.ABCMeta):
 
     def get_name(self):
         return self.name
+
+    def get_hash(self):
+        """
+        Used to uniquely identify callback when loading and setting callback states
+        :return:
+        """
+        hash_str = self._get_hash_string()
+
+        return hashlib.md5(hash_str.encode('utf-8')).hexdigest()
 
     def get_state(self):
         """
@@ -124,8 +134,37 @@ class Callback(Base, metaclass=abc.ABCMeta):
         return True
 
     def _get_logs_base(self, logs):
+        """
+        Get the part of the log that needs to be accessed by the callback.
+        Usually this is the "current" property, providing the logs for the current batch iteration.
+
+        :param logs:
+        :return:
+        """
+
         if self.base_log_path is None:
             return logs
         else:
             return get_value_at(self.base_log_path, logs)
+
+    def _get_hash_string(self):
+        """
+        A string, uniquely describing the callback
+        :return:
+        """
+        return f"{self.__class__.__name__}={self.get_name()}={self._get_callback_properties_for_hash()}"
+
+    def _get_callback_properties_for_hash(self):
+        """
+        This is used to create the unique callback hash.
+
+        Returns a dict with properties describing the setup of the callback.
+        It should at least contain the properties that influence the callback state.
+
+        Property values should only be simple types, such as int, float, boolean and strings.
+        Convert any object and function values (or similar) into a booleans (True = available, False = None)
+
+        :return: dict
+        """
+        return {}
 

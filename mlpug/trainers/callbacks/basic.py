@@ -232,4 +232,3 @@ class BatchSizeLogger(Callback):
             training_batch[0].size(self._batch_dimension)
 
         return True
-
