@@ -99,3 +99,4 @@ class MultiProcessingMixin:
             return f"[Device {self.device_rank}] {super()._pybase_get_logger_name()}"
 
         return super()._pybase_get_logger_name()
+
