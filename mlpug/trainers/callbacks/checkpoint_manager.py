@@ -182,7 +182,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
             latest_model_fname = self._create_model_checkpoint()
             success = (latest_model_fname is not None)
 
-        if stopped_early or interrupted:
+        if status == 'ended' or stopped_early or interrupted:
             self._log.info(f"... storing training checkpoint ...")
             training_checkpoint_fname = self._create_training_checkpoint()
             success &= (training_checkpoint_fname is not None)
