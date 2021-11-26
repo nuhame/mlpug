@@ -27,5 +27,3 @@ class PyTorchDistributedContext(MultiProcessingContextBase):
 
     def world_size(self):
         return dist.get_world_size()
-
-
