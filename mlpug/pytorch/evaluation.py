@@ -167,6 +167,25 @@ class GatherMaskedLoss(GatherLossBase):
 # ############################################
 
 
+class DefaultLossEvaluator:
+
+    def __init__(self, trainer):
+        self._trainer = trainer
+
+    def __call__(self, batch, evaluate_settings=None):
+        if is_chunkable(batch):
+            # Get raw batch
+            batch = batch[:]
+
+        with torch.no_grad():
+            results = self._trainer.evaluate_loss(
+                batch,
+                inference_mode=True,
+                evaluate_settings=evaluate_settings)
+
+        return results
+
+
 class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
 
     def __init__(self, *args, batch_metric_funcs=None, name="MetricEvaluator", **kwargs):
@@ -179,19 +198,5 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
         super().__init__(batch_metric_funcs, *args, name=name, **kwargs)
 
     def _create_default_model_evaluate_func(self):
-
-        def evaluate_loss(batch, evaluate_settings=None):
-            if is_chunkable(batch):
-                # Get raw batch
-                batch = batch[:]
-
-            with torch.no_grad():
-                results = self._trainer.evaluate_loss(
-                    batch,
-                    inference_mode=True,
-                    evaluate_settings=evaluate_settings)
-
-            return results
-
-        return evaluate_loss
+        return DefaultLossEvaluator(self._trainer)
 
