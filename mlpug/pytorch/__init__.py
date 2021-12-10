@@ -3,6 +3,8 @@ from .trainers import callbacks
 
 from . import evaluation
 
+from . import scheduler_funcs
+
 import mlpug.mlpug_logging as logging
 
 from mlpug.multi_processing import MultiProcessingManager
