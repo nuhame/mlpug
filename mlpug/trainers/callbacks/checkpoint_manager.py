@@ -301,7 +301,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         success = True
 
         check_model_quality = self._metric_monitor_period is None or \
-                ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0))
+            ((self._metric_monitor_period > 0) and (training_iter % self._metric_monitor_period == 0))
 
         if not check_model_quality:
             return success, best_model_fname
@@ -410,11 +410,15 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         model_fn = self.best_model_file_name()
 
         if self._backup_before_override:
+            err_msg = "A problem occurred backing up the last best model checkpoint, " \
+                      "will not override override model checkpoint with new one. \n\n" \
+                      "*** Please ensure there is enough disk space to store the backups and checkpoints ***\n\n"
             try:
-                self._backup_checkpoint(model_fn)
+                if not self._backup_checkpoint(model_fn):
+                    self._log.error(err_msg)
+                    return None
             except Exception as e:
-                _.log_exception(self._log, f"A problem occurred backing up the last best model checkpoint, "
-                                           f"will not override override model checkpoint with new one", e)
+                _.log_exception(self._log, err_msg, e)
                 return None
 
         return self._create_model_checkpoint(model_fn=model_fn)
