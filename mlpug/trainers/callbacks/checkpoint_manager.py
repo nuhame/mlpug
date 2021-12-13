@@ -278,12 +278,16 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
             data_saved |= latest_model_fname is not None
             data_saved |= training_checkpoint_fname is not None
 
-            success, \
-                archived_model_fname = self._monitor_for_checkpoint_archiving(iter_name,
-                                                                              logs,
-                                                                              latest_model_fname=latest_model_fname)
-            monitor_success &= success
-            data_saved |= archived_model_fname is not None
+            # latest_model_fname can be None when the user doesn't want to create latest checkpoints
+            if success and latest_model_fname is not None:
+                success, \
+                    archived_model_fname = self._monitor_for_checkpoint_archiving(iter_name,
+                                                                                  logs,
+                                                                                  latest_model_fname=latest_model_fname)
+                monitor_success &= success
+                data_saved |= archived_model_fname is not None
+            elif not success:
+                self._log.error("Unable to create checkpoint for latest model, will not archive latest model")
 
         if data_saved:
             self._log.debug("Saving of data done.\n\n")
@@ -379,6 +383,10 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         return success, latest_model_fname, training_checkpoint_fname
 
     def _monitor_for_checkpoint_archiving(self, iter_name, logs, latest_model_fname):
+        if latest_model_fname is None:
+            self._log.error("Unable to archive latest model, no latest checkpoint provided")
+            return False, None
+
         current = self._get_logs_base(logs)
         training_iter = current[iter_name]
 
@@ -390,19 +398,15 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
             return success, None
 
         archived_model_fname = None
-        if latest_model_fname is not None:
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
-            model_fname = self.current_model_file_name(training_iter)
-            copy_success = self._copy(latest_model_fname, model_fname)
-            if copy_success:
-                archived_model_fname = model_fname
+        model_fname = self.current_model_file_name(training_iter)
+        copy_success = self._copy(latest_model_fname, model_fname)
+        if copy_success:
+            archived_model_fname = model_fname
 
-            success &= copy_success
-        else:
-            self._log.error("Unable to create checkpoint for latest model, unable to archive latest model")
-            success = False
+        success &= copy_success
 
         return success, archived_model_fname
 
