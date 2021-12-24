@@ -23,7 +23,8 @@ import mlpug.tensorflow as mlp
 
 ### Run the repository examples
 
-You can find the example code [here](mlpug/examples/documentation/).
+You can find the example code [here](mlpug/examples/documentation/). 
+How MLPug is used in the examples is explained further [here](#hello-world-with-pytorch).
 
 Clone the MLPug repo:
 
