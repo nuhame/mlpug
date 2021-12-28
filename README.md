@@ -101,7 +101,9 @@ when you have found a bug, please file an issue.
 \
 [Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
 [XLA](#hello-world-with-pytorchxla) | 
-[TF](#hello-world-with-tensorflow))
+[TF](#hello-world-with-tensorflow)) 
+
+[Feature parity list](#feature-parity-list)
 \
 \
 \
@@ -379,3 +381,24 @@ real label = 9, predicted label = 9
 ```
 
 Note the difference in epoch duration!
+
+
+## Feature parity list
+
+
+|              Feature                          |   PyTorch   | PyTorch/XLA | Tensorflow  |     JAX     |           Comments               |
+|-----------------------------------------------|-------------|-------------|-------------|-------------|----------------------------------|
+| Callbacks and training life cycle             |      ✓      |      ✓      |      ✓      |             | |
+| Progress Logging                              |      ✓      |      ✓      |      ✓      |             | |
+| Distributed training                          |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF.  TPU training with TF is untested |
+| Model and training checkpoint management      |      ✓      |      ✓      |      ✓      |             | |
+| Custom  metric evaluation                     |      ✓      |      ✓      |      ✓      |             | |
+| Conditional evaluation of metrics             |      ✓      |      ✓      |      ✓      |             | |
+| Batch Chunking: gradient accumulation         |      ✓      |      ✓      |      ❌     |             | TF ToDo |
+| Batch Chunking: chunked evaluation of metrics |      ✓      |      ✓      |      ✓      |             | |
+| Tensorboard support                           |      ✓      |      ✓      |      ✓      |             | Might be refactored |
+| Learning Rate scheduling                      |      ✓      |      ✓      |      ✓      |             | Might be refactored |
+| Mixed Precision Training                      |      ✓      |      ❌     |      ❌     |             | Should work with TF, but no specific support |
+| Using multiple optimizers                     |      ✓      |      ✓      |      ✓      |             | |
+| Multi-task training                           |      ❌     |     ❌      |     ❌      |             | ToDo |
+
