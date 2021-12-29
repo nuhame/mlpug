@@ -5,16 +5,16 @@ import pickle
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from mlpug.examples.chatbot.shared import create_argument_parser
-from mlpug.examples.chatbot.conversation_dataset import load_sentence_pair_data
+from examples.legacy.chatbot.shared import create_argument_parser
+from examples.legacy.chatbot.conversation_dataset import load_sentence_pair_data
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
     create_chatbot_tf_encode_func, \
     create_length_filter_func
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import TrainModel, CustomSchedule
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.training import TrainModel, CustomSchedule
 
 import mlpug.tensorflow as mlp
 

@@ -23,7 +23,7 @@ import mlpug.tensorflow as mlp
 
 ### Run the repository examples
 
-You can find the example code [here](mlpug/examples/documentation/). 
+You can find the example code [here](mlpug/examples/). 
 How MLPug is used in the examples is explained further [here](#hello-world-with-pytorch).
 
 Clone the MLPug repo:
@@ -38,14 +38,14 @@ To run the PyTorch examples, install PyTorch first, further use Python >= 3.7.
 cd mlpug
 
 # MLPug Hello World example
-python mlpug/examples/documentation/pytorch/hello_world.py
+python mlpug/examples/hello_world/pytorch/train.py
 
 # MLPug Fashion MNIST example
-# Run `fashion_mnist.py -h` for options
-python mlpug/examples/documentation/pytorch/fashion_mnist.py
+# Run `train.py -h` for options
+python mlpug/examples/fashion_mnist/pytorch/train.py
 ```
 
-There are similar [examples for using MLPug with PyTorch/XLA](mlpug/examples/documentation/pytorch/xla) (Training with Pytorch on TPUs).
+There are similar examples for using MLPug with PyTorch/XLA, see the `pytorch/xla` directories of the examples.
 
 #### MLPug with Tensorflow
 To run the Tensorflow examples, install Tensorflow first, further use Python >= 3.7.
@@ -53,14 +53,13 @@ To run the Tensorflow examples, install Tensorflow first, further use Python >= 
 cd mlpug
 
 # MLPug Hello World example
-# Run hello_world.py or hello_world_not_eager.py
-python mlpug/examples/documentation/tensorflow/hello_world.py
+# Run train.py or train_not_eager.py
+python mlpug/examples/hello_world/tensorflow/train.py
 
 # MLPug Fashion MNIST example
-# Run `fashion_mnist.py -h` for options
-python mlpug/examples/documentation/pytorch/fashion_mnist.py
+# Run `train.py -h` for options
+python mlpug/examples/fashion_mnist/tensorflow/train.py
 ```
-
 
 # MLPug
 MLPug is a machine learning library agnostic framework for model training.
@@ -173,12 +172,12 @@ Pytorch/XLA and Tensorflow is very similar.
 
 For details please see :
 
- * [pytorch/hello_world.py](mlpug/examples/documentation/pytorch/hello_world.py),
+ * [hello_world/pytorch/train.py](mlpug/examples/hello_world/pytorch/train.py),
 
- * [pytorch/xla/hello_world.py](mlpug/examples/documentation/pytorch/xla/hello_world.py), 
+ * [hello_world/pytorch/xla/train.py](mlpug/examples/hello_world/pytorch/xla/train.py), 
 
- * [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py) and 
-[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py)
+ * [hello_world/tensorflow/train.py](mlpug/examples/hello_world/tensorflow/train.py) and 
+[hello_world/tensorflow/train_not_eager.py](mlpug/examples/hello_world/tensorflow/train_not_eager.py)
    
 You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
 
@@ -340,8 +339,8 @@ trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
                                       batch_data_signature=(tf.TensorSpec(shape=(None, 28, 28), dtype=tf.float64),
                                                             tf.TensorSpec(shape=(None,), dtype=tf.uint8),))
 ```
-When you run [tensorflow/hello_world.py](mlpug/examples/documentation/tensorflow/hello_world.py) and 
-[tensorflow/hello_world_not_eager.py](mlpug/examples/documentation/tensorflow/hello_world_not_eager.py) you will see
+When you run [hello_world/tensorflow/train.py](mlpug/examples/hello_world/tensorflow/train.py) and 
+[hello_world/tensorflow/train_not_eager.py](mlpug/examples/hello_world/tensorflow/train_not_eager.py) you will see
 that when not running in eager mode, training is much faster.
 
 Running `tensorflow/hello_world.py` finishes like this:

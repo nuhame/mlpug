@@ -4,7 +4,7 @@ import tensorflow as tf
 
 import matplotlib.pyplot as plt
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import create_masks
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.training import create_masks
 
 
 class Evaluator:
