@@ -1,39 +1,38 @@
+import time
+
 import os
 import sys
-
-import time
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-import matplotlib.pyplot as plt
+from examples.legacy.chatbot.conversation_dataset import load_sentence_pair_data
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
     create_length_filter_func, \
-    create_translation_tf_encode_func
+    create_chatbot_tf_encode_func
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.training import \
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.training import \
     CustomSchedule, \
     create_masks, \
     loss_function
 
-from mlpug.examples.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
+from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
 
 # ############# SETUP ###############
 REMOTE_DEBUG = False
 
-experiment_name = "test-translation-original-params-01122020"
+experiment_name = "large-transformer-01122020-4-layers"
 
-# num_layers = 12
-# d_model = 768
-# dff = 3072
-# num_heads = 12
+data_set_path = "./mlpug/examples/chatbot/data/"
 
-# From tutorial
+training_set_file = "training-1606433382-cmdc-sentence-pairs-with-voc-max-len-40-min-word-occurance-3-26112020.pickle"
+validation_set_file = "validation-1606433382-cmdc-sentence-pairs-with-voc-max-len-40-min-word-occurance-3-26112020.pickle"
+
 num_layers = 4
-d_model = 128
-dff = 512
-num_heads = 8
+d_model = 768
+dff = 3072
+num_heads = 12
 
 dropout_rate = 0.1
 
@@ -44,7 +43,7 @@ MAX_LENGTH = 40
 BUFFER_SIZE = 20000
 BATCH_SIZE = 64
 
-EPOCHS = 20
+EPOCHS = 200
 #####################################
 
 if REMOTE_DEBUG:
@@ -53,31 +52,49 @@ if REMOTE_DEBUG:
 
 
 # ########### SETUP DATA ############
-examples, metadata = tfds.load('ted_hrlr_translate/pt_to_en', with_info=True,
-                               as_supervised=True)
-train_examples, val_examples = examples['train'], examples['validation']
 
-tokenizer_en = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
-    (en.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+def create_dataset_generator(pairs):
 
-tokenizer_pt = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
-    (pt.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+    def generator():
+        for pair in pairs:
+            yield tuple(pair)
 
+    return generator
 
-input_vocab_size = tokenizer_pt.vocab_size + 2
-target_vocab_size = tokenizer_en.vocab_size + 2
+train_examples, _unused_ = load_sentence_pair_data(os.path.join(data_set_path, training_set_file))
+val_examples, _unused_ = load_sentence_pair_data(os.path.join(data_set_path, validation_set_file))
 
-tf_encode = create_translation_tf_encode_func(tokenizer_pt, tokenizer_en)
+all_training_sentences = []
+for pair in train_examples:
+    all_training_sentences += pair
+
+tokenizer = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(
+    all_training_sentences, target_vocab_size=2**13)
+
+vocab_size = tokenizer.vocab_size + 2
+
+tf_encode = create_chatbot_tf_encode_func(tokenizer)
 filter_max_length = create_length_filter_func(MAX_LENGTH)
 
-train_dataset = train_examples.map(tf_encode)
+train_dataset = tf.data.Dataset.from_generator(
+    create_dataset_generator(train_examples),
+    (tf.string, tf.string),
+    (tf.TensorShape([]), tf.TensorShape([])))
+
+train_dataset = train_dataset.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
 # cache the dataset to memory to get a speedup while reading from it.
 train_dataset = train_dataset.cache()
 train_dataset = train_dataset.shuffle(BUFFER_SIZE).padded_batch(BATCH_SIZE)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
-val_dataset = val_examples.map(tf_encode)
+
+val_dataset = tf.data.Dataset.from_generator(
+    create_dataset_generator(val_examples),
+    (tf.string, tf.string),
+    (tf.TensorShape([]), tf.TensorShape([])))
+
+val_dataset = val_dataset.map(tf_encode)
 val_dataset = val_dataset.filter(filter_max_length).padded_batch(BATCH_SIZE)
 
 #####################################
@@ -86,6 +103,7 @@ val_dataset = val_dataset.filter(filter_max_length).padded_batch(BATCH_SIZE)
 # ######## SETUP OPTIMIZER ##########
 learning_rate = CustomSchedule(d_model)
 
+#learning_rate = 5e-3
 optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
 train_loss = tf.keras.metrics.Mean(name='train_loss')
@@ -94,9 +112,9 @@ train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy
 
 # ########## SETUP MODEL ############
 transformer = Transformer(num_layers, d_model, num_heads, dff,
-                          input_vocab_size, target_vocab_size,
-                          pe_input=input_vocab_size,
-                          pe_target=target_vocab_size,
+                          vocab_size, vocab_size,
+                          pe_input=vocab_size,
+                          pe_target=vocab_size,
                           rate=dropout_rate)
 
 checkpoint_path = os.path.join("../trained-models/", experiment_name)
@@ -140,7 +158,7 @@ def train_step(inp, tar):
 ckpt = tf.train.Checkpoint(transformer=transformer,
                            optimizer=optimizer)
 
-ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=1)
 
 # if a checkpoint exists, restore the latest checkpoint.
 if ckpt_manager.latest_checkpoint:
@@ -153,7 +171,6 @@ for epoch in range(EPOCHS):
     train_loss.reset_states()
     train_accuracy.reset_states()
 
-    # inp -> portuguese, tar -> english
     for (batch, (inp, tar)) in enumerate(train_dataset):
         train_step(inp, tar)
 
@@ -172,4 +189,3 @@ for epoch in range(EPOCHS):
                                                         train_accuracy.result()))
 
     print('Time taken for 1 epoch: {} secs\n'.format(time.time() - start))
-    sys.stdout.flush()

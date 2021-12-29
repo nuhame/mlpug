@@ -1,6 +1,8 @@
 
-# The is a condensed version of the original PyTorch chatbot tutorial. All the code has been put in separate files as
-# much as possible.
+# This is a condensed version of the original PyTorch chatbot tutorial. All the code has been put in separate files as
+# much as possible. Further, it has been updated to be able to use DataParallel to distribute training over multiple
+# GPUs. Also code has been added to enable Automatic Mixed Precision training, but due to an issue that
+# doesn't work yet (03092019)
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,22 +15,19 @@ from torch import optim
 import random
 import os
 
-from mlpug.examples.chatbot.conversation_parsing import \
+from examples.legacy.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \
     trimRareWords
 
-from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
+from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
 
-from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
 
-from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
+from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel, trainIters
 
-from mlpug.examples.chatbot.pytorch.original_chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
-
-# import pydevd
-# pydevd.settrace('192.168.178.8', port=57491, stdoutToServer=True, stderrToServer=True)
+from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.evaluation import GreedySearchDecoder, evaluateInput
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -65,10 +64,10 @@ model_name = 'cb_model'
 attn_model = 'dot'
 # attn_model = 'general'
 # attn_model = 'concat'
-encoder_state_size = 1920  # 1600  # 500
+encoder_state_size = 1000  # 1600  # 500
 embedding_size = 256  # encoder_state_size
-encoder_n_layers = 2
-decoder_n_layers = 2
+encoder_n_layers = 3
+decoder_n_layers = 3
 dropout = 0.1
 ##################################################
 
@@ -76,13 +75,15 @@ dropout = 0.1
 model_checkpoint_dir = os.path.join("checkpoints")
 checkpoint_iter_to_load = -1  # 6500
 
+# TODO : 3 Sept 2019 : currently Automatic Mixed Precision of NVIDIA Apex does not work with DataParallel
+#        https://github.com/NVIDIA/apex/issues/227
 USE_MIXED_PRECSION = False
 MIXED_PRECISION_OPT_LEVEL = 'O1'
 
 # num_gpus = 1 if USE_CUDA else -1
 num_gpus = torch.cuda.device_count() if USE_CUDA else -1
 
-batch_size = 12  # 16  # 64
+batch_size = 8  # 12  # 16  # 64
 if num_gpus > 1:
     print(f"Parallelizing to {num_gpus} ...")
 
@@ -145,7 +146,7 @@ pairs = trimRareWords(voc, pairs, MIN_COUNT)
 # # Data for models | Batching
 
 # Example for validation
-small_batch_size = 5
+small_batch_size = 12
 batches = batch2TrainData(voc, [random.choice(pairs) for _ in range(small_batch_size)], PAD_token, EOS_token)
 input_variable, lengths, target_variable, mask, max_target_len = batches
 
@@ -162,9 +163,9 @@ loadFilename = None
 if checkpoint_iter_to_load >= 0:
     loadFilename = os.path.join(model_checkpoint_dir, model_name, corpus_name,
                                 '{}-{}-{}-{}'.format(embedding_size,
-                                                     encoder_state_size,
                                                      encoder_n_layers,
-                                                     decoder_n_layers),
+                                                     decoder_n_layers,
+                                                     encoder_state_size),
                                 '{}_checkpoint.tar'.format(checkpoint_iter_to_load))
 
 
@@ -174,7 +175,7 @@ if loadFilename:
     print(f'Loading checkpoint {loadFilename} ...')
 
     # If loading on same machine the model was trained on
-    checkpoint = torch.load(loadFilename)
+    checkpoint = torch.load(loadFilename, map_location=torch.device('cpu'))
     # If loading a model trained on GPU to CPU
     # checkpoint = torch.load(loadFilename, map_location=torch.device('cpu'))
 
@@ -237,8 +238,6 @@ if num_gpus <= 1:
                 state[k] = v.cuda()
 
 # Run training iterations
-print("Starting Training!")
-
 trainIters(model_name, voc, pairs, PAD_token, EOS_token, SOS_token, train_model, optimizer,
            model_checkpoint_dir, n_iteration, batch_size, teacher_forcing_ratio, USE_MIXED_PRECSION, clip,
            print_every, save_every, corpus_name, checkpoint, device)

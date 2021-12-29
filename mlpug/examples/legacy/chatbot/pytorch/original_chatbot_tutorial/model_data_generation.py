@@ -5,7 +5,7 @@ import torch
 
 from basics.logging import get_logger
 
-from mlpug.examples.chatbot.conversation_dataset import indexesFromSentence
+from examples.legacy.chatbot.conversation_dataset import indexesFromSentence
 
 logger = get_logger(os.path.basename(__file__))
 
