@@ -231,13 +231,33 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         """
         This default implementation assumes that the loss for a chunk is the average loss of all samples in the chunk.
         There is no specific combination logic to combine the chunk auxiliary results
+
+        :returns loss, auxiliary_results
+                    loss: weighted average of chunk losses
+                    auxiliary_results: list of dicts:
+                                        [
+                                            ...
+                                            {
+                                                "results": chunk aux. results,
+                                                "num_samples": num samples in chunk
+                                            }
+                                            ...
+                                        ]
         """
+
         loss = reduce(lambda tot, c: tot+(c[1]*c[0]), zip(chunk_losses, chunk_lengths), 0)
         num_samples = reduce(lambda tot, l: tot+l, chunk_lengths, 0)
 
         loss /= num_samples
 
-        return loss, chunk_aux_results
+        auxiliary_results = [{
+            "results": aux_results,
+            "num_samples": chunk_length
+        } for aux_results, chunk_length in zip(chunk_aux_results, chunk_lengths)]
+
+        auxiliary_results = BatchChunkingResults(auxiliary_results)
+
+        return loss, auxiliary_results
 
     def _back_propagate_from(self, loss, last_chunk=False):
         if self.use_mixed_precision:

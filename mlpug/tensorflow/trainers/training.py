@@ -1,8 +1,11 @@
 import io
 
+from functools import reduce
+
 import tensorflow as tf
 import h5py
 from tensorflow.python.keras.saving import hdf5_format
+from mlpug.pytorch.utils import is_chunkable
 
 import basics.base_utils as _
 
@@ -433,9 +436,92 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             gradients = self._back_propagate_from(loss, tape)
         else:
-            raise NotImplementedError("Gradient accumulation over batch chunks is not implemented")
+            loss, auxiliary_results, gradients = self._calc_gradients_chunked(batch_data, training_settings)
 
         return loss, auxiliary_results, gradients
+
+    def _calc_gradients_chunked(self, batch_data, training_settings=None):
+        """
+        See `train_on` method.
+
+        This method slices the `batch_data` in slices of size `self.batch_chunk_size`. For each slice the loss is
+        calculated and the gradients are updated through back prop.
+
+        return: loss, auxiliary_results, accumulated_grads
+                    loss: weighted average of chunk losses
+                    auxiliary_results: list of dicts:
+                                        [
+                                            ...
+                                            {
+                                                "results": chunk aux. results,
+                                                "num_samples": num samples in chunk
+                                            }
+                                            ...
+                                        ]
+                    accumulated_grads: weighted average of chunk gradients
+        """
+
+        if not is_chunkable(batch_data):
+            raise BatchNotChunkableException()
+
+        auxiliary_results = BatchChunkingResults()
+
+        loss = 0
+        # Will be set when we have the trainable variables
+        accumulated_grads = None
+
+        batch_size = len(batch_data)
+        num_chunks = math.ceil(batch_size / self.batch_chunk_size)
+        for chunk_idx in range(num_chunks):
+            chunk_start = chunk_idx*self.batch_chunk_size
+            chunk_end = min((chunk_idx+1)*self.batch_chunk_size, batch_size)
+
+            chunk_len = chunk_end-chunk_start
+
+            chunk = batch_data[chunk_start:chunk_end]
+
+            with tf.GradientTape() as tape:
+                results = self.evaluate_loss(chunk,
+                                             inference_mode=False,
+                                             evaluate_settings=training_settings)
+
+            if 'loss' not in results:
+                raise LossNotAvailableException()
+
+            if self.trainable_variables is None:
+                # We now have evaluated the model and the trainable variables should be available
+                self._retrieve_trainable_variables()
+
+            if accumulated_grads is None:
+                if self.trainable_variables is None:
+                    raise MLPugException("Unexpected state :  trainable variables not found. Please file an issue.")
+
+                accumulated_grads = {}
+                for optimizer_name, tvs in self.trainable_variables.item():
+                    accumulated_grads[optimizer_name] = [tf.zeros_like(tv) for tv in tvs]
+
+            loss = results['loss']
+            aux_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
+
+            # loss is assumed to be the average over the sample loss for the chunk
+            # Divide through batch size to factor in that this loss is part of a larger batch.
+            last_chunk = chunk_idx == (num_chunks-1)
+            chunk_loss = chunk_len*loss/batch_size
+            chunk_gradients = self._back_propagate_from(chunk_loss, tape, last_chunk=last_chunk)
+
+            loss += chunk_loss
+
+            for optimizer_name, chunk_grads in chunk_gradients.items():
+                accu_grads = accumulated_grads[optimizer_name]
+                accumulated_grads[optimizer_name] = [(accu_grad+chunk_grad)
+                                                     for accu_grad, chunk_grad in zip(accu_grads, chunk_grads)]
+
+            auxiliary_results += [{
+                "results": aux_results,
+                "num_samples": chunk_len
+            }]
+
+        return loss, auxiliary_results, accumulated_grads
 
     def _back_propagate_from(self, loss, tape, last_chunk=False):
         gradients = {}
