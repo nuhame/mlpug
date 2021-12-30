@@ -1,26 +1,5 @@
 ## Dive right in!
 
-### Use MLPug in your own project
-
-```
-pip install mlpug
-```
-
-```Python
-# Using MLPug with PyTorch
-import mlpug.pytorch as mlp
-```
-
-```Python
-# Using MLPug with PyTorch/XLA (Training with Pytorch on TPUs)
-import mlpug.pytorch.xla as mlp
-```
-
-```Python
-# Using MLPug with Tensorflow
-import mlpug.tensorflow as mlp
-```
-
 ### Run the repository examples
 
 You can find the example code [here](mlpug/examples/documentation/). 
@@ -59,6 +38,26 @@ python mlpug/examples/documentation/tensorflow/hello_world.py
 # MLPug Fashion MNIST example
 # Run `fashion_mnist.py -h` for options
 python mlpug/examples/documentation/pytorch/fashion_mnist.py
+```
+### Use MLPug in your own project
+
+```
+pip install mlpug
+```
+
+```Python
+# Using MLPug with PyTorch
+import mlpug.pytorch as mlp
+```
+
+```Python
+# Using MLPug with PyTorch/XLA (Training with Pytorch on TPUs)
+import mlpug.pytorch.xla as mlp
+```
+
+```Python
+# Using MLPug with Tensorflow
+import mlpug.tensorflow as mlp
 ```
 
 
