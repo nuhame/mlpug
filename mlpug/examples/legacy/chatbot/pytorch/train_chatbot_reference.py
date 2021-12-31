@@ -9,15 +9,15 @@ from torch import optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as PT_DDP
 
-from examples.legacy.chatbot.shared import create_argument_parser
+from mlpug.examples.legacy.chatbot.shared import create_argument_parser
 
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import \
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import \
     create_sentence_pairs_collate_fn
-from examples.legacy.chatbot.conversation_dataset import IndexedSentencePairsDataset, load_sentence_pair_data
+from mlpug.examples.legacy.chatbot.conversation_dataset import IndexedSentencePairsDataset, load_sentence_pair_data
 
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.loss import masked_loss
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.seq2seq import EncoderRNN, LuongAttnDecoderRNN
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.training import Seq2SeqTrainModel
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.loss import masked_loss
 
 import mlpug.pytorch as mlp
 

@@ -15,7 +15,7 @@ from basics.logging import get_logger
 # Import mlpug for Tensorflow backend
 import mlpug.tensorflow as mlp
 
-from mlpug.examples.fashion_mnist.shared_args import base_argument_set, describe_args
+from mlpug.examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 
 
 def load_data():
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     # ########################################
 
     # ############## PARSE ARGS ##############
-    parser = base_argument_set()
+    parser = create_arg_parser()
 
     parser.parse_args()
 

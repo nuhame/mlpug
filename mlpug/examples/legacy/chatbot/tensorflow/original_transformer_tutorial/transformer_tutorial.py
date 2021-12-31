@@ -6,16 +6,16 @@ import time
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
+from mlpug.examples.legacy.chatbot.tensorflow.original_transformer_tutorial.model_data_generation import \
     create_length_filter_func, \
     create_translation_tf_encode_func
 
-from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.training import \
+from mlpug.examples.legacy.chatbot.tensorflow.original_transformer_tutorial.training import \
     CustomSchedule, \
     create_masks, \
     loss_function
 
-from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
+from mlpug.examples.legacy.chatbot.tensorflow.original_transformer_tutorial.transformer import Transformer
 
 # ############# SETUP ###############
 REMOTE_DEBUG = False
