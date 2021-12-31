@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from examples.legacy.chatbot.conversation_parsing import normalizeString
-from examples.legacy.chatbot.conversation_dataset import indexesFromSentence
+from mlpug.examples.legacy.chatbot.conversation_parsing import normalizeString
+from mlpug.examples.legacy.chatbot.conversation_dataset import indexesFromSentence
 
 
 class GreedySearchDecoder(nn.Module):

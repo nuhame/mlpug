@@ -4,3 +4,4 @@ from .trainers import callbacks
 from . import evaluation
 
 import mlpug.mlpug_logging as logging
+from mlpug.base import Base

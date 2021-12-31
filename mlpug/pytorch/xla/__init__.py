@@ -4,6 +4,7 @@ from .trainers import callbacks
 from . import evaluation
 
 import mlpug.mlpug_logging as logging
+from mlpug.base import Base
 
 from mlpug.multi_processing import MultiProcessingManager
 from mlpug.pytorch.xla.multi_processing import XLADistributedContext

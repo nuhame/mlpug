@@ -17,7 +17,7 @@ import pickle
 
 import random
 
-from examples.legacy.chatbot.conversation_parsing import \
+from mlpug.examples.legacy.chatbot.conversation_parsing import \
     printLines, \
     process_corpus_and_extract_sentence_pairs, \
     loadPrepareData, \

@@ -6,8 +6,8 @@ import time
 import torch
 import torch.nn as nn
 
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.loss import cross_entropy, masked_loss
-from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.loss import cross_entropy, masked_loss
+from mlpug.examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import batch2TrainData
 
 # NVIDIA Automatic Mixed Precision Module
 # Only imported when needed

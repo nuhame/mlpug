@@ -343,7 +343,7 @@ When you run [hello_world/tensorflow/train.py](mlpug/examples/hello_world/tensor
 [hello_world/tensorflow/train_not_eager.py](mlpug/examples/hello_world/tensorflow/train_not_eager.py) you will see
 that when not running in eager mode, training is much faster.
 
-Running `tensorflow/hello_world.py` finishes like this:
+Running `hello_world/tensorflow/train.py` finishes like this:
 ```text
 ###############################################################################
 Epoch 9/9	READY - Duration 0:00:15
@@ -361,7 +361,7 @@ Using the classifier ...
 real label = 9, predicted label = 9
 ```
 
-Running `tensorflow/hello_world_not_eager.py` finishes like this:
+Running `hello_world/tensorflow/train_not_eager.py` finishes like this:
 ```text
 ###############################################################################
 Epoch 9/9	READY - Duration 0:00:06
