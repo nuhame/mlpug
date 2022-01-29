@@ -28,6 +28,8 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                  allow_checkpointing_at_start=False,
                  create_checkpoint_every=200,  # batches or epochs
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
+                 create_latest_model_checkpoint=True,
+                 create_training_checkpoint=False,
                  base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
                  model_checkpoint_filename_ext="m-ckp",
                  training_checkpoint_filename_ext="t-ckp",
@@ -58,7 +60,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         :param allow_checkpointing_at_start: Default False. When True: when a value for the metric_to_monitor is
                                              available at global batch iteration 0, checkpoints will be stored.
 
-        :param create_checkpoint_every: period before saving next training/model checkpoint
+        :param create_checkpoint_every: period before saving latest training/model checkpoint
                                         (will be overridden after each period)
                                         A 0 value disables this feature.
 
@@ -66,6 +68,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                                                     Period must be multiple of create_checkpoint_every period
 
                                                     A 0 value disables this feature.
+
+        :param create_latest_model_checkpoint:   If False, no latest model checkpoint will be created periodically
+                                                 (also see `create_checkpoint_every`)
+
+        :param create_training_checkpoint: If False, no training checkpoint will be created periodically
+                                           (also see `create_checkpoint_every`)
 
         :param force_monitoring_on_epoch: When True, the given metric will also be monitored on every epoch
                                           in the case that monitoring level is batch level
@@ -103,6 +111,9 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         self._allow_checkpointing_at_start = allow_checkpointing_at_start
         self._create_checkpoint_every = create_checkpoint_every
         self._archive_last_model_checkpoint_every = archive_last_model_checkpoint_every
+
+        self._do_create_latest_model_checkpoint = create_latest_model_checkpoint
+        self._do_create_training_checkpoint = create_training_checkpoint
 
         self._backup_before_override = backup_before_override
 
@@ -183,11 +194,12 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         self._log.info(f"Training {status}")
         success = True
         if self._create_checkpoint_every > 0:
-            self._log.info(f"... storing latest model ...")
-            latest_model_fname = self._create_model_checkpoint()
-            success = (latest_model_fname is not None)
+            if self._do_create_latest_model_checkpoint:
+                self._log.info(f"... storing latest model ...")
+                latest_model_fname = self._create_model_checkpoint()
+                success = (latest_model_fname is not None)
 
-            if status == 'ended' or stopped_early or interrupted:
+            if self._do_create_training_checkpoint and (status == 'ended' or stopped_early or interrupted):
                 self._log.info(f"... storing training checkpoint ...")
                 training_checkpoint_fname = self._create_training_checkpoint()
                 success &= (training_checkpoint_fname is not None)
@@ -237,10 +249,19 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                 self._log.info(f"Will create checkpoints at first global iteration, if a metric value is available")
 
         time_scale = 'batches' if self._batch_level else 'epochs'
-        self._log.info(f"Create last training & model checkpoints every "
-                       f"{self._archive_last_model_checkpoint_every} {time_scale}")
-        self._log.info(f"Archive last model checkpoint every "
-                       f"{self._archive_last_model_checkpoint_every} {time_scale}")
+        if self._create_checkpoint_every > 0:
+            if self._do_create_latest_model_checkpoint:
+                self._log.info(f"Create latest model checkpoints every "
+                               f"{self._create_checkpoint_every} {time_scale}")
+
+                self._log.info(f"Archive latest model checkpoint every "
+                               f"{self._archive_last_model_checkpoint_every} {time_scale}")
+
+            if self._do_create_training_checkpoint:
+                self._log.info(f"Create latest training checkpoints every "
+                               f"{self._create_checkpoint_every} {time_scale}")
+        else:
+            self._log.info(f"No latest model checkpoints and/or training checkpoint will be created")
 
     def _get_model_quality(self, current_logs):
         model_quality = get_value_at(self._metric_to_monitor,
@@ -367,18 +388,19 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         if not save_latest_model:
             return success, None, None
 
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        latest_model_fname = None
+        if self._do_create_latest_model_checkpoint:
+            # Just copy best model if available
+            latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
+            success &= latest_model_fname is not None
 
-        # Just copy best model if available
-        latest_model_fname = self._create_model_checkpoint(file_to_copy=best_model_fname)
-        success &= latest_model_fname is not None
+        training_checkpoint_fname = None
+        if self._do_create_training_checkpoint:
+            # Also save latest training checkpoint
+            training_checkpoint_fname = self._create_training_checkpoint()
+            training_checkpoint_success = (training_checkpoint_fname is not None)
 
-        # Also save latest training checkpoint
-        training_checkpoint_fname = self._create_training_checkpoint()
-        training_checkpoint_success = (training_checkpoint_fname is not None)
-
-        success &= training_checkpoint_success
+            success &= training_checkpoint_success
 
         return success, latest_model_fname, training_checkpoint_fname
 
@@ -391,6 +413,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         training_iter = current[iter_name]
 
         archive_last_model = (self._archive_last_model_checkpoint_every > 0) and \
+                             (training_iter > 0) and \
                              (training_iter % self._archive_last_model_checkpoint_every == 0)
 
         success = True
