@@ -74,8 +74,8 @@ class LogProgress(Callback):
         self._write('###############################################################################')
         self._write('\n')
         self._write('Epoch {:d}/{:d}\tREADY - Duration {:s}\n'.format(current["epoch"],
-                                                                           logs["final_epoch"],
-                                                                           duration))
+                                                                      logs["final_epoch"],
+                                                                      duration))
         success = True
         for metric_level in ['window_average', 'dataset', 'epoch']:
             self._write_metric_logs(metric_level, logs)
