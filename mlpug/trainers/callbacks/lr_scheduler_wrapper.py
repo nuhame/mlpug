@@ -73,15 +73,11 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         if not self._batch_level:
             return True
 
-        self._init_logs(logs)
-
         return self._update_lr(logs, 'global_iter')
 
     def on_epoch_completed(self, logs):
         if self._batch_level:
             return True
-
-        self._init_logs(logs)
 
         return self._update_lr(logs, 'epoch')
 
@@ -112,7 +108,7 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
             _.log_exception(self._log, "An unexpected error occurred, "
                                        "execution of the learning rate scheduler(s) failed", e)
 
-        return self._update_logs(logs) and success
+        return success
 
     def _update_logs(self, logs):
         current = self._get_logs_base(logs)
