@@ -28,7 +28,8 @@ class Tensorboard(Callback):
                  dataset_name=None,
                  label_name=None,
                  batch_level=True,
-                 write_on_epoch_complete=False,
+                 track_on_start=False,
+                 track_epoch_level_metrics_on_batch_level=False,
                  metrics_are_averages=False,
                  metric_names=None,
                  batch_log_period=1,
@@ -58,7 +59,7 @@ class Tensorboard(Callback):
 
         Then, the following `Tensorboard`
         ```
-        Tensorboard(['duration.batch', 'batch_size'], 'experiment1')
+        Tensorboard(['batch.duration', 'batch_size'], 'experiment1')
         ```
         Will show a figure with the batch duration and the batch size for each batch.
 
@@ -84,17 +85,15 @@ class Tensorboard(Callback):
                     'loss': 0.234
                 }
             },
-            'duration': {
-                'batch': 0.534,
-                'window_average' : {
-                    'batch' : 0.531
-                }
+            'training_params': {
+                'batch': { 'duration': 0.534 },
+                'window_average': { 'duration':  0.531 }
             }
         }
         ```
         The following `Tensorboard`
         ```
-        Tensorboard(['window_average.loss', 'duration.window_average.batch'], 'experiment1', 'validation')
+        Tensorboard(['window_average.loss', 'window_average.duration'], 'experiment1', 'validation')
         ```
         Will display a figure with `validation.window_average.loss`, because `window_average.loss` is
         available in `validation`.
@@ -217,9 +216,12 @@ class Tensorboard(Callback):
 
         :param batch_level:     {boolean} If True, the given metrics will be logged per batch, else per epoch
 
-        :param write_on_epoch_complete: {boolean} If True, and batch_level = True, logs will also be written
-                                        on_epoch_complete. This is useful when on_epoch_complete metrics are calculated
-                                        that you want to incorporate in a batch_level graph.
+        :param track_on_start: {boolean} If True, track on start of batch or start of epoch instead of on
+                                         batch training completed or epoch training completed
+                                         (depends on batch_level parameter)
+
+        :param track_epoch_level_metrics_on_batch_level: {boolean} If True, and batch_level = True, epoch level metrics
+                                        will also be written to batch level graphs.
 
         :param metrics_are_averages: {boolean}
                                      If True, the given metrics are written by a separate writer dedicated
@@ -265,7 +267,8 @@ class Tensorboard(Callback):
         self._label_name = label_name
 
         self._batch_level = batch_level
-        self._write_on_epoch_complete = write_on_epoch_complete
+        self._track_on_start = track_on_start
+        self._track_epoch_level_metrics_on_batch_level = track_epoch_level_metrics_on_batch_level
         self._metrics_are_averages = metrics_are_averages
 
         self._metric_names = metric_names
@@ -307,7 +310,35 @@ class Tensorboard(Callback):
 
         return self._setup()
 
+    def on_epoch_start(self, logs):
+        if self._track_on_start:
+            return self._write_epoch_metrics(logs)
+        else:
+            return True
+
+    def on_batch_training_start(self, dataset_batch, logs):
+        if self._track_on_start:
+            return self._write_batch_metrics(dataset_batch, logs)
+        else:
+            return True
+
     def on_batch_training_completed(self, dataset_batch, logs):
+        if not self._track_on_start:
+            return self._write_batch_metrics(dataset_batch, logs)
+        else:
+            return True
+
+    def on_epoch_completed(self, logs):
+        if not self._track_on_start:
+            return self._write_epoch_metrics(logs)
+        else:
+            return True
+
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
+        self._writer.close()
+        return True
+
+    def _write_batch_metrics(self, dataset_batch, logs):
         if not self.instance_valid():
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
@@ -323,13 +354,13 @@ class Tensorboard(Callback):
 
         return self._write(current, global_iter)
 
-    def on_epoch_completed(self, logs):
+    def _write_epoch_metrics(self, logs):
         if not self.instance_valid():
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
         if self._batch_level:
-            if self._write_on_epoch_complete:
+            if self._track_epoch_level_metrics_on_batch_level:
                 # There are dataset level metrics calculated that are followed on batch level.
                 return self.on_batch_training_completed(None, logs)
             else:
@@ -339,10 +370,6 @@ class Tensorboard(Callback):
         epoch = current['epoch']
 
         return self._write(current, epoch)
-
-    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
-        self._writer.close()
-        return True
 
     def _setup_tensorboard_log_dir(self, writer_type):
         """
@@ -472,7 +499,7 @@ class AutoTensorboard(Callback):
                  flush_period=50,
                  log_dir='../training-logs/',
                  tensorboard_options=None,
-                 ignore_missing_metrics=False,
+                 debug=False,
                  name="AutoTensorboard",
                  **kwargs):
         """
@@ -560,7 +587,7 @@ class AutoTensorboard(Callback):
                                     Optional dictionary with options that need to be used when instantiating the
                                     Tensorboard writers.
 
-        :param :param ignore_missing_metrics {Boolean}
+        :param :param debug {Boolean}, If True, will provide feedback which paths did not provide any metrics
 
         :param name:
         """
@@ -583,13 +610,12 @@ class AutoTensorboard(Callback):
 
         self._tensorboard_options = tensorboard_options or {}
 
-        self._ignore_missing_metrics = ignore_missing_metrics
+        self._debug = debug
 
         self._writers = dict()
 
     def _setup(self):
         try:
-
             # Metrics writer is used for batch level and epoch level
             success = self._setup_writer_for(METRIC_WRITER)
 
@@ -613,7 +639,24 @@ class AutoTensorboard(Callback):
 
         return self._setup()
 
+    def on_epoch_start(self, logs):
+        return self._write_epoch_metrics(logs, at_start=True)
+
+    def on_batch_training_start(self, dataset_batch, logs):
+        return self._write_batch_metrics(dataset_batch, logs, at_start=True)
+
     def on_batch_training_completed(self, dataset_batch, logs):
+        return self._write_batch_metrics(dataset_batch, logs, at_start=False)
+
+    def on_epoch_completed(self, logs):
+        return self._write_epoch_metrics(logs, at_start=False)
+
+    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
+        for writer in self._writers.values():
+            writer.close()
+        return True
+
+    def _write_batch_metrics(self, dataset_batch, logs, at_start):
         if not self.instance_valid():
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
@@ -626,15 +669,22 @@ class AutoTensorboard(Callback):
 
         success = True
         if self._show_batch_level:
-            success &= self._write(current, global_iter, writer_type=METRIC_WRITER, batch_level=True)
+            success &= self._write(current,
+                                   global_iter,
+                                   writer_type=METRIC_WRITER,
+                                   batch_level=True,
+                                   at_start=at_start)
 
         if self._show_batch_window_averages:
-            success &= self._write(current, global_iter, writer_type=WINDOW_AVERAGED_METRICS_WRITER, batch_level=True)
+            success &= self._write(current,
+                                   global_iter,
+                                   writer_type=WINDOW_AVERAGED_METRICS_WRITER,
+                                   batch_level=True,
+                                   at_start=at_start)
 
         return success
 
-    def on_epoch_completed(self, logs):
-
+    def _write_epoch_metrics(self, logs, at_start):
         if not self.instance_valid():
             self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
@@ -645,12 +695,7 @@ class AutoTensorboard(Callback):
         current = self._get_logs_base(logs)
         epoch = current['epoch']
 
-        return self._write(current, epoch, writer_type=METRIC_WRITER, batch_level=False)
-
-    def on_training_ended(self, stopped_early, stopped_on_error, interrupted, callback_calls_success):
-        for writer in self._writers.values():
-            writer.close()
-        return True
+        return self._write(current, epoch, writer_type=METRIC_WRITER, batch_level=False, at_start=at_start)
 
     def _setup_tensorboard_log_dir(self, writer_type):
         paths = [self._log_dir]
@@ -687,15 +732,17 @@ class AutoTensorboard(Callback):
 
         return True
 
-    def _write(self, current_logs, training_iter, writer_type, batch_level):
-        metrics, success = self._get_metrics_from(current_logs, writer_type, batch_level)
+    def _get_call_info(self, batch_level, at_start):
+        metric_level = 'batch' if batch_level else 'epoch'
+        timing = 'start' if at_start else 'completion'
+
+        return f"{timing} of {metric_level}"
+
+    def _write(self, current_logs, training_iter, writer_type, batch_level, at_start):
+        metrics, success = self._get_metrics_from(current_logs, writer_type, batch_level, at_start=at_start)
 
         if not success:
-            if self._ignore_missing_metrics:
-                return True
-            else:
-                self._log.error("No metrics found, nothing to write to Tensorboard")
-                return success
+            return True
 
         for label, metric in metrics.items():
             if type(metric) is tuple:
@@ -711,36 +758,29 @@ class AutoTensorboard(Callback):
 
         return success
 
-    def _get_metrics_from(self, current_logs, writer_type, batch_level):
+    def _get_metrics_from(self, current_logs, writer_type, batch_level, at_start):
         # Get all metrics available
         if self._dataset_name:
-            alt_base_path = None
             if batch_level:
                 if writer_type != WINDOW_AVERAGED_METRICS_WRITER:
-                    base_path = f"{self._dataset_name}.batch"
+                    possible_base_paths = [f"{self._dataset_name}.batch"]
                 else:
-                    base_path = f"{self._dataset_name}.window_average"
+                    possible_base_paths = [f"{self._dataset_name}.window_average"]
             else:
-                base_path = f"{self._dataset_name}.dataset"
+                possible_base_paths = [f"{self._dataset_name}.dataset",
+                                       f"{self._dataset_name}.epoch"]
 
-                # for epoch-level fall back on window averages
-                alt_base_path = f"{self._dataset_name}.window_average"
+            metrics = None
+            success = False
+            for base_path in possible_base_paths:
+                metrics, success = self._get_all_metrics_from(base_path, current_logs, batch_level)
 
-            metrics, success = self._get_all_metrics_from(base_path, current_logs, batch_level)
-            if not success and alt_base_path is not None:
-                if not self._ignore_missing_metrics:
-                    self._log.warn(f'Trying alternate metrics path {alt_base_path} ...')
-                alt_metrics, alt_success = self._get_all_metrics_from(alt_base_path, current_logs, batch_level)
+                if success:
+                    break
 
-                if alt_success:
-                    metrics = metrics or {}
-                    for metric_path, alt_metric in alt_metrics.items():
-                        if metric_path in metrics:
-                            continue
-
-                        metrics[metric_path] = alt_metric
-
-                    success = len(metrics) > 0
+            if not success and self._debug:
+                self._log.debug(f"No metrics found at {self._get_call_info(batch_level, at_start)} "
+                                f"for following paths : {possible_base_paths}")
 
             return metrics, success
         else:
@@ -778,16 +818,7 @@ class AutoTensorboard(Callback):
         if _.is_dict(dataset_metrics):
             _add_metrics(dataset_metrics)
 
-            if len(metrics) > 0:
-                return metrics, True
-            else:
-                if not self._ignore_missing_metrics:
-                    self._log.warn(f'No metrics found at {base_path}')
-                return metrics, False
-        else:
-            if not self._ignore_missing_metrics:
-                self._log.error(f'No valid metrics found for {base_path}')
-            return None, False
+        return metrics, len(metrics) > 0
 
     def _get_label(self, metric_name, batch_level):
         iter_level = 'batch' if batch_level else 'epoch'
