@@ -395,15 +395,15 @@ Note the difference in epoch duration!
 |-----------------------------------------------|-------------|-------------|-------------|-------------|----------------------------------|
 | Callbacks and training life cycle             |      ✓      |      ✓      |      ✓      |             | |
 | Progress Logging                              |      ✓      |      ✓      |      ✓      |             | |
-| Distributed training                          |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF.  TPU training with TF is untested |
+| Distributed training                          |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF. TPU training with TF is untested |
 | Model and training checkpoint management      |      ✓      |      ✓      |      ✓      |             | |
 | Custom  metric evaluation                     |      ✓      |      ✓      |      ✓      |             | |
 | Conditional evaluation of metrics             |      ✓      |      ✓      |      ✓      |             | |
-| Batch Chunking: gradient accumulation         |      ✓      |      ✓      |      ❌     |             | TF ToDo |
+| Batch Chunking: gradient accumulation         |      ✓      |      ✓      |      ✓      |             | |
 | Batch Chunking: chunked evaluation of metrics |      ✓      |      ✓      |      ✓      |             | |
 | Tensorboard support                           |      ✓      |      ✓      |      ✓      |             | Might be refactored |
 | Learning Rate scheduling                      |      ✓      |      ✓      |      ✓      |             | Might be refactored |
-| Mixed Precision Training                      |      ✓      |      ❌     |      ❌     |             | Should work with TF, but no specific support |
+| Mixed Precision Training                      |      ✓      |      ❌     |      ~      |             | Should work with TF, but no specific support |
 | Using multiple optimizers                     |      ✓      |      ✓      |      ✓      |             | |
-| Multi-task training                           |      ❌     |     ❌      |     ❌      |             | ToDo |
+| Multi-task training                           |      ~      |      ~      |      ~      |             | No support yet, but can be done when only one DataLoader is required |
 
