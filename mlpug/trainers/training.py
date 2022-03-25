@@ -466,6 +466,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     epoch_started = False
 
                 update(self._call_callbacks('on_batch_training_start', training_batch, logs))
+
+                # Previous batch duration is only available on_batch_training_start
+                # In this way it is not double recorded in Tensorboard
+                set_value_at("training_params.batch.duration", current, None)
                 try:
                     # Note: Tensorflow needs a defined training_settings
                     if not has_key(logs, "training_settings"):
@@ -559,7 +563,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     "duration": self._calc_window_average("training_params.batch.duration")
                 },
                 "epoch": {
-                    "duration": self._calc_window_sum("training_params.batch.duration")
+                    "duration": None
                 }
             }
         }
@@ -618,7 +622,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 return None
 
             window_data = window.window
-            return sum(window_data) if len(window_data) > 0 else 0
+            return sum(window_data) if len(window_data) > 0 else None
         except Exception as e:
             _.log_exception(self._log, f"Exception occurred calculating sliding window average for {metric_path}.", e)
             return None

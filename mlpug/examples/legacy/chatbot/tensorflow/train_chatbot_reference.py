@@ -154,9 +154,9 @@ if __name__ == "__main__":
     # For Tensorboard
     metric_names = {
         'batch.loss': 'cross_entropy',
-        'duration.batch': 'training_time',
-        'duration.window_average': 'training_time',
-        'duration.dataset': 'training_time',
+        'batch.duration': 'training_time',
+        'window_average.duration': 'training_time',
+        'dataset.duration': 'training_time',
         'batch_size': 'size'
     }
 
@@ -268,20 +268,20 @@ if __name__ == "__main__":
                  mlp.callbacks.AutoTensorboard(experiment_name=experiment_name, dataset_name='validation',
                                                metric_names=metric_names),
                  # Batch-level batch duration and batch size
-                 mlp.callbacks.Tensorboard(['duration.batch', 'batch_size'],
+                 mlp.callbacks.Tensorboard(['batch.duration', 'batch_size'],
                                            experiment_name=experiment_name,
                                            dataset_name='training_params',
                                            metric_names=metric_names,
                                            ignore_missing_metrics=True),
                  # Batch-level average batch duration
-                 mlp.callbacks.Tensorboard(['duration.window_average'],
+                 mlp.callbacks.Tensorboard(['window_average.duration'],
                                            experiment_name=experiment_name,
                                            dataset_name='training_params',
                                            metrics_are_averages=True,
                                            metric_names=metric_names,
                                            ignore_missing_metrics=True),
                  # Epoch-level epoch duration
-                 mlp.callbacks.Tensorboard(['duration.dataset'],
+                 mlp.callbacks.Tensorboard(['dataset.duration'],
                                            experiment_name=experiment_name,
                                            dataset_name='training_params',
                                            batch_level=False,
