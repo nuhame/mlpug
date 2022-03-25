@@ -28,6 +28,12 @@ def load_data():
                                          download=True,
                                          transform=transform)
 
+    ###########
+    # Convert all images to Tensors beforehand to get a more fair comparison with Tensorflow
+    training_data = [(image_tensor, label) for image_tensor, label in training_data]
+    test_data = [(image_tensor, label) for image_tensor, label in test_data]
+    ###########
+
     return training_data, test_data
 
 
@@ -156,14 +162,14 @@ def worker_fn(rank, args, world_size):
                                                    batch_size=args.batch_size,
                                                    shuffle=(training_sampler is None),
                                                    sampler=training_sampler,
-                                                   num_workers=3)
+                                                   num_workers=0)  # TODO: temporarily disabled due to issue
 
     # Using the test set as a validation set, just for demonstration purposes
     validation_dataset = torch.utils.data.DataLoader(test_data,
                                                      batch_size=args.batch_size,
                                                      shuffle=(validation_sampler is None),
                                                      sampler=validation_sampler,
-                                                     num_workers=3)
+                                                     num_workers=0)  # TODO: temporarily disabled due to issue
     # ##########################################
 
     # ############ BUILD THE MODEL #############
@@ -172,7 +178,7 @@ def worker_fn(rank, args, world_size):
     train_model = TrainModel(classifier, device)
 
     # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
-    classifier.to(device)
+    train_model.to(device)
     if distributed:
         train_model = DDP(train_model, device_ids=[rank])
     # ############################################
