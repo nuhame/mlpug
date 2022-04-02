@@ -99,7 +99,7 @@ class ChunkableBatchDataset(Base):
         return self._batch[chunk_start:chunk_end]
 
 
-class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
+class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  batch_metric_funcs,
@@ -109,7 +109,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
                  batch_chunk_size=None,
                  batch_chunk_metric_reducer_funcs=None,
                  show_dataset_evaluation_progress=False,
-                 name="MetricEvaluatorBase",
+                 name="MetricEvaluator",
                  **kwargs):
         """
 
@@ -211,7 +211,7 @@ class MetricEvaluatorBase(Base, metaclass=abc.ABCMeta):
 
         :param trainer: An optional trainer instance to evaluate a model, you can provide this instead of a
                         custom model_evaluate_func
-        :type trainer: TrainerBase child instance
+        :type trainer: Trainer child instance
 
         :param batch_metric_reducer_funcs: Optional.
                  A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
