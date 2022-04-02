@@ -6,7 +6,7 @@ from mlpug.trainers.callbacks.callback import Callback
 import basics.base_utils as _
 
 
-class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
+class LRSchedulerWrapper(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  schedulers,
