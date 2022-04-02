@@ -10,6 +10,9 @@ from mlpug.pytorch.utils import is_chunkable
 import basics.base_utils as _
 
 from mlpug.trainers.training import *
+from mlpug.trainers.training import Trainer as TrainerBase
+from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
+
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, \
     TrainerStateInvalidException, \
@@ -86,7 +89,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :param kwargs:
         """
-        super(DefaultTrainer, self).__init__(*args, **kwargs)
+        super(DefaultTrainer, self).__init__(*args, name=name, **kwargs)
 
         self.eager_mode = eager_mode
         self.batch_data_signature = batch_data_signature
