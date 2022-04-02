@@ -660,16 +660,16 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         return self._valid
 
 
-class TrainerBase(Base, metaclass=abc.ABCMeta):
+class Trainer(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, model_components, optimizers, name="TrainerBase", **kwargs):
+    def __init__(self, model_components, optimizers, name="Trainer", **kwargs):
         """
 
         :param model_components: dict with model components
         :param optimizers: dict with optimizers
 
         """
-        super(TrainerBase, self).__init__(pybase_logger_name=name, **kwargs)
+        super(Trainer, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.model_components = model_components
         self.optimizers = optimizers
@@ -945,14 +945,14 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         return self._valid
 
 
-class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
+class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  optimizers,
                  model_components=None,
                  batch_chunk_size=None,
                  use_mixed_precision=False,
-                 name="DefaultTrainerBase",
+                 name="DefaultTrainer",
                  **kwargs):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
