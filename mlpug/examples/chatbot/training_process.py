@@ -3,6 +3,8 @@ import os
 import random
 import numpy as np
 
+import mlpug.abstract_interface as mlp_interface
+
 from mlpug.base import Base
 
 from basics.logging_utils import log_exception
@@ -22,20 +24,17 @@ def calc_classification_quality():
 
 class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
-    # Every ML library specialization uses a different mlpug specialization
-    MLPUG_MODULE = None
-
-    @staticmethod
-    def get_logger_info(rank, world_size, name):
-        """
-
-        :param rank:
-        :param world_size:
-        :param name:
-
-        :return: (Logger name: String, disable_logging: Boolean)
-        """
-        return name, False
+    # Set this to your MLPUG implementation of choice, e.g. mlpug.pytorch, mlpug.pytorch.xla or mlpug.tensorflow:
+    #
+    # import mlpug.pytorch as mlp
+    # TrainingProcess.MLPUG_MODULE = mlp
+    #
+    # ... instantiate and use the TrainingProcess ...
+    #
+    # WARNING: Below MLPUG_MODULE has been set to default value 'mlp_interface'.
+    #          This will allow your IDE to find code references to the BASE classes of MLP,
+    #          not of your chosen mlpug implementation!
+    MLPUG_MODULE = mlp_interface
 
     def __init__(self, rank, args, world_size, name="TrainingProcess"):
         logger_name, disable_logging = self.get_logger_info(rank, world_size, name)
@@ -166,15 +165,21 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         mlp = self.MLPUG_MODULE
 
         # During training we want to do the following:
+        #
         # a. Every <progress_log_period> batches, log the batch training loss, calculated during the
         #    forward pass for training
-        # b. Every <metric_monitoring_period> batches, calculate and log, for one batch of the validation set,
+        #
+        # b. Every <metric_monitoring_period> batches, calculate and log, for one batch of the validation set:
         #    1. the loss
         #    2. the output candidate classification quality
+        #
         # c. Every epoch, calculate and log above metrics over the complete training and validation set
+        #
         # d. Every epoch, check if the model improved, if so, save a best model checkpoint.
         #    Also save a "latest model" checkpoint and a training checkpoint
+        #
         # e. Log the progress every <progress_log_period>, in terms of training and validation metrics, to the terminal
+        #
 
         # parameters required to rebuild the model from a checkpoint
         model_hyper_parameters = {
@@ -276,3 +281,15 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
     def _prepare_training(self):
         self._trainer.set_training_model(self._training_model)
+
+    @staticmethod
+    def get_logger_info(rank, world_size, name):
+        """
+
+        :param rank:
+        :param world_size:
+        :param name:
+
+        :return: (Logger name: String, disable_logging: Boolean)
+        """
+        return name, False
