@@ -6,7 +6,7 @@ from mlpug.trainers.callbacks.callback import Callback
 from mlpug.mlpug_exceptions import CallbackInvalidException
 from mlpug.utils import has_key, get_key_paths, SlidingWindow
 
-from mlpug.evaluation import MetricEvaluatorBase
+from mlpug.evaluation import MetricEvaluator
 
 import basics.base_utils as _
 
@@ -360,7 +360,7 @@ class MetricsLoggerBase(Callback):
                                 f"the {self} will not function")
                 self._valid = False
 
-        if not MetricEvaluatorBase.is_valid(self._metric_evaluator):
+        if not MetricEvaluator.is_valid(self._metric_evaluator):
             self._log.error(f"The given metric evaluator is not valid, the {self} will not function : "
                             f"{self._metric_evaluator}")
             self._valid = False
@@ -400,8 +400,6 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                  batch_level=True,
                  logging_mode=MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
                  **kwargs):
-
-        # print(f"mlpug.TrainingMetricsLogger(kwargs={kwargs})")
 
         super().__init__(
             metric_evaluator=metric_evaluator,
