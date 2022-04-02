@@ -20,19 +20,13 @@ class ChatSampleFactory(Base):
 
         self._tokenizer_func = tokenizer_func
 
-        self._bos = bos
-        self._eos = eos
-
-        self._speaker1 = speaker1
-        self._speaker2 = speaker2
-
         self._ignore_label = ignore_label
 
-        self._bos_id = self._tokenizer_func(self._bos)[0]
-        self._eos_id = self._tokenizer_func(self._eos)[0]
+        self._bos_id = self._get_token_id_of(bos)
+        self._eos_id = self._get_token_id_of(eos)
 
-        self._speaker1_id = self._tokenizer_func(self._speaker1)[0]
-        self._speaker2_id = self._tokenizer_func(self._speaker2)[0]
+        self._speaker1_id = self._get_token_id_of(speaker1)
+        self._speaker2_id = self._get_token_id_of(speaker2)
 
     def __call__(self,
                  personality: List[str],
@@ -106,3 +100,11 @@ class ChatSampleFactory(Base):
         reply_class = int(is_real_reply)
 
         return input_ids, token_type_ids, token_label_ids, last_token_idx, reply_class
+
+    def _get_token_id_of(self, token):
+        token_id = self._tokenizer_func(token)
+
+        if len(token_id) != 1:
+            raise ValueError(f'String {token} does not represent a single token in your tokenizer.')
+
+        return token_id[0]

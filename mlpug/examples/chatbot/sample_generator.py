@@ -1,4 +1,4 @@
-from typing import Optional, Callable, Iterable, Dict
+from typing import Optional, Callable, List, Dict
 
 import random
 
@@ -8,7 +8,7 @@ from mlpug.base import Base
 class ChatSampleGenerator(Base):
 
     def __init__(self,
-                 persona_chat_dataset: Iterable[Dict],
+                 persona_chat_dataset: List[Dict],
                  sample_factory: Callable,
                  shuffle: bool = True,
                  name: Optional[str] = None):

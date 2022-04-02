@@ -17,6 +17,16 @@ try:
 except Exception as e:
     log_exception(module_logger, "Please `pip install datasets`", e)
 
+try:
+    from transformers import GPT2Tokenizer
+except Exception as e:
+    log_exception(module_logger, "Please `pip install transformers`", e)
+
+
+from mlpug.examples.chatbot.tokenizers import HFTokenizer
+from mlpug.examples.chatbot.sample_generator import ChatSampleGenerator
+from mlpug.examples.chatbot.sample_factory import ChatSampleFactory
+
 
 def calc_classification_quality():
     pass
@@ -36,6 +46,13 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     #          not of your chosen mlpug implementation!
     MLPUG_MODULE = mlp_interface
 
+    SPECIAL_TOKENS_MAPPING = {
+        'bos_token': '<bos>',
+        'eos_token': '<eos>',
+        'pad_token': '<pad>',
+        'additional_special_tokens': ['<speaker1>', '<speaker2>']
+    }
+
     def __init__(self, rank, args, world_size, name="TrainingProcess"):
         logger_name, disable_logging = self.get_logger_info(rank, world_size, name)
         super().__init__(disable_logging=disable_logging, pybase_logger_name=logger_name)
@@ -43,6 +60,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._rank = rank
         self._args = args
         self._world_size = world_size
+
+        self._num_special_tokens = None
 
         self._raw_training_set = None
         self._raw_validation_set = None
@@ -88,10 +107,33 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         raise NotImplementedError("Please implement in your child class")
 
     def _load_and_prepare_data(self):
+        self._log.info("Loading Personachat dataset ...")
         dataset = load_dataset("bavard/personachat_truecased")
 
-        self._raw_training_set = dataset["training"]
-        self._raw_validation_set = dataset["validation"]
+        self._log.info(f"Loading Tokenizer for {self._args.pretrained_model} model ...")
+        hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
+
+        self._num_special_tokens = hf_tokenizer.add_special_tokens(self.SPECIAL_TOKENS_MAPPING)
+        self._log.debug(f"Number of special tokens added to tokenizer : {self._num_special_tokens }")
+
+        tokenizer_func = HFTokenizer(hf_tokenizer)
+
+        sample_factory = ChatSampleFactory(
+            tokenizer_func,
+            bos=self.SPECIAL_TOKENS_MAPPING['bos_token'],
+            eos=self.SPECIAL_TOKENS_MAPPING['eos_token'],
+            speaker1=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
+            speaker2=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
+
+        self._raw_training_set = ChatSampleGenerator(dataset["training"],
+                                                     sample_factory,
+                                                     name="TrainingSampleGenerator")
+        self._raw_training_set.initialize()
+
+        self._raw_validation_set = ChatSampleGenerator(dataset["validation"],
+                                                       sample_factory,
+                                                       name="ValidationSampleGenerator")
+        self._raw_validation_set.initialize()
 
     @abc.abstractmethod
     def _setup_batch_datasets(self):
