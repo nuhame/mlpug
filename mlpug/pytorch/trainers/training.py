@@ -9,6 +9,8 @@ import basics.base_utils as _
 
 from mlpug.trainers.training import *
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
+from mlpug.trainers.training import Trainer as TrainerBase
+from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
 from mlpug.pytorch.utils import is_chunkable, SlidingWindow
