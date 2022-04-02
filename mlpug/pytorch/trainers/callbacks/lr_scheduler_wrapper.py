@@ -1,5 +1,5 @@
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
-from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapperBase
+from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapper as LRSchedulerWrapperBase
 
 from statistics import mean
 
