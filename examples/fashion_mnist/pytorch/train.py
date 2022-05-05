@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 
 import torchvision as tv
 
-from mlpug.examples.fashion_mnist.shared_args import create_arg_parser, describe_args
+from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp

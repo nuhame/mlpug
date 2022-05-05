@@ -10,8 +10,8 @@ from basics.logging import get_logger
 # Import mlpug for Pytorch/XLA backend
 import mlpug.pytorch.xla as mlp
 
-from mlpug.examples.fashion_mnist.shared_args import base_argument_set, describe_args
-from mlpug.examples.fashion_mnist.pytorch.train import \
+from examples.fashion_mnist.shared_args import base_argument_set, describe_args
+from examples.fashion_mnist.pytorch.train import \
     load_data, \
     build_model, \
     TrainModel, \

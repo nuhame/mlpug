@@ -1,5 +1,5 @@
-from mlpug.examples.shared_args import create_arg_parser as create_base_arg_parser
-from mlpug.examples.shared_args import describe_args as describe_base_args
+from examples.shared_args import create_arg_parser as create_base_arg_parser
+from examples.shared_args import describe_args as describe_base_args
 
 
 def create_arg_parser(description="Train on Fashion MNIST dataset using MLPug"):

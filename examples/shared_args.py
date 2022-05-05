@@ -16,29 +16,29 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         help='Set to distribute training over multiple computing devices')
 
     parser.add_argument(
-        '--num_devices',
+        '--num-devices',
         type=int, required=False, default=-1,
         help='Number of computing devices to use in distributed mode. '
              'Default is all available devices')
 
     parser.add_argument(
-        '--batch_size',
+        '--batch-size',
         type=int, required=False, default=64,
         help='Batch size (per process/replica)')
 
     parser.add_argument(
-        '--learning_rate',
+        '--learning-rate',
         type=float, required=False, default=1e-3,
         help='Learning rate')
 
     parser.add_argument(
-        '--num_epochs',
+        '--num-epochs',
         type=int, required=False, default=10,
         help='Number of epochs to train')
 
     parser.add_argument(
-        '--progress_log_period',
-        type=int, required=False, default=200,
+        '--progress-log-period',
+        type=int, required=False, default=20,
         help='Period in global (batch) iterations before we log the training progress again.')
 
     parser.add_argument(
