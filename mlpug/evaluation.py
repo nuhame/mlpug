@@ -1,13 +1,17 @@
 import sys
 import abc
 
+from typing import Iterable, Tuple, Dict
+
 import math
 
 import numpy as np
+
 from mlpug.base import Base
 
 import basics.base_utils as _
 
+from mlpug.trainers.training import BatchChunkingResults
 from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidParametersException
 from mlpug.utils import *
 
@@ -26,6 +30,101 @@ def default_metric_reducer_func(batch_metrics_list):
     metric = metric_sum/num_samples
 
     return metric, metric_sum, num_samples
+
+
+def no_reduction(batch_metrics_list):
+    return batch_metrics_list
+
+
+def has_batch_chunking_results(batch_metrics_list):
+    return type(batch_metrics_list) is list and \
+           len(batch_metrics_list) > 0 and \
+           type(batch_metrics_list[0]) is BatchChunkingResults
+
+
+class ConcatBatchTuplesWithNumpyArrays:
+
+    def __init__(self, dim: int = 0):
+        self.dim = dim
+
+    def __call__(self, numpy_array_tuples: Iterable[Tuple[np.array, ...]]) -> Tuple[np.array, ...]:
+        """
+
+        :param numpy_array_tuples:    [
+                                          (Batch 1 numpy array 1, ..., Batch 1 numpy array N),
+                                          ...
+                                          (Batch M numpy array 1, ..., Batch M numpy array N)
+                                      ]
+
+                                      Real world example:
+                                      [
+                                          (Batch labels, ..., Batch predictions),
+                                          ...
+                                          (Batch labels, ..., Batch predictions)
+                                      ]
+
+        :return: (all M numpy arrays 1 concatenated, ... , all M numpy arrays N concatenated)
+
+        """
+
+        lists_of_numpy_arrays = zip(*numpy_array_tuples)
+
+        return tuple(np.concatenate(numpy_arrays, axis=self.dim) for numpy_arrays in lists_of_numpy_arrays)
+
+
+class ConcatBatchDictsWithNumpyArrays:
+
+    def __init__(self, dim: int = 0):
+        self.dim = dim
+
+    def __call__(self, numpy_array_dicts: Iterable[Dict[str, np.array]]) -> Dict[str, np.array]:
+        """
+
+        :param numpy_array_dicts:     [
+                                          {
+                                            "key1": Batch 1 numpy array 1,
+                                            ...,
+                                            "keyN": Batch 1 numpy array N
+                                          },
+                                          ...
+                                          {
+                                            "key1": Batch M numpy array 1,
+                                            ...,
+                                            "keyN": Batch M numpy array N
+                                          }
+                                      ]
+
+                                      Real world example:
+                                      [
+                                          {
+                                            "labels": Batch 1 numpy array with labels,
+                                            ...,
+                                            "predictions": Batch 1 numpy array predictions
+                                          },
+                                          ...
+                                          {
+                                            "labels": Batch M numpy array with labels,
+                                            ...,
+                                            "predictions": Batch M numpy array predictions
+                                          }
+                                      ]
+
+        :return: {
+                    "key1": all M numpy arrays 1 concatenated,
+                    ... ,
+                    "keyN": all M numpy arrays N concatenated
+                 }
+        """
+        try:
+            first_dict = next(iter(numpy_array_dicts))
+            keys = first_dict.keys()
+        except StopIteration:
+            return {}
+
+        lists_of_numpy_arrays = zip(*[d.values() for d in numpy_array_dicts])
+
+        return {key: np.concatenate(numpy_arrays, axis=self.dim)
+                for key, numpy_arrays in zip(keys, lists_of_numpy_arrays)}
 
 
 class ChunkableTupleBatchDim0(Base):
