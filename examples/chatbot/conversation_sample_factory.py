@@ -3,7 +3,7 @@ from typing import Optional, Callable, List
 from mlpug.base import Base
 
 
-class ChatSampleFactory(Base):
+class ConversationSampleFactory(Base):
 
     def __init__(self,
                  tokenizer_func: Callable,
@@ -71,11 +71,11 @@ class ChatSampleFactory(Base):
         token_type_ids = [self._speaker2_id]
         token_label_ids = [self._ignore_label]
 
-        personality_sequence = ' '.join(personality)
+        personality_sequence_ids = self._tokenizer_func(' '.join(personality))
 
-        input_ids += self._tokenizer_func(personality_sequence)
-        token_type_ids += [self._speaker2_id]*len(personality_sequence)
-        token_label_ids += [self._ignore_label]*len(personality_sequence)
+        input_ids += personality_sequence_ids
+        token_type_ids += [self._speaker2_id]*len(personality_sequence_ids)
+        token_label_ids += [self._ignore_label]*len(personality_sequence_ids)
 
         for chat_idx, chat in enumerate(chat_history):
             speaker_id = self._speaker2_id if chat_idx % 2 else self._speaker1_id

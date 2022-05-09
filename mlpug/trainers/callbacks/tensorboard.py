@@ -1,10 +1,18 @@
 import os
-from tensorboardX import SummaryWriter
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at as get_value_at_func
 
 import basics.base_utils as _
+from basics.logging_utils import log_exception
+from basics.logging import get_logger
+
+module_logger = get_logger(os.path.basename(__file__))
+
+try:
+    from tensorboardX import SummaryWriter
+except Exception as e:
+    log_exception(module_logger, "Please `pip install transformers`", e)
 
 
 # Tensorboard writer types
