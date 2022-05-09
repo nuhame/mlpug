@@ -11,6 +11,16 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='Huggingface pre-trained model name of GPT2 model')
 
     parser.add_argument(
+        '--batch-chunk-size',
+        type=int, required=False, default=None,
+        help='Weight decay')
+
+    parser.add_argument(
+        '--weight-decay',
+        type=float, required=False, default=0.0,
+        help='Weight decay')
+
+    parser.add_argument(
         '--dropout-rate',
         type=float, required=False, default=0.1,
         help='Dropout rate')
@@ -28,4 +38,6 @@ def describe_args(args, logger):
 
     describe_base_args(args, logger)
 
-
+    logger.info(f"Weight decay: {args.weight_decay}")
+    logger.info(f"Dropout rate: {args.dropout_rate}")
+    logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")

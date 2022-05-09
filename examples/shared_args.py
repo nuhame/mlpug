@@ -23,7 +23,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
 
     parser.add_argument(
         '--batch-size',
-        type=int, required=False, default=64,
+        type=int, required=False, default=16,
         help='Batch size (per process/replica)')
 
     parser.add_argument(

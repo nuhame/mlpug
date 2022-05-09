@@ -360,7 +360,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :type show_dataset_evaluation_progress
         """
 
-        super().__init__(**kwargs)
+        super().__init__(pybase_logger_name=name, **kwargs)
 
         if trainer is not None:
             if model_evaluate_func is not None:

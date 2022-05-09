@@ -1,8 +1,13 @@
 import os
 
 import torch
+
 import torch.distributed as dist
+import torch.multiprocessing as mp
+
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+from torch.optim import AdamW
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
@@ -10,14 +15,25 @@ from basics.logging import get_logger
 import mlpug.pytorch as mlp
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
+from examples.chatbot.pytorch.batch_collator import BatchCollator
+
+from examples.chatbot.pytorch.shared_args import create_arg_parser, describe_args
 
 module_logger = get_logger(os.path.basename(__file__))
 
 try:
-    from transformers import GPT2Config, GPT2Tokenizer, GPT2DoubleHeadsModel, AdamW
+    from transformers import GPT2Config, GPT2Tokenizer, GPT2DoubleHeadsModel
     from transformers.trainer_pt_utils import get_parameter_names
 except Exception as e:
     log_exception(module_logger, "Please `pip install transformers`", e)
+
+
+def worker_fn(rank, args, world_size):
+    mlp.logging.use_fancy_colors()
+
+    training_process = TrainingProcess(rank, args, num_devices=world_size)
+    training_process.setup()
+    training_process.start()
 
 
 class GatherNextSentencePredictionData:
@@ -117,6 +133,9 @@ class TrainingProcess(TrainingProcessBase):
 
     MLPUG_MODULE = mlp
 
+    def __init__(self, rank, args, num_devices, name="PTTrainingProcess"):
+        super().__init__(rank, args, num_devices, name=name)
+
     def _setup_compute(self):
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -167,7 +186,8 @@ class TrainingProcess(TrainingProcessBase):
             batch_size=self._args.batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=training_sampler,
-            num_workers=self._args.num_dataloader_workers)
+            num_workers=self._args.num_dataloader_workers,
+            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
 
         # Using the test set as a validation set, just for demonstration purposes
         self._batch_validation_set = torch.utils.data.DataLoader(
@@ -175,7 +195,8 @@ class TrainingProcess(TrainingProcessBase):
             batch_size=self._args.batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=validation_sampler,
-            num_workers=self._args.num_dataloader_workers)
+            num_workers=self._args.num_dataloader_workers,
+            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
 
     def _build_model(self):
         if self.is_distributed and not self.is_primary:
@@ -216,7 +237,7 @@ class TrainingProcess(TrainingProcessBase):
             },
         ]
 
-        self.optimizer = AdamW(optimizer_grouped_parameters, **{
+        self._optimizer = AdamW(optimizer_grouped_parameters, **{
             "lr": self._args.learning_rate,
             "betas": (0.9, 0.999),
             "eps": 1e-8,
@@ -248,3 +269,41 @@ class TrainingProcess(TrainingProcessBase):
             return f"[Device {rank}/{num_devices}] {name}", rank != 0
         else:
             return name, False
+
+
+if __name__ == '__main__':
+    # ############# SETUP LOGGING #############
+    mlp.logging.use_fancy_colors()
+    logger = get_logger(os.path.basename(__file__))
+    # ########################################
+
+    # ############## PARSE ARGS ##############
+    parser = create_arg_parser()
+
+    parser.parse_args()
+
+    args = parser.parse_args()
+
+    describe_args(args, logger)
+
+    # ############## TRAIN MODEL ##############
+    if args.distributed:
+        num_gpus_available = torch.cuda.device_count()
+        world_size = args.num_devices if args.num_devices > 0 else num_gpus_available
+        if world_size > num_gpus_available:
+            logger.warn(f"Number of requested GPUs is lower than available GPUs, "
+                        f"limiting training to {num_gpus_available} GPUS")
+            world_size = num_gpus_available
+
+        logger.info(f"Distributed Data Parallel mode : Using {world_size} GPUs")
+        logger.info(f"Global batch size: {args.batch_size*world_size}")
+
+        mp.spawn(worker_fn,
+                 args=(args, world_size,),
+                 nprocs=world_size,
+                 join=True)
+    else:
+        logger.info(f"Single device mode.")
+        logger.info(f"Global batch size: {args.batch_size}")
+
+        worker_fn(0, args=args, world_size=1)

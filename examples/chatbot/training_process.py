@@ -12,8 +12,8 @@ from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 from examples.chatbot.tokenizers import HFTokenizer
-from examples.chatbot.sample_generator import ChatSampleGenerator
-from examples.chatbot.sample_factory import ChatSampleFactory
+from examples.chatbot.multiple_choice_dataset import MultipleConversationChoicesDataset
+from examples.chatbot.conversation_sample_factory import ConversationSampleFactory
 
 module_logger = get_logger(os.path.basename(__file__))
 
@@ -69,7 +69,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         'additional_special_tokens': ['<speaker1>', '<speaker2>']
     }
 
-    def __init__(self, args, rank, num_devices, name="TrainingProcess"):
+    def __init__(self, rank, args, num_devices, name="TrainingProcess"):
         logger_name, disable_logging = self.get_logger_info(rank, num_devices, name)
         super().__init__(disable_logging=disable_logging, pybase_logger_name=logger_name)
 
@@ -156,21 +156,21 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         tokenizer_func = HFTokenizer(self._hf_tokenizer)
 
-        sample_factory = ChatSampleFactory(
+        sample_factory = ConversationSampleFactory(
             tokenizer_func,
             bos=self.SPECIAL_TOKENS_MAPPING['bos_token'],
             eos=self.SPECIAL_TOKENS_MAPPING['eos_token'],
             speaker1=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
             speaker2=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
 
-        self._sample_training_set = ChatSampleGenerator(dataset["training"],
-                                                        sample_factory,
-                                                        name="TrainingSampleGenerator")
+        self._sample_training_set = MultipleConversationChoicesDataset(dataset["train"],
+                                                                       sample_factory,
+                                                                       name="TrainingSampleGenerator")
         self._sample_training_set.initialize()
 
-        self._sample_validation_set = ChatSampleGenerator(dataset["validation"],
-                                                          sample_factory,
-                                                          name="ValidationSampleGenerator")
+        self._sample_validation_set = MultipleConversationChoicesDataset(dataset["validation"],
+                                                                         sample_factory,
+                                                                         name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
     @abc.abstractmethod
@@ -288,7 +288,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                 'loss': loss_gather_func
             },
             # The trainer knows how to evaluate the model
-            trainer=self._trainer)
+            trainer=self._trainer,
+            batch_chunk_size=self._args.batch_chunk_size,
+            name="LossOnlyEvaluator")
 
         # Every epoch we will also calculated the candidate output classification quality
         all_metrics_evaluator = mlp.evaluation.MetricEvaluator(
@@ -312,7 +314,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             batch_chunk_metric_reducer_funcs={
                 'classification': ConcatBatchTuplesWithNumpyArrays(),
             },
-            show_dataset_evaluation_progress=True)
+            show_dataset_evaluation_progress=True,
+            name="AllMetricsEvaluator")
 
         def log_training_metrics(logs, dataset_batch):
             global_iter = logs['current']['global_iter']
@@ -356,25 +359,31 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         # Only primary worker needs to log progress
         if self._rank == 0:
+            tb_args = {'experiment_name': self._args.experiment_name}
+
             self._callbacks += [
-                mlp.callbacks.CheckpointManager(base_checkpoint_filename=self._args.experiment_name,
-                                                # monitor per epoch
-                                                batch_level=False,
-                                                metric_to_monitor="validation.dataset.loss",
-                                                # check if there is a better model every epoch
-                                                metric_monitor_period=1,
-                                                # every epoch, this will create a latest model and training checkpoint,
-                                                create_checkpoint_every=1,
-                                                # no archiving
-                                                archive_last_model_checkpoint_every=0,
-                                                # No backups
-                                                backup_before_override=False,
-                                                # model_hyper_parameters stored with each checkpoint
-                                                model_hyper_parameters=model_hyper_parameters),
-                mlp.callbacks.LogProgress(log_period=self._args.progress_log_period,
-                                          set_names=['training', 'validation']),
-                mlp.callbacks.AutoTensorboard(dataset_name=['training', 'validation', 'training_params'],
-                                              experiment_name=self._args.experiment_name),
+                mlp.callbacks.CheckpointManager(
+                    base_checkpoint_filename=self._args.experiment_name,
+                    # monitor per epoch
+                    batch_level=False,
+                    metric_to_monitor="validation.dataset.loss",
+                    # check if there is a better model every epoch
+                    metric_monitor_period=1,
+                    # every epoch, this will create a latest model and training checkpoint,
+                    create_checkpoint_every=1,
+                    # no archiving
+                    archive_last_model_checkpoint_every=0,
+                    # No backups
+                    backup_before_override=False,
+                    # model_hyper_parameters stored with each checkpoint
+                    model_hyper_parameters=model_hyper_parameters),
+                mlp.callbacks.LogProgress(
+                    log_period=self._args.progress_log_period,
+                    set_names=['training', 'validation']),
+                # Track metrics for all datasets of interest
+                mlp.callbacks.AutoTensorboard(dataset_name='training', **tb_args),
+                mlp.callbacks.AutoTensorboard(dataset_name='validation', **tb_args),
+                mlp.callbacks.AutoTensorboard(dataset_name='training_params', **tb_args)
             ]
 
     def _setup_training_manager(self):
