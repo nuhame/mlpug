@@ -2,6 +2,7 @@ import os
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at as get_value_at_func
+from mlpug.utils import has_key
 
 import basics.base_utils as _
 from basics.logging_utils import log_exception
@@ -753,10 +754,6 @@ class AutoTensorboard(Callback):
             return True
 
         for label, metric in metrics.items():
-            if type(metric) is tuple:
-                # use the first value as metric value, the other values are auxiliary results meant for other purposes
-                metric = metric[0]
-
             tag = tagify(label)
 
             self._writers[writer_type].add_scalar(tag, metric, global_step=training_iter, display_name=label)
@@ -815,6 +812,11 @@ class AutoTensorboard(Callback):
                 if base_path is not None:
                     metric_name = f"{base_path}.{metric_name}"
 
+                if type(metric) is tuple and len(metric) > 0:
+                    # use the first value as metric value, the other values are auxiliary results meant for
+                    # other purposes
+                    metric = metric[0]
+
                 if _.is_dict(metric):
                     _add_metrics(metric, metric_name)
                     continue
@@ -831,7 +833,7 @@ class AutoTensorboard(Callback):
     def _get_label(self, metric_name, batch_level):
         iter_level = 'batch' if batch_level else 'epoch'
 
-        label = self._metric_names[metric_name] if (metric_name in self._metric_names) else metric_name
+        label = self._metric_names[metric_name] if has_key(self._metric_names, metric_name) else metric_name
         label = label.replace('.', ' ').replace('_', ' ').title()
         label = f"{label} - per {iter_level}"
 
