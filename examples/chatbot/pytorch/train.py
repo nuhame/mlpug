@@ -15,6 +15,7 @@ from basics.logging import get_logger
 import mlpug.pytorch as mlp
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
+from examples.chatbot.training_process import calc_classification_quality
 from examples.chatbot.pytorch.batch_collator import BatchCollator
 
 from examples.chatbot.pytorch.shared_args import create_arg_parser, describe_args
@@ -43,7 +44,7 @@ class GatherNextSentencePredictionData:
         self.is_distributed = is_distributed
         self.num_devices = num_devices
 
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=1)
 
     def __call__(self, batch, auxiliary_results, **kwargs):
         # Batch is a tuple with the following items :
@@ -58,7 +59,7 @@ class GatherNextSentencePredictionData:
 
         # TODO: check nsp_logits shape
         prediction_probability = self.softmax(nsp_logits)
-        predictions = torch.argmax(prediction_probability)
+        predictions = torch.argmax(prediction_probability, dim=1)
 
         if self.is_distributed:
             targets = self._gather(targets)
@@ -70,7 +71,12 @@ class GatherNextSentencePredictionData:
         if predictions is not None:
             predictions = predictions.cpu().numpy()
 
-        return targets, predictions
+        # This looks a bit strange (inception-like), but we are simply reusing the function
+        # to calculate the classification quality over multiple batches, to calculate the
+        # classification quality over one batch.
+        batch_classification_quality = calc_classification_quality([(None, targets, predictions)])
+
+        return batch_classification_quality, targets, predictions
 
     def _gather(self, tensor):
         gathered_tensors = None
