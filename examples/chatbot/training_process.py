@@ -6,7 +6,7 @@ import numpy as np
 import mlpug.abstract_interface as mlp_interface
 
 from mlpug.base import Base
-from mlpug.evaluation import ConcatBatchTuplesWithNumpyArrays
+from mlpug.evaluation import ConcatBatchTuples
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
@@ -34,10 +34,16 @@ except Exception as e:
                                  "see https://scikit-learn.org/stable/install.html#installing-the-latest-release", e)
 
 
-def calc_classification_quality(batch_labels_predictions):
-    concat = ConcatBatchTuplesWithNumpyArrays()
+def calc_classification_quality(batch_classification_data):
+    concat = ConcatBatchTuples()
 
-    labels, predictions = concat(batch_labels_predictions)
+    # batch_classification_data is a list of tuples:
+    # [
+    #   (batch classification quality dict, batch labels numpy array, batch predictions numpy array)
+    #   ...
+    #   (batch classification quality dict, batch labels numpy array, batch predictions numpy array)
+    # ]
+    _, labels, predictions = concat(batch_classification_data)
 
     precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='micro')
 
@@ -312,7 +318,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # the concatenated output can be used by the registered batch_metric_reducer_funcs['classification'] to
             # calculate the classification quality metrics.
             batch_chunk_metric_reducer_funcs={
-                'classification': ConcatBatchTuplesWithNumpyArrays(),
+                'classification': ConcatBatchTuples(),
             },
             show_dataset_evaluation_progress=True,
             name="AllMetricsEvaluator")
