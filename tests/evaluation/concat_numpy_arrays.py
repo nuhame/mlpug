@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 
-from mlpug.evaluation import ConcatBatchTuplesWithNumpyArrays, ConcatBatchDictsWithNumpyArrays
+from mlpug.evaluation import ConcatBatchTuples, ConcatBatchDicts
 
 
 class ConcatNumpyArrays(unittest.TestCase):
@@ -11,7 +11,7 @@ class ConcatNumpyArrays(unittest.TestCase):
         gathered_batches = [(np.array([0, 2, 1]), np.array([1, 2, 1])),
                             (np.array([2, 1, 1]), np.array([2, 0, 1]))]
 
-        concat_batches = ConcatBatchTuplesWithNumpyArrays()
+        concat_batches = ConcatBatchTuples()
 
         concatenated_batches = concat_batches(gathered_batches)
 
@@ -31,7 +31,7 @@ class ConcatNumpyArrays(unittest.TestCase):
             }
         ]
 
-        concat_batches = ConcatBatchDictsWithNumpyArrays()
+        concat_batches = ConcatBatchDicts()
 
         concatenated_batches = concat_batches(gathered_batches)
 
