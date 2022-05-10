@@ -1,7 +1,7 @@
 import sys
 import abc
 
-from typing import Iterable, Tuple, Dict
+from typing import Iterable, Tuple, Dict, Collection
 
 import math
 
@@ -42,89 +42,100 @@ def has_batch_chunking_results(batch_metrics_list):
            type(batch_metrics_list[0]) is BatchChunkingResults
 
 
-class ConcatBatchTuplesWithNumpyArrays:
+class ConcatBatch(metaclass=abc.ABCMeta):
 
     def __init__(self, dim: int = 0):
+        """
+
+        :param dim: dimension of to concatenate the numpy arrays over
+        """
         self.dim = dim
 
-    def __call__(self, numpy_array_tuples: Iterable[Tuple[np.array, ...]]) -> Tuple[np.array, ...]:
+    @abc.abstractmethod
+    def __call__(self, iterable: Iterable[Collection]) -> Collection:
+        raise NotImplementedError("Please implement in your child class.")
+
+    def _concat(self, list_of_items):
+        first_item = next(iter(list_of_items))
+
+        if isinstance(first_item, np.ndarray):
+            return np.concatenate(list_of_items, axis=self.dim)
+        else:
+            return list_of_items
+
+
+class ConcatBatchTuples(ConcatBatch):
+
+    def __call__(self, tuples: Iterable[Tuple]) -> Tuple:
         """
 
-        :param numpy_array_tuples:    [
-                                          (Batch 1 numpy array 1, ..., Batch 1 numpy array N),
-                                          ...
-                                          (Batch M numpy array 1, ..., Batch M numpy array N)
-                                      ]
+        Concatenates tuple items that are numpy arrays.
 
-                                      Real world example:
-                                      [
-                                          (Batch labels, ..., Batch predictions),
-                                          ...
-                                          (Batch labels, ..., Batch predictions)
-                                      ]
+        However, when a tuple item is not a numpy array, no specific concatenation is performed.
+        These items will just be combined in to a list.
 
-        :return: (all M numpy arrays 1 concatenated, ... , all M numpy arrays N concatenated)
+        :param tuples:    Real world example, with first item NOT a numpy array:
+                          [
+                              # Batch 1
+                              (Dict with classification metrics , labels Numpy Array, predictions Numpy array),
+                              ...
+                              # Batch M
+                              (Dict with classification metrics , labels Numpy Array, predictions Numpy array)
+                          ]
+
+        :return: Result for real world example:
+                 (all M dicts in one List,
+                  all M label numpy arrays concatenated,
+                  all M prediction numpy arrays concatenated)
 
         """
 
-        lists_of_numpy_arrays = zip(*numpy_array_tuples)
+        lists_of_items = zip(*tuples)
 
-        return tuple(np.concatenate(numpy_arrays, axis=self.dim) for numpy_arrays in lists_of_numpy_arrays)
+        return tuple(self._concat(list_of_items) for list_of_items in lists_of_items)
 
 
-class ConcatBatchDictsWithNumpyArrays:
+class ConcatBatchDicts(ConcatBatch):
 
-    def __init__(self, dim: int = 0):
-        self.dim = dim
-
-    def __call__(self, numpy_array_dicts: Iterable[Dict[str, np.array]]) -> Dict[str, np.array]:
+    def __call__(self, dicts: Iterable[Dict]) -> Dict:
         """
 
-        :param numpy_array_dicts:     [
-                                          {
-                                            "key1": Batch 1 numpy array 1,
-                                            ...,
-                                            "keyN": Batch 1 numpy array N
-                                          },
-                                          ...
-                                          {
-                                            "key1": Batch M numpy array 1,
-                                            ...,
-                                            "keyN": Batch M numpy array N
-                                          }
-                                      ]
+        Concatenates dict values that are numpy arrays.
 
-                                      Real world example:
-                                      [
-                                          {
-                                            "labels": Batch 1 numpy array with labels,
-                                            ...,
-                                            "predictions": Batch 1 numpy array predictions
-                                          },
-                                          ...
-                                          {
-                                            "labels": Batch M numpy array with labels,
-                                            ...,
-                                            "predictions": Batch M numpy array predictions
-                                          }
-                                      ]
+        However, when a dict value is not a numpy array, no specific concatenation is performed.
+        These values will just be combined in to a list.
 
-        :return: {
-                    "key1": all M numpy arrays 1 concatenated,
-                    ... ,
-                    "keyN": all M numpy arrays N concatenated
-                 }
+        :param dicts:     Real world example:
+                          [
+                              {
+                                "quality": Batch 1 classification quality Dict,
+                                "labels": Batch 1 numpy array with labels,
+                                "predictions": Batch 1 numpy array predictions
+                              },
+                              ...
+                              {
+                                "quality": Batch M classification quality Dict,
+                                "labels": Batch M numpy array with labels,
+                                "predictions": Batch M numpy array predictions
+                              }
+                          ]
+
+        :return: Result for real world example:
+                {
+                    "quality": List with M classification quality Dicts,
+                    "labels": all M label numpy arrays concatenated,
+                    "predictions": all M prediction numpy arrays concatenated
+                }
         """
         try:
-            first_dict = next(iter(numpy_array_dicts))
+            first_dict = next(iter(dicts))
             keys = first_dict.keys()
         except StopIteration:
             return {}
 
-        lists_of_numpy_arrays = zip(*[d.values() for d in numpy_array_dicts])
+        lists_of_items = zip(*[d.values() for d in dicts])
 
-        return {key: np.concatenate(numpy_arrays, axis=self.dim)
-                for key, numpy_arrays in zip(keys, lists_of_numpy_arrays)}
+        return {key: self._concat(list_of_items) for key, list_of_items in zip(keys, lists_of_items)}
 
 
 class ChunkableTupleBatchDim0(Base):
