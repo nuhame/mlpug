@@ -16,6 +16,7 @@ from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableExc
 from mlpug.pytorch.utils import is_chunkable, SlidingWindow
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
+from mlpug.batch_chunking import BatchChunkingResults
 
 
 class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
