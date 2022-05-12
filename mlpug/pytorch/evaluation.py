@@ -5,11 +5,10 @@ import abc
 import torch
 import torch.distributed as dist
 
-from mlpug.trainers.training import BatchChunkingResults
+from mlpug.batch_chunking import BatchChunkingResults
 from mlpug.evaluation import default_metric_reducer_func
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.utils import is_chunkable
 
 from mlpug.base import Base
 
@@ -174,10 +173,6 @@ class DefaultLossEvaluator:
         self._trainer = trainer
 
     def __call__(self, batch, evaluate_settings=None):
-        if is_chunkable(batch):
-            # Get raw batch
-            batch = batch[:]
-
         with torch.no_grad():
             results = self._trainer.evaluate_loss(
                 batch,
