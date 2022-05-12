@@ -73,10 +73,9 @@ class GatherNextSentencePredictionData:
 
         # This looks a bit strange (inception-like), but we are simply reusing the function
         # to calculate the classification quality over multiple batches, to calculate the
-        # classification quality over one batch.
-        batch_classification_quality = calc_classification_quality([(None, targets, predictions)])
+        # classification quality over one batch. It also returns the gathered targets and predictions.
 
-        return batch_classification_quality, targets, predictions
+        return calc_classification_quality([(None, targets, predictions)])
 
     def _gather(self, tensor):
         gathered_tensors = None
