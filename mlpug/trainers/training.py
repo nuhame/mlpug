@@ -8,6 +8,8 @@ from statistics import mean
 from mlpug.base import Base
 import basics.base_utils as _
 
+from mlpug.batch_chunking import ChunkableBatch
+
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
 from mlpug.mlpug_exceptions import TrainerInvalidException
@@ -25,10 +27,6 @@ def normalize_evaluation(results):
         return {
             "loss": results
         }
-
-
-class BatchChunkingResults(list):
-    pass
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
@@ -1033,6 +1031,10 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
             (loss, ... auxiliary results ...)
         """
+
+        if isinstance(batch_data, ChunkableBatch):
+            # This allows the use of chunkable batches, even if we are not chunking batches
+            batch_data = batch_data.source()
 
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 
