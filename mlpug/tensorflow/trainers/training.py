@@ -1,7 +1,5 @@
 import io
 
-from functools import reduce
-
 import tensorflow as tf
 import h5py
 from tensorflow.python.keras.saving import hdf5_format
@@ -21,6 +19,7 @@ from mlpug.mlpug_exceptions import TrainerInvalidException, \
     LossNotAvailableException
 
 from mlpug.utils import get_value_at
+from mlpug.batch_chunking import BatchChunkingResults
 
 
 class TFTrainerMixin:

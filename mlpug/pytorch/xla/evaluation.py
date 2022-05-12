@@ -2,7 +2,7 @@ import torch_xla.core.xla_model as xm
 
 import numpy as np
 
-from mlpug.trainers.training import BatchChunkingResults
+from mlpug.batch_chunking import BatchChunkingResults
 from mlpug.evaluation import default_metric_reducer_func
 
 from mlpug.pytorch.evaluation import MetricEvaluator as MetricEvaluatorPyTorch
