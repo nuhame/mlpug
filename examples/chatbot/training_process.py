@@ -45,13 +45,15 @@ def calc_classification_quality(batch_classification_data):
     # ]
     _, labels, predictions = concat(batch_classification_data)
 
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='micro')
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='macro', zero_division=0)
 
-    return {
+    q = {
         "precision": precision,
         "recall": recall,
         "f1": f1
     }
+
+    return q, labels, predictions
 
 
 class TrainingProcess(Base, metaclass=abc.ABCMeta):
@@ -171,11 +173,13 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._sample_training_set = MultipleConversationChoicesDataset(dataset["train"],
                                                                        sample_factory,
+                                                                       num_choices=self._args.num_choices,
                                                                        name="TrainingSampleGenerator")
         self._sample_training_set.initialize()
 
         self._sample_validation_set = MultipleConversationChoicesDataset(dataset["validation"],
                                                                          sample_factory,
+                                                                         num_choices=self._args.num_choices,
                                                                          name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
@@ -229,7 +233,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     def _setup_trainer(self):
         mlp = self.MLPUG_MODULE
 
-        self._trainer = mlp.trainers.DefaultTrainer(optimizers=self._optimizer, model_components=self._model)
+        self._trainer = mlp.trainers.DefaultTrainer(
+            optimizers=self._optimizer,
+            model_components=self._model,
+            batch_chunk_size=self._args.batch_chunk_size)
 
     @abc.abstractmethod
     def _create_gather_loss_function(self):
@@ -301,8 +308,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         # Every epoch we will also calculated the candidate output classification quality
         all_metrics_evaluator = mlp.evaluation.MetricEvaluator(
             batch_metric_funcs={
+                # gather loss data and calculate average loss per batch
                 'loss': loss_gather_func,
-                # gather classification targets and predictions (next sentence prediction)
+                # gather classification targets and predictions (next sentence prediction) and
+                # calculate batch classification quality
                 'classification': self._create_gather_classification_data_function()
             },
             # The trainer knows how to evaluate the model
@@ -314,12 +323,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             },
             # When batch_chunk_size is given, perform gradient accumulation in chunks with batch_chunk_size samples
             batch_chunk_size=self._args.batch_chunk_size,
-            # Concatenate the classification targets and predictions, gathered per batch chunk, such that
-            # the concatenated output can be used by the registered batch_metric_reducer_funcs['classification'] to
-            # calculate the classification quality metrics.
-            batch_chunk_metric_reducer_funcs={
-                'classification': ConcatBatchTuples(),
-            },
             show_dataset_evaluation_progress=True,
             name="AllMetricsEvaluator")
 
@@ -331,11 +334,11 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         def log_validation_metrics(logs, dataset_batch):
             global_iter = logs['current']['global_iter']
 
-            return global_iter % (10*self._args.progress_log_period) == 0
+            return global_iter % self._args.progress_log_period == 0
 
         # Length of window
         avg_window_training = int(0.5 * len(self._batch_training_set) / self._args.progress_log_period)
-        avg_window_validation = int(0.5 * len(self._batch_validation_set) / (10 * self._args.progress_log_period))
+        avg_window_validation = int(0.5 * len(self._batch_validation_set) / self._args.progress_log_period)
         self._callbacks = [
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
