@@ -1,9 +1,12 @@
 import torch
 
+from mlpug.batch_chunking import ChunkableTupleBatchDim0
+
 
 class BatchCollator:
 
     def __init__(self, pad_token_idx, ignore_label_idx=-100):
+
         self._pad_token_idx = pad_token_idx
         self._ignore_label_idx = ignore_label_idx
 
@@ -58,4 +61,8 @@ class BatchCollator:
 
             reply_class_batch[s_idx] = [sample[4] for sample in sample_choices].index(1)
 
-        return input_ids_batch, token_type_ids_batch, token_labels_ids_batch, last_token_idx_batch, reply_class_batch
+        return ChunkableTupleBatchDim0(input_ids_batch,
+                                       token_type_ids_batch,
+                                       token_labels_ids_batch,
+                                       last_token_idx_batch,
+                                       reply_class_batch)
