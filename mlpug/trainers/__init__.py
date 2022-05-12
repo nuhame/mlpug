@@ -1,1 +1,2 @@
-from .training import BatchChunkingResults, TrainingManager, Trainer, DefaultTrainer
+from .training import TrainingManager, Trainer, DefaultTrainer
+
