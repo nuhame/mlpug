@@ -3,16 +3,14 @@ import abc
 
 from typing import Iterable, Tuple, Dict, Collection
 
-import math
-
 import numpy as np
 
 from mlpug.base import Base
-
 import basics.base_utils as _
 
-from mlpug.trainers.training import BatchChunkingResults
-from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidParametersException
+from mlpug.batch_chunking import ChunkableBatchDataset
+
+from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
 
 
@@ -34,12 +32,6 @@ def default_metric_reducer_func(batch_metrics_list):
 
 def no_reduction(batch_metrics_list):
     return batch_metrics_list
-
-
-def has_batch_chunking_results(batch_metrics_list):
-    return type(batch_metrics_list) is list and \
-           len(batch_metrics_list) > 0 and \
-           type(batch_metrics_list[0]) is BatchChunkingResults
 
 
 class ConcatBatch(metaclass=abc.ABCMeta):
@@ -136,77 +128,6 @@ class ConcatBatchDicts(ConcatBatch):
         lists_of_items = zip(*[d.values() for d in dicts])
 
         return {key: self._concat(list_of_items) for key, list_of_items in zip(keys, lists_of_items)}
-
-
-class ChunkableTupleBatchDim0(Base):
-
-    def __init__(self, *batch):
-        super().__init__()
-
-        self._batch = batch
-
-    def __len__(self):
-        # get batch size
-        return self._batch[0].size(0)
-
-    def __getitem__(self, sample_slice):
-        return (v[sample_slice, ...] for v in self._batch)
-
-
-class ChunkableTupleBatchDim1(Base):
-
-    def __init__(self, *batch):
-        super().__init__()
-
-        self._batch = batch
-
-    def __len__(self):
-        # get batch size
-        return self._batch[0].size(1)
-
-    def __getitem__(self, sample_slice):
-        return (v[:, sample_slice, ...] for v in self._batch)
-
-
-class ChunkableBatchDataset(Base):
-
-    def __init__(self, batch, batch_chunk_size):
-        """
-        Turns a chunkable batch in to an iterable dataset
-        
-        :param batch: A chunkable batch must implement the `__len__` and `__getitem__` methods.
-                      len(batch) must return the number of batch samples
-                      Here the `__getitem__` method must be able to deal with slices.
-
-        :param batch_chunk_size:
-                      The sample size of each batch chunk
-        """
-        super().__init__()
-
-        self._batch = batch
-        self._batch_chunk_size = batch_chunk_size
-
-        if not is_chunkable(batch):
-            raise BatchNotChunkableException()
-
-        self._batch_size = len(batch)
-        self._num_chunks = math.ceil(self._batch_size / self._batch_chunk_size)
-        self._chunk_idx = -1
-
-    def __iter__(self):
-        self._chunk_idx = -1
-        return self
-
-    def __next__(self):
-        self._chunk_idx += 1
-
-        if self._chunk_idx >= self._num_chunks:
-            raise StopIteration()
-
-        chunk_start = self._chunk_idx * self._batch_chunk_size
-        chunk_end = min((self._chunk_idx + 1) * self._batch_chunk_size, self._batch_size)
-
-        return self._batch[chunk_start:chunk_end]
 
 
 class MetricEvaluator(Base, metaclass=abc.ABCMeta):
@@ -575,12 +496,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) on whole "
                             f"{'' if dataset_name is None else dataset_name} dataset")
 
-        dataset_iterator = iter(dataset)
-
         batch_metric_data_lists = {}
 
         metric_paths = None
-        for dataset_batch in dataset_iterator:
+        for dataset_batch in dataset:
             batch_metric_data_map = {}
             batch_success = self.calc_batch_metrics_for(dataset_batch,
                                                         batch_metric_data_map,
