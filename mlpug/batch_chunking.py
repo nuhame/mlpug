@@ -2,10 +2,9 @@ import math
 
 import abc
 
-from base import Base
-from mlpug_exceptions import BatchNotChunkableException
-from trainers import BatchChunkingResults
-from utils import is_chunkable
+from mlpug.base import Base
+from mlpug.mlpug_exceptions import BatchNotChunkableException
+from mlpug.utils import is_chunkable
 
 
 def has_batch_chunking_results(batch_metrics_list):
@@ -46,7 +45,7 @@ class ChunkableTupleBatchDim0(ChunkableTupleBatch):
         return self._batch[0].size(0)
 
     def __getitem__(self, sample_slice):
-        return (v[sample_slice, ...] for v in self._batch)
+        return tuple((v[sample_slice, ...] for v in self._batch))
 
 
 class ChunkableTupleBatchDim1(ChunkableTupleBatch):
@@ -56,7 +55,7 @@ class ChunkableTupleBatchDim1(ChunkableTupleBatch):
         return self._batch[0].size(1)
 
     def __getitem__(self, sample_slice):
-        return (v[:, sample_slice, ...] for v in self._batch)
+        return tuple((v[:, sample_slice, ...] for v in self._batch))
 
 
 class ChunkableBatchDataset(Base):
@@ -98,3 +97,7 @@ class ChunkableBatchDataset(Base):
         chunk_end = min((self._chunk_idx + 1) * self._batch_chunk_size, self._batch_size)
 
         return self._batch[chunk_start:chunk_end]
+
+
+class BatchChunkingResults(list):
+    pass
