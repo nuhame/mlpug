@@ -1,6 +1,7 @@
 import abc
 import os
 import random
+import math
 import numpy as np
 
 import mlpug.abstract_interface as mlp_interface
@@ -45,12 +46,13 @@ def calc_classification_quality(batch_classification_data):
     # ]
     _, labels, predictions = concat(batch_classification_data)
 
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='macro', zero_division=0)
+    num_samples = len(labels)
+    accuracy = np.sum(labels == predictions)/num_samples
 
     q = {
-        "precision": precision,
-        "recall": recall,
-        "f1": f1
+        "accuracy": accuracy,
+        # Added for demonstration purposes
+        "num_samples": num_samples
     }
 
     return q, labels, predictions
@@ -61,7 +63,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     # Set this to your MLPUG implementation of choice, e.g. mlpug.pytorch, mlpug.pytorch.xla or mlpug.tensorflow:
     #
     # import mlpug.pytorch as mlp
-    # TrainingProcess.MLPUG_MODULE = mlp
+    #
+    # class TrainingProcess(TrainingProcessBase):
+    #     MLPUG_MODULE = mlp
     #
     # ... instantiate and use the TrainingProcess ...
     #
@@ -326,31 +330,24 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             show_dataset_evaluation_progress=True,
             name="AllMetricsEvaluator")
 
-        def log_training_metrics(logs, dataset_batch):
-            global_iter = logs['current']['global_iter']
+        def log_metrics(logs, dataset_batch):
+            # It is also possible to use logs['current']['global_iter']
+            batch_step = logs['current']['batch_step']
 
-            return global_iter % self._args.progress_log_period == 0
+            return batch_step % self._args.progress_log_period == 0
 
-        def log_validation_metrics(logs, dataset_batch):
-            global_iter = logs['current']['global_iter']
-
-            return global_iter % self._args.progress_log_period == 0
-
-        # Length of window
-        avg_window_training = int(0.5 * len(self._batch_training_set) / self._args.progress_log_period)
-        avg_window_validation = int(0.5 * len(self._batch_validation_set) / self._args.progress_log_period)
+        # Since the validation metrics will only calculated every self._args.progress_log_period batches
+        avg_window_validation = math.ceil(0.5 * len(self._batch_validation_set) / self._args.progress_log_period)
         self._callbacks = [
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
             # to provide the the training set here.
-            mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator,
-                                                log_condition_func=log_training_metrics,
-                                                batch_averaging_window=avg_window_training),
-            # Calculate validation loss and classification quality, every 10x<progress_log_period> batches
+            mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator),
+            # Calculate validation loss and classification quality, every <progress_log_period> batches
             mlp.callbacks.TestMetricsLogger(self._batch_validation_set,
                                             'validation',
                                             metric_evaluator=all_metrics_evaluator,
-                                            log_condition_func=log_validation_metrics,
+                                            log_condition_func=log_metrics,
                                             batch_averaging_window=avg_window_validation),
             # Calculate training metrics only once per epoch over the whole dataset
             mlp.callbacks.TestMetricsLogger(self._batch_training_set,
@@ -386,9 +383,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                     backup_before_override=False,
                     # model_hyper_parameters stored with each checkpoint
                     model_hyper_parameters=model_hyper_parameters),
-                mlp.callbacks.LogProgress(
-                    log_period=self._args.progress_log_period,
-                    set_names=['training', 'validation']),
+                mlp.callbacks.LogProgress(log_condition_func=log_metrics,
+                                          set_names=['training', 'validation']),
                 # Track metrics for all datasets of interest
                 mlp.callbacks.AutoTensorboard(dataset_name='training', **tb_args),
                 mlp.callbacks.AutoTensorboard(dataset_name='validation', **tb_args),
