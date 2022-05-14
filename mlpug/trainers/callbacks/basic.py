@@ -11,15 +11,49 @@ import basics.base_utils as _
 class LogProgress(Callback):
 
     def __init__(self,
-                 log_period=200,
+                 log_period=None,
+                 log_condition_func=None,
                  set_names=None,
                  batch_level=True,
                  logs_base_path="current",
                  name="LogProgress",
                  **kwargs):
+        """
+
+        Note: if there are dataset level metrics available, while logging at batch level, these
+              metrics will always be logged
+
+        :param log_period: Optional, number of batches or epochs between progress logs
+                           If both log_period and log_condition_func are not given, this defaults to 200.
+        :param log_condition_func: Optional, if evaluated to True progress will be logged
+                                   log_condition_func(logs, dataset_batch) -> Bool
+        :param set_names:
+        :param batch_level:
+        :param logs_base_path:
+        :param name:
+        :param kwargs:
+        """
         super(LogProgress, self).__init__(name=name, **kwargs)
 
+        if log_period is None and log_condition_func is None:
+            log_period = 200
+            self._log.debug(f"Logging progress every {log_period} batch training steps")
+
+        if log_condition_func is None:
+            def log_progress(logs, batch_data):
+                current = self._get_logs_base(logs)
+                batch_step = current["batch_step"]
+
+                return batch_step % self.log_period
+
+            log_condition_func = log_progress
+
+        if log_condition_func is not None and not callable(log_condition_func):
+            raise ValueError("log_condition_func must be callable and have "
+                             "signature log_condition_func(logs, dataset_batch) -> Bool")
+
         self.log_period = log_period
+        self.log_condition_func = log_condition_func
         self.set_names = set_names or ["training"]
         self.batch_level = batch_level
         self.logs_base_path = logs_base_path
@@ -37,7 +71,6 @@ class LogProgress(Callback):
 
         success = True
         current = self._get_logs_base(logs)
-        batch_step = current["batch_step"]
 
         has_dataset_level_metrics = False
         for set_name in self.set_names:
@@ -47,7 +80,7 @@ class LogProgress(Callback):
             if has_dataset_level_metrics:
                 break
 
-        if batch_step == 0 or batch_step % self.log_period == 0 or has_dataset_level_metrics:
+        if has_dataset_level_metrics or self.log_condition_func(logs, training_batch):
             eta = self._calc_eta(logs)
             average_duration = self._get_average_batch_duration(logs)
 
