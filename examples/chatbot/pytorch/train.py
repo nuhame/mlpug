@@ -57,7 +57,6 @@ class GatherNextSentencePredictionData:
 
         nsp_logits = auxiliary_results["nsp_logits"]
 
-        # TODO: check nsp_logits shape
         prediction_probability = self.softmax(nsp_logits)
         predictions = torch.argmax(prediction_probability, dim=1)
 
@@ -74,7 +73,6 @@ class GatherNextSentencePredictionData:
         # This looks a bit strange (inception-like), but we are simply reusing the function
         # to calculate the classification quality over multiple batches, to calculate the
         # classification quality over one batch. It also returns the gathered targets and predictions.
-
         return calc_classification_quality([(None, targets, predictions)])
 
     def _gather(self, tensor):
@@ -94,12 +92,14 @@ class GatherNextSentencePredictionData:
 
 # MLPug needs a TrainModel that outputs the loss
 class TrainModel(torch.nn.Module):
-    def __init__(self, model, lm_loss_weight, device):
+    def __init__(self, model, lm_loss_weight, device, activation_checkpointing=False):
         super(TrainModel, self).__init__()
 
         self.model = model
         self.lm_loss_weight = lm_loss_weight
         self.device = device
+
+        self.activation_checkpointing = activation_checkpointing
 
     def forward(self, batch_data, evaluate_settings, inference_mode=None):
         input_ids_batch, \
@@ -119,7 +119,8 @@ class TrainModel(torch.nn.Module):
             token_type_ids=token_type_ids_batch,
             labels=token_labels_ids_batch,
             mc_token_ids=last_token_idx_batch,
-            mc_labels=reply_class_batch)
+            mc_labels=reply_class_batch,
+            use_cache=not self.activation_checkpointing)
 
         loss = (results.loss*self.lm_loss_weight+results.mc_loss)/(self.lm_loss_weight+1.0)
 
@@ -217,11 +218,18 @@ class TrainingProcess(TrainingProcessBase):
 
         self._log.info(f"Configuration of loaded model : \n{model_config}")
 
+        if self._args.activation_checkpointing:
+            self._model.gradient_checkpointing_enable()
+
         if self.is_distributed and self.is_primary:
             dist.barrier()
 
     def _setup_training_model(self):
-        self._training_model = TrainModel(self._model, self._args.lm_loss_weight, self._device)
+        self._training_model = TrainModel(
+            self._model,
+            self._args.lm_loss_weight,
+            self._device,
+            activation_checkpointing=self._args.activation_checkpointing)
 
         self._training_model.to(self._device)
         if self.is_distributed:
