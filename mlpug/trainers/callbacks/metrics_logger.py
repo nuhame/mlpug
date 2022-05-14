@@ -417,8 +417,9 @@ class TrainingMetricsLogger(MetricsLoggerBase):
 
         if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
             if self._batch_averaging_window is None:
-                self._log.debug(f"Set batch_averaging_window to number of batches per epoch : {num_batches_per_epoch}")
-                self._batch_averaging_window = num_batches_per_epoch
+                self._batch_averaging_window = math.ceil(num_batches_per_epoch/2.0)
+                self._log.debug(f"Set batch_averaging_window to half of "
+                                f"number of batches per epoch : {self._batch_averaging_window}")
 
             if self._batch_averaging_window == math.inf:
                 self._log.error("The batch average window is infinite, unable to calculate window average. "
