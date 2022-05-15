@@ -133,18 +133,104 @@ class ConcatBatchDicts(ConcatBatch):
 class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
-                 batch_metric_funcs,
                  model_evaluate_func=None,
                  trainer=None,
-                 batch_metric_reducer_funcs=None,
+                 gather_batch_data_funcs=None,
+                 combine_batch_data_funcs=None,
+                 metric_funcs=None,
                  batch_chunk_size=None,
-                 batch_chunk_metric_reducer_funcs=None,
                  show_dataset_evaluation_progress=False,
                  name="MetricEvaluator",
                  **kwargs):
+
         """
 
-        TODO : Add more documentation
+        A MetricEvaluator can evaluate metrics using the batch data and the training model output.
+        It can do this at different levels:
+         * Metrics calculation on the level of a single batch, either directly or
+           by first chunking the batch in to smaller batch chunks (to reduce memory usage)
+
+         * Metrics calculation on the level of multiple batches, e.g. over a dataset or window of batches
+
+        To evaluate the metrics, the MetricEvaluator, needs a way to evaluate the training model.
+        This is done by either providing a model_evaluate_func, or a trainer instance, since a trainer
+        knows how to evaluate the training model.
+
+        In order to accurate calculate the metrics of interest, combining all the samples in a batch, or batches
+        we use a few different types of functions:
+
+         * gather_batch_data_funcs, a dict with, for each metric, a function that can gather
+           batch data (and model output) from different devices in a distributed training setting, if applicable
+
+         * combine_batch_data_funcs, a dict with, for each metric, a function that can combine
+           data from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
+           or of a window of batches.
+
+         * metric_funcs, a dict with, for each metric, a function to calculate the metric based on the
+           gathered/combine batch data
+
+        Note that the output of the gather_batch_data_funcs and the combine_batch_data_funcs must be
+        of the same type/form, such that the metric_funcs can take as input, outputs from both these functions.
+
+        :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
+            Instead of providing a model_evaluate_func, you can provide a trainer instance.
+            Also see below.
+
+            IMPORTANT: it is assumed that the `model_evaluate_func` takes all
+            appropriate measures to disable training specific layers such as
+            dropout and gradient calculations.
+
+            Eg. for Pytorch:
+
+            def eval_model(batch_data, evaluate_settings):
+
+                my_training_model.eval()
+
+                with torch.no_grad():
+                    return my_training_model(batch_data, evaluate_settings)
+
+        :param trainer: An optional trainer instance to evaluate a model.
+            You can provide this instead of a custom model_evaluate_func
+
+        :param gather_batch_data_funcs: A dict with keys representing the metric names, the values are functions
+            that can gather batch data (and model output) from different devices in a
+            distributed training setting, if applicable
+
+            The functions will be called as follows:
+
+                 metric_func(**kwargs)
+
+                 Where kwargs will contain the following keys:
+                 'batch', 'evaluate_settings' and the keys of the model evaluation results, see model_evaluate_func
+                 Usually that is 'loss' and 'auxiliary_results'.
+
+                 Example gather_batch_data_funcs dict:
+
+                     def gather_loss_data(batch, loss, **kwargs):
+                        inputs = batch[0]
+                        num_samples = inputs.shape[1]
+
+                        return loss, num_samples
+
+                     def gather_classification_data(batch, auxiliary_results, **kwargs):
+                        target = batch[1]
+                        predicted = auxiliary_results[0]
+
+                        return target, predicted
+
+                     gather_batch_data_funcs = {
+                        'loss': gather_loss_data,
+                        'classification': get_target_and_predicted
+                     }
+
+                NOTE that these examples do not deal with gather data from multiple devices
+                in a distributed training setting.
+
+        :param combine_batch_data_funcs: A dict with keys representing the metric names, the values are functions
+            that can gather batch data (and model output) from different devices in a
+            distributed training setting, if applicable
+
+
 
         :param batch_metric_funcs: A dict with keys representing the metric names
              (e.g. "loss", "recall", etc.) and the corresponding values are functions to calculate a
@@ -167,8 +253,15 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
                     return loss, num_samples
 
+                 def get_target_and_predicted(batch, auxiliary_results, **kwargs):
+                        target = batch[1]
+                        predicted = auxiliary_results[0]
+
+                        return target, predicted
+
                  batch_metric_funcs = {
-                    'loss': gather_loss_data
+                    'loss': gather_loss_data,
+                    'classification': get_target_and_predicted
                  }
 
              Using the above function, loss data can be gathered over multiple batches and reduced to, e.g., an
@@ -221,28 +314,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :type batch_metric_funcs: dict
 
-        :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
-                                    Instead of providing a model_evaluate_func, you can provide a trainer instance.
-                                    Also see below.
-
-                                    IMPORTANT: it is assumed that the `model_evaluate_func` takes all
-                                    appropriate measures to disable training specific layers such as
-                                    dropout and gradient calculations.
-
-                                    Eg. for Pytorch:
-
-                                    def eval_model(batch_data, evaluate_settings):
-
-                                        my_training_model.eval()
-
-                                        with torch.no_grad():
-                                            return my_training_model(batch_data, evaluate_settings)
-
         :type model_evaluate_func: callable
-
-        :param trainer: An optional trainer instance to evaluate a model, you can provide this instead of a
-                        custom model_evaluate_func
-        :type trainer: Trainer child instance
 
         :param batch_metric_reducer_funcs: Optional.
                  A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
