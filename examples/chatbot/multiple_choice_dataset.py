@@ -10,6 +10,7 @@ class MultipleConversationChoicesDataset(Base):
     def __init__(self,
                  persona_chat_dataset: List[Dict],
                  sample_factory: Callable,
+                 max_num_samples: Optional[int] = None,
                  num_choices: Optional[int] = None,
                  shuffle: bool = True,
                  name: Optional[str] = None):
@@ -32,6 +33,7 @@ class MultipleConversationChoicesDataset(Base):
                                               candidate_reply: str,
                                               is_real_reply: bool) -> model input sample data
 
+        :param max_num_samples: Optional int, when not provided all samples will be used
         :param num_choices: Optional int, when not provided all reply candidates are used
 
         :param shuffle: Boolean. If true the dataset will be randomly shuffled
@@ -43,6 +45,7 @@ class MultipleConversationChoicesDataset(Base):
         self._persona_chat_dataset = persona_chat_dataset
         self._sample_factory = sample_factory
 
+        self._max_num_samples = max_num_samples
         self._num_choices = num_choices
 
         self._shuffle = shuffle
@@ -55,6 +58,13 @@ class MultipleConversationChoicesDataset(Base):
 
         if self._shuffle:
             random.shuffle(self._conversation_metadata)
+
+        if self._max_num_samples is not None:
+            num_samples = len(self._conversation_metadata)
+            max_num_samples = min(num_samples, self._max_num_samples)
+            self._log.info(f"Reducing dataset to {max_num_samples} samples, original size: {num_samples}")
+
+            self._conversation_metadata = self._conversation_metadata[:max_num_samples]
 
     def __len__(self):
         return len(self._conversation_metadata)

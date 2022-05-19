@@ -11,6 +11,12 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='Huggingface pre-trained model name of GPT2 model')
 
     parser.add_argument(
+        '--max-conversations',
+        type=int, required=False, default=None,
+        help='Num. of conversations to use during training. '
+             'This is typically used for debugging or demo purposes.')
+
+    parser.add_argument(
         '--num-choices',
         type=int, required=False, default=None,
         help='Num. of reply choices')
@@ -41,10 +47,12 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
 def describe_args(args, logger):
     logger.info(f"Pre-trained model name: {args.pretrained_model}")
 
+    logger.info(f"Max. num. conversations to use (None = all): {args.max_conversations}")
     logger.info(f"Num. of reply choices : {args.num_choices}")
 
     describe_base_args(args, logger)
 
+    logger.info(f"Batch chunk size (for gradient accumulation): {args.batch_chunk_size}")
     logger.info(f"Weight decay: {args.weight_decay}")
     logger.info(f"Dropout rate: {args.dropout_rate}")
     logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")

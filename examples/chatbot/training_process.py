@@ -117,7 +117,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
     @property
     def num_devices(self):
-        return self._num_devices > 1
+        return self._num_devices
 
     @property
     def is_distributed(self):
@@ -177,6 +177,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._sample_training_set = MultipleConversationChoicesDataset(dataset["train"],
                                                                        sample_factory,
+                                                                       max_num_samples=self._args.max_conversations,
                                                                        num_choices=self._args.num_choices,
                                                                        name="TrainingSampleGenerator")
         self._sample_training_set.initialize()
