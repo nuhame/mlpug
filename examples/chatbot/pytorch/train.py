@@ -30,6 +30,10 @@ except Exception as e:
 
 
 def worker_fn(rank, args, world_size):
+    # if rank == 0:
+    #     import pydevd_pycharm
+    #     pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+
     mlp.logging.use_fancy_colors()
 
     training_process = TrainingProcess(rank, args, num_devices=world_size)
@@ -39,10 +43,13 @@ def worker_fn(rank, args, world_size):
 
 class GatherNextSentencePredictionData:
 
-    def __init__(self, is_primary=True, is_distributed=False, num_devices=1):
+    def __init__(self, is_primary=True, is_distributed=False, num_devices=1, device='cpu'):
+
         self.is_primary = is_primary
         self.is_distributed = is_distributed
         self.num_devices = num_devices
+
+        self.device = device
 
         self.softmax = torch.nn.Softmax(dim=1)
 
@@ -53,9 +60,14 @@ class GatherNextSentencePredictionData:
         # [2] token_labels_ids_batch,
         # [3] last_token_idx_batch,
         # [4] reply_class_batch
-        targets = batch[4]
 
-        nsp_logits = auxiliary_results["nsp_logits"]
+        # Transport the target tensor to the current device such that we can use the gathering process.
+        targets = batch[4].to(self.device)
+
+        # Detach to save memory
+        nsp_logits = auxiliary_results["nsp_logits"].detach()
+        # Delete tensor since we don't need it anymore
+        del auxiliary_results["nsp_logits"]
 
         prediction_probability = self.softmax(nsp_logits)
         predictions = torch.argmax(prediction_probability, dim=1)
@@ -142,6 +154,9 @@ class TrainingProcess(TrainingProcessBase):
     def __init__(self, rank, args, num_devices, name="PTTrainingProcess"):
         super().__init__(rank, args, num_devices, name=name)
 
+        self._training_sampler = None
+        self._validation_sampler = None
+
     def _setup_compute(self):
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -155,6 +170,7 @@ class TrainingProcess(TrainingProcessBase):
                                         rank=self.rank,
                                         world_size=self._num_devices)
 
+                self._log.info(f"Distributed Data Parallel mode.")
                 self._log.info(f"Training using multiple GPUs: Using GPU {self.rank}/{self.num_devices}")
             else:
                 self._log.info(f"Single device mode : Using GPU {self.rank}")
@@ -181,17 +197,15 @@ class TrainingProcess(TrainingProcessBase):
         return dataset
 
     def _setup_batch_datasets(self):
-        training_sampler = None
-        validation_sampler = None
         if self.is_distributed:
-            training_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_training_set)
-            validation_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_validation_set)
+            self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_training_set)
+            self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_validation_set)
 
         self._batch_training_set = torch.utils.data.DataLoader(
             self._sample_training_set,
             batch_size=self._args.batch_size,
             shuffle=False,  # Samples already shuffled
-            sampler=training_sampler,
+            sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
 
@@ -200,7 +214,7 @@ class TrainingProcess(TrainingProcessBase):
             self._sample_validation_set,
             batch_size=self._args.batch_size,
             shuffle=False,  # Samples already shuffled
-            sampler=validation_sampler,
+            sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
 
@@ -265,7 +279,23 @@ class TrainingProcess(TrainingProcessBase):
         # In distributed training mode, this will gather the Next Sentence Predictions and Targets
         return GatherNextSentencePredictionData(is_primary=self.is_primary,
                                                 is_distributed=self.is_distributed,
-                                                num_devices=self.num_devices)
+                                                num_devices=self.num_devices,
+                                                device=self._device)
+
+    def _setup_callbacks(self):
+        super()._setup_callbacks()
+
+        if self.is_distributed:
+            # These callbacks provide the current epoch to the DistributedSampler to re-randomize the samples
+            # in every epoch. They are added before the other callbacks
+            self._callbacks = [
+                mlp.callbacks.DistributedSamplerManager(
+                    self._training_sampler,
+                    name="DistributedSamplerManager[training]"),
+                mlp.callbacks.DistributedSamplerManager(
+                    self._validation_sampler,
+                    name="DistributedSamplerManager[validation]")
+            ] + self._callbacks
 
     @staticmethod
     def get_logger_info(rank, num_devices, name):
@@ -308,7 +338,7 @@ if __name__ == '__main__':
                         f"limiting training to {num_gpus_available} GPUS")
             world_size = num_gpus_available
 
-        logger.info(f"Distributed Data Parallel mode : Using {world_size} GPUs")
+        logger.info(f"Spawning {world_size} training workers, one for each GPU.")
         logger.info(f"Global batch size: {args.batch_size*world_size}")
 
         mp.spawn(worker_fn,
