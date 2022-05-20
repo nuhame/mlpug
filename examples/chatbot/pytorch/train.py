@@ -140,7 +140,8 @@ class TrainModel(torch.nn.Module):
             "loss": loss,
             "auxiliary_results": {
                 # required to calculate next sentence prediction (classification) quality
-                "nsp_logits": results.mc_logits
+                # Detach graph to reduce memory usage
+                "nsp_logits": results.mc_logits.detach()
             }
         }
 
@@ -207,7 +208,8 @@ class TrainingProcess(TrainingProcessBase):
             shuffle=False,  # Samples already shuffled
             sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
-            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
+            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id),
+            pin_memory=True)
 
         # Using the test set as a validation set, just for demonstration purposes
         self._batch_validation_set = torch.utils.data.DataLoader(
@@ -216,7 +218,8 @@ class TrainingProcess(TrainingProcessBase):
             shuffle=False,  # Samples already shuffled
             sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
-            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id))
+            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id),
+            pin_memory=True)
 
     def _build_model(self):
         if self.is_distributed and not self.is_primary:
