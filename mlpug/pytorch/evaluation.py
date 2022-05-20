@@ -87,7 +87,6 @@ class GatherLossSimple(GatherLossBase):
 
     def __call__(self, loss, **kwargs):
         training_loss = loss
-        training_loss.detach_()
 
         loss, loss_sum, num_samples = self._gather_loss_func(loss=training_loss, **kwargs)
 
@@ -121,7 +120,6 @@ class GatherMaskedLoss(GatherLossBase):
 
     def __call__(self, loss, auxiliary_results, **kwargs):
         training_loss = loss
-        training_loss.detach_()
 
         self._do_detatch_auxiliary_results(auxiliary_results)
 
