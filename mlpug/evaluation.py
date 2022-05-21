@@ -34,51 +34,64 @@ def no_reduction(batch_metrics_list):
     return batch_metrics_list
 
 
-class ConcatBatch(metaclass=abc.ABCMeta):
+class CombineBatchData(metaclass=abc.ABCMeta):
 
     def __init__(self, dim: int = 0):
         """
-
-        :param dim: dimension of to concatenate the numpy arrays over
+        :param dim: dimension of to concatenate the numpy arrays over, if relevant
         """
         self.dim = dim
 
     @abc.abstractmethod
     def __call__(self, iterable: Iterable[Collection]) -> Collection:
+        """
+        Assumes that the input is a iterable of batch data, where each batch data object contains items that are
+        numpy arrays and/or int/float scalars.
+
+        When a batch data item value is a numpy array, the array values for this item are concatenated
+        When a batch data item value is a float/int scalar, the array values for this item are summed
+
+        In other cases no specific combination is made, these item values will just be combined in to a list.
+
+        :param iterable:
+        :return:
+        """
         raise NotImplementedError("Please implement in your child class.")
 
     def _concat(self, list_of_items):
         first_item = next(iter(list_of_items))
 
-        if isinstance(first_item, np.ndarray):
+        if isinstance(first_item, (float, int, np.number)):
+            return sum(list_of_items)
+        elif isinstance(first_item, np.ndarray):
             return np.concatenate(list_of_items, axis=self.dim)
         else:
             return list_of_items
 
 
-class ConcatBatchTuples(ConcatBatch):
+class CombineBatchTuples(CombineBatchData):
 
     def __call__(self, tuples: Iterable[Tuple]) -> Tuple:
         """
 
-        Concatenates tuple items that are numpy arrays.
+        Assumes that batch data in the iterable are tuples.
+        Also see CombineBatchData.
 
-        However, when a tuple item is not a numpy array, no specific concatenation is performed.
-        These items will just be combined in to a list.
 
-        :param tuples:    Real world example, with first item NOT a numpy array:
+        :param tuples:    Real world example, with first item NOT a numpy array or int/float scalar:
                           [
                               # Batch 1
-                              (Dict with classification metrics , labels Numpy Array, predictions Numpy array),
+                              (labels Numpy Array, predictions Numpy array, num_samples int, other data type),
                               ...
                               # Batch M
-                              (Dict with classification metrics , labels Numpy Array, predictions Numpy array)
+                              (labels Numpy Array, predictions Numpy array, num_samples int, other data type),
                           ]
 
         :return: Result for real world example:
-                 (all M dicts in one List,
-                  all M label numpy arrays concatenated,
-                  all M prediction numpy arrays concatenated)
+                 (all M label numpy arrays concatenated,
+                  all M prediction numpy arrays concatenated,
+                  all M num_samples summed,
+                  all M values of other data type in a list)
 
         """
 
@@ -87,36 +100,37 @@ class ConcatBatchTuples(ConcatBatch):
         return tuple(self._concat(list_of_items) for list_of_items in lists_of_items)
 
 
-class ConcatBatchDicts(ConcatBatch):
+class CombineBatchDicts(CombineBatchData):
 
     def __call__(self, dicts: Iterable[Dict]) -> Dict:
         """
 
-        Concatenates dict values that are numpy arrays.
-
-        However, when a dict value is not a numpy array, no specific concatenation is performed.
-        These values will just be combined in to a list.
+        Assumes that batch data in the iterable are dict's.
+        Also see CombineBatchData.
 
         :param dicts:     Real world example:
                           [
                               {
-                                "quality": Batch 1 classification quality Dict,
-                                "labels": Batch 1 numpy array with labels,
-                                "predictions": Batch 1 numpy array predictions
+                                "labels": Batch 1 Numpy Array with labels,
+                                "predictions": Batch 1 Numpy Array with predictions,
+                                "num_samples": Batch 1 num. samples (int),
+                                "other_data": Batch 1 other data not of type Numpy Array or scalar
                               },
                               ...
                               {
-                                "quality": Batch M classification quality Dict,
-                                "labels": Batch M numpy array with labels,
-                                "predictions": Batch M numpy array predictions
+                                "labels": Batch M Numpy Array with labels,
+                                "predictions": Batch M Numpy Array with predictions,
+                                "num_samples": Batch M num. samples (int),
+                                "other_data": Batch 1 other data not of type Numpy Array or scalar
                               }
                           ]
 
         :return: Result for real world example:
                 {
-                    "quality": List with M classification quality Dicts,
                     "labels": all M label numpy arrays concatenated,
-                    "predictions": all M prediction numpy arrays concatenated
+                    "predictions": all M prediction numpy arrays concatenated,
+                    "num_samples": sum of all M num_samples,
+                    "other_data": all M values of other data type in a list
                 }
         """
         try:
@@ -156,21 +170,22 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         This is done by either providing a model_evaluate_func, or a trainer instance, since a trainer
         knows how to evaluate the training model.
 
-        In order to accurate calculate the metrics of interest, combining all the samples in a batch, or batches
-        we use a few different types of functions:
+        In order to accurately calculate the metrics of interest, combining all the samples in a batch, or batches
+        we call a few different types of functions in order:
 
-         * gather_batch_data_funcs, a dict with, for each metric, a function that can gather
-           batch data (and model output) from different devices in a distributed training setting, if applicable
+         1) gather_batch_data_funcs, a dict with, for each metric, a function that can
+            gather batch data (and model output) from different devices in a distributed training setting, if applicable
 
-         * combine_batch_data_funcs, a dict with, for each metric, a function that can combine
-           data from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
-           or of a window of batches.
+         2) combine_batch_data_funcs, a dict with, for each metric, a function that can
+            combine data from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
+            or of a window of batches.
 
-         * metric_funcs, a dict with, for each metric, a function to calculate the metric based on the
-           gathered/combine batch data
+         3) metric_funcs, a dict with, for each metric, a function to
+            calculate the metric based on the gathered/combined batch data
 
         Note that the output of the gather_batch_data_funcs and the combine_batch_data_funcs must be
-        of the same type/form, such that the metric_funcs can take as input, outputs from both these functions.
+        of the same type/structure, such that the metric_funcs can take as input, outputs from both these functions.
+
 
         :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
             Instead of providing a model_evaluate_func, you can provide a trainer instance.
@@ -192,9 +207,14 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :param trainer: An optional trainer instance to evaluate a model.
             You can provide this instead of a custom model_evaluate_func
 
-        :param gather_batch_data_funcs: A dict with keys representing the metric names, the values are functions
-            that can gather batch data (and model output) from different devices in a
-            distributed training setting, if applicable
+        :param gather_batch_data_funcs: A dict with keys representing the metric names
+            (e.g. "loss", "classification", etc.), the values are functions that can
+            gather batch data (and model output) from different devices in a distributed training setting,
+            if applicable.
+
+            Default: If no gather_batch_data_funcs are provided, a default implementation to gather loss data is used.
+
+            # TODO: can we generalize the distributed data gathering + transfer to CPU + convert to numpy?
 
             The functions will be called as follows:
 
@@ -202,7 +222,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
                  Where kwargs will contain the following keys:
                  'batch', 'evaluate_settings' and the keys of the model evaluation results, see model_evaluate_func
-                 Usually that is 'loss' and 'auxiliary_results'.
+                 Usually this is 'loss' and 'auxiliary_results'.
 
                  Example gather_batch_data_funcs dict:
 
@@ -220,22 +240,27 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
                      gather_batch_data_funcs = {
                         'loss': gather_loss_data,
-                        'classification': get_target_and_predicted
+                        'classification': gather_classification_data
                      }
 
-                NOTE that these examples do not deal with gather data from multiple devices
-                in a distributed training setting.
+                NOTE: these examples do not deal with gather data from multiple devices in a
+                distributed training setting. How this is implemented depends on the Machine Learning library you use.
+                For loss MLPug provides a default implementation that can deal with gathering data from
+                multiple devices in a distributed training setting.
 
-        :param combine_batch_data_funcs: A dict with keys representing the metric names, the values are functions
-            that can gather batch data (and model output) from different devices in a
-            distributed training setting, if applicable
+        :param combine_batch_data_funcs: A dict with keys representing the metric names
+            (e.g. "loss", "classification", etc.), the values are functions that can
+            combine gathered batch data (see gather_batch_data_funcs) from multiple batches, or batch chunks.
+
+            Default: If no combine_batch_data_funcs are provided, the defaults are as follows:
+             * for 'loss': the loss and num_samples are summed over all batch data given using `CombineBatchTuples`
+             * for other metrics: it is assumed that the output of the gather_batch_data_funcs are
+               tuples of Numpy arrays. To combine the Numpy arrays `CombineBatchTuples` is also used
 
 
-
-        :param batch_metric_funcs: A dict with keys representing the metric names
-             (e.g. "loss", "recall", etc.) and the corresponding values are functions to calculate a
-             metric value, or to gather information to calculate or reduce an overall metric value, also see
-             batch_metric_reducer_funcs.
+        :param metric_funcs: A dict with keys representing the metric names
+             (e.g. "loss", "classification", etc.), the values are functions to
+             calculate a metric value based on all gathered and combined batch data
 
              The functions will be called as follows:
 
