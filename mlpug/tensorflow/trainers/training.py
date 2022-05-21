@@ -454,10 +454,14 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                     auxiliary_results: list of dicts:
                                         [
                                             ...
+
                                             {
-                                                "results": chunk aux. results,
-                                                "num_samples": num samples in chunk
+                                                ... chunk aux. results ...,
+                                                "chunk_length": num samples in chunk
                                             }
+                                            or
+                                            (... chunk aux. results ..., <chunk_length>)
+
                                             ...
                                         ]
                     accumulated_grads: weighted average of chunk gradients
@@ -518,10 +522,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 accumulated_grads[optimizer_name] = [(accu_grad+chunk_grad)
                                                      for accu_grad, chunk_grad in zip(accu_grads, chunk_grads)]
 
-            auxiliary_results += [{
-                "results": aux_results,
-                "num_samples": chunk_len
-            }]
+            auxiliary_results += [extend_auxiliary_results(aux_results, chunk_len, key="chunk_length")]
 
         return loss, auxiliary_results, accumulated_grads
 

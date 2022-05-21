@@ -176,6 +176,9 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
 
             self._back_propagate_from(loss)
+
+            # Reduce memory usage
+            loss.detach_()
         else:
             chunk_losses, chunk_aux_results, chunk_lengths = self._calc_gradients_chunked(batch_data, training_settings)
 
@@ -224,7 +227,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             last_chunk = chunk_idx == (num_chunks-1)
             self._back_propagate_from(chunk_len*loss/batch_size, last_chunk=last_chunk)
 
-            chunk_losses += [loss]
+            # Detach from graph to reduce memory
+            chunk_losses += [loss.detach_()]
             chunk_aux_results += [aux_results]
             chunk_lengths += [chunk_len]
 
@@ -237,13 +241,18 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
         :returns loss, auxiliary_results
                     loss: weighted average of chunk losses
-                    auxiliary_results: list of dicts:
+                    auxiliary_results: list of dicts or tuples extended with number of samples
+                                       used per chunk ("chunk_length"):
                                         [
                                             ...
+
                                             {
-                                                "results": chunk aux. results,
-                                                "num_samples": num samples in chunk
+                                                ... chunk aux. results ...,
+                                                "chunk_length": num samples in chunk
                                             }
+                                            or
+                                            (... chunk aux. results ..., <chunk_length>)
+
                                             ...
                                         ]
         """
@@ -253,10 +262,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
         loss /= num_samples
 
-        auxiliary_results = [{
-            "results": aux_results,
-            "num_samples": chunk_length
-        } for aux_results, chunk_length in zip(chunk_aux_results, chunk_lengths)]
+        auxiliary_results = [extend_auxiliary_results(aux, chunk_length, key="chunk_length")
+                             for aux, chunk_length in zip(chunk_aux_results, chunk_lengths)]
 
         auxiliary_results = BatchChunkingResults(auxiliary_results)
 
