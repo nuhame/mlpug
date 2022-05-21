@@ -1,3 +1,4 @@
+import os
 import sys
 import abc
 import math
@@ -7,12 +8,16 @@ from statistics import mean
 
 from mlpug.base import Base
 import basics.base_utils as _
+from basics.logging import get_logger
 
 from mlpug.batch_chunking import ChunkableBatch
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
 from mlpug.mlpug_exceptions import TrainerInvalidException
+
+
+logger = get_logger(os.path.basename(__file__))
 
 
 def normalize_evaluation(results):
@@ -27,6 +32,25 @@ def normalize_evaluation(results):
         return {
             "loss": results
         }
+
+
+def extend_auxiliary_results(aux, value, key=None):
+    type_aux = type(aux)
+    if type_aux is dict:
+        if key is None:
+            raise ValueError('Auxiliary results is a dict but no key given to store given value.')
+
+        if key in aux:
+            logger.warning(f"Setting new value for existing key {key} in auxiliary results : {value}")
+
+        aux[key] = value
+    elif type_aux is tuple:
+        aux += (value,)
+    else:
+        raise ValueError(f'Don\'t know how to add value to auxiliary results of type {type(aux)}, '
+                         f'auxiliary results should be of type dict or tuple')
+
+    return aux
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
@@ -455,6 +479,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     self._log.warn("Training epoch stopped early")
                     break
 
+                # We are at the start of a new batch training iteration: reset current dict
                 current = self._init_current_logs()
                 logs["current"] = current
 
