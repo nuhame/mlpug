@@ -7,7 +7,7 @@ import numpy as np
 import mlpug.abstract_interface as mlp_interface
 
 from mlpug.base import Base
-from mlpug.evaluation import ConcatBatchTuples
+from mlpug.evaluation import CombineBatchTuples
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
@@ -36,7 +36,7 @@ except Exception as e:
 
 
 def calc_classification_quality(batch_classification_data):
-    concat = ConcatBatchTuples()
+    concat = CombineBatchTuples()
 
     # batch_classification_data is a list of tuples:
     # [
