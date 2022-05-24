@@ -14,7 +14,14 @@ from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
 
 
-def forward_loss(loss, **kwargs):
+def gather_loss(loss, **kwargs):
+    """
+    Warning: this simple default implementation assumes that all batches have the same number of samples.
+
+    :param loss:
+    :param kwargs:
+    :return:
+    """
     return loss, 1
 
 
@@ -59,14 +66,20 @@ class CombineBatchData(metaclass=abc.ABCMeta):
         raise NotImplementedError("Please implement in your child class.")
 
     def _concat(self, list_of_items):
-        first_item = next(iter(list_of_items))
+        try:
+            first_item = next(iter(list_of_items))
+        except StopIteration:
+            return list_of_items
 
         if isinstance(first_item, (float, int, np.number)):
             return sum(list_of_items)
         elif isinstance(first_item, np.ndarray):
             return np.concatenate(list_of_items, axis=self.dim)
         else:
-            return list_of_items
+            return self._handle_other_type(list_of_items, first_item=first_item)
+
+    def _handle_other_type(self, list_of_items, first_item=None):
+        return list_of_items
 
 
 class CombineBatchTuples(CombineBatchData):
@@ -149,8 +162,9 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     def __init__(self,
                  model_evaluate_func=None,
                  trainer=None,
-                 gather_batch_data_funcs=None,
-                 combine_batch_data_funcs=None,
+                 gather_metric_inputs_funcs=None,
+                 gather_distributed_inputs_funcs=None,
+                 combine_metric_inputs_funcs=None,
                  metric_funcs=None,
                  batch_chunk_size=None,
                  show_dataset_evaluation_progress=False,
@@ -170,21 +184,38 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         This is done by either providing a model_evaluate_func, or a trainer instance, since a trainer
         knows how to evaluate the training model.
 
-        In order to accurately calculate the metrics of interest, combining all the samples in a batch, or batches
+
+        In order to accurately calculate the metrics of interest, combining all the samples in a batch, or batches,
         we call a few different types of functions in order:
 
-         1) gather_batch_data_funcs, a dict with, for each metric, a function that can
-            gather batch data (and model output) from different devices in a distributed training setting, if applicable
+         1) `gather_metric_inputs_funcs`, a dict with, for each metric, a function that can
+            gather inputs, from the batch data and model output, to calculate the metric of interest with
 
-         2) combine_batch_data_funcs, a dict with, for each metric, a function that can
-            combine data from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
+         2) `gather_distributed_inputs_funcs`, a dict with, for each metric, a function that can
+            gather the metric inputs from different devices in a distributed computing context, if applicable
+
+         3) `combine_metric_inputs_funcs`, a dict with, for each metric, a function that can
+            combine metric inputs from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
             or of a window of batches.
 
-         3) metric_funcs, a dict with, for each metric, a function to
-            calculate the metric based on the gathered/combined batch data
+         4) `metric_funcs`, a dict with, for each metric, a function to
+            calculate the metric based on the gathered/combined metric inputs
 
-        Note that the output of the gather_batch_data_funcs and the combine_batch_data_funcs must be
-        of the same type/structure, such that the metric_funcs can take as input, outputs from both these functions.
+        In a default situation, for loss no functions need to be provided, defaults are available for all functions
+        For other metrics, at least a gather_metric_inputs_func and a metric_func needs to be provided.
+
+        In summary, for each metric the functions are called as follows:
+        batch_metric_inputs = gather_metric_inputs_func(batch, evaluate_settings, loss, auxiliary_results)
+        batch_metric_inputs = gather_distributed_inputs_func(batch_metric_inputs)
+
+        In case of calculating metrics for a single batch:
+            metric = metric_func(batch_metric_inputs)
+
+        In case of calculating metrics over multiple batches, or batch chunks:
+            combined_metric_inputs = combine_metric_inputs_func([batch_metric_inputs1, ..., batch_metric_inputsM])
+            metric = metric_func(combined_metric_inputs)
+
+        Hence, the data structure of batch_metric_inputs and combined_metric_inputs must be the same.
 
 
         :param model_evaluate_func: Optional. f(batch_data, evaluate_settings) -> model_output
@@ -207,161 +238,116 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :param trainer: An optional trainer instance to evaluate a model.
             You can provide this instead of a custom model_evaluate_func
 
-        :param gather_batch_data_funcs: A dict with keys representing the metric names
+        :param gather_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
-            gather batch data (and model output) from different devices in a distributed training setting,
-            if applicable.
+            gather inputs, from the batch data and model output, to calculate the metric of interest with
 
-            Default: If no gather_batch_data_funcs are provided, a default implementation to gather loss data is used.
+            In general there is no strict signature for the functions here.
+            However, for defaults the following is assumed:
+                func(batch, evaluate_settings, loss, auxiliary_results) -> Tuple[Union[T, int, float]]
+                Where T is a Tensor.
 
-            # TODO: can we generalize the distributed data gathering + transfer to CPU + convert to numpy?
+            Default: If no gather_metric_inputs_funcs are provided, a default implementation to only gather
+            loss data is used.
 
             The functions will be called as follows:
 
-                 metric_func(**kwargs)
+                gather_metric_inputs_func(**kwargs)
 
-                 Where kwargs will contain the following keys:
-                 'batch', 'evaluate_settings' and the keys of the model evaluation results, see model_evaluate_func
-                 Usually this is 'loss' and 'auxiliary_results'.
+                Where kwargs will contain the following keys:
+                'batch', 'evaluate_settings' and the keys of the model evaluation results, see model_evaluate_func
+                Usually this is 'loss' and 'auxiliary_results'.
 
-                 Example gather_batch_data_funcs dict:
+                Example gather_batch_data_funcs dict:
 
-                     def gather_loss_data(batch, loss, **kwargs):
+                    def gather_loss_data(batch, loss, **kwargs):
                         inputs = batch[0]
                         num_samples = inputs.shape[1]
 
                         return loss, num_samples
 
-                     def gather_classification_data(batch, auxiliary_results, **kwargs):
+                    def gather_classification_data(batch, auxiliary_results, **kwargs):
                         target = batch[1]
                         predicted = auxiliary_results[0]
 
                         return target, predicted
 
-                     gather_batch_data_funcs = {
+                    gather_batch_data_funcs = {
                         'loss': gather_loss_data,
                         'classification': gather_classification_data
-                     }
-
-                NOTE: these examples do not deal with gather data from multiple devices in a
-                distributed training setting. How this is implemented depends on the Machine Learning library you use.
-                For loss MLPug provides a default implementation that can deal with gathering data from
-                multiple devices in a distributed training setting.
-
-        :param combine_batch_data_funcs: A dict with keys representing the metric names
-            (e.g. "loss", "classification", etc.), the values are functions that can
-            combine gathered batch data (see gather_batch_data_funcs) from multiple batches, or batch chunks.
-
-            Default: If no combine_batch_data_funcs are provided, the defaults are as follows:
-             * for 'loss': the loss and num_samples are summed over all batch data given using `CombineBatchTuples`
-             * for other metrics: it is assumed that the output of the gather_batch_data_funcs are
-               tuples of Numpy arrays. To combine the Numpy arrays `CombineBatchTuples` is also used
-
-
-        :param metric_funcs: A dict with keys representing the metric names
-             (e.g. "loss", "classification", etc.), the values are functions to
-             calculate a metric value based on all gathered and combined batch data
-
-             The functions will be called as follows:
-
-             metric_func(**kwargs)
-
-             Where kwargs will contain the following keys:
-             'batch', 'evaluate_settings' and the keys of the model evaluation results, see model_evaluate_func
-             Usually that is 'loss' and 'auxiliary_results'.
-
-             Example batch_metric_funcs dict:
-
-                 def gather_loss_data(batch, loss, **kwargs):
-                    inputs = batch[0]
-                    num_samples = inputs.shape[1]
-
-                    return loss, num_samples
-
-                 def get_target_and_predicted(batch, auxiliary_results, **kwargs):
-                        target = batch[1]
-                        predicted = auxiliary_results[0]
-
-                        return target, predicted
-
-                 batch_metric_funcs = {
-                    'loss': gather_loss_data,
-                    'classification': get_target_and_predicted
-                 }
-
-             Using the above function, loss data can be gathered over multiple batches and reduced to, e.g., an
-             average loss using a reducer function, see batch_metric_reducer_funcs constructor parameter and the
-             default_metric_reducer_func in this package.
-
-             NOTE : Although the above gather_loss_data function returns a tuple of loss, num_samples, the LogProgress
-             logger will always only print the first value in the tuple, that is, the loss
-
-             The function can also return a dict with metrics. For instance:
-
-                 def calc_metrics(loss, **kwargs):
-                    return {
-                        "loss": loss,
-                        "perplexity": math.exp(loss),
                     }
 
-                 batch_metric_funcs = {
-                    'metrics': calc_metrics
-                 }
+        :param gather_distributed_inputs_funcs: A dict with keys representing the metric names
+            (e.g. "loss", "classification", etc.), the values are functions that can
+            gather the metric inputs from different devices in a distributed computing context, if applicable.
 
-             In the example below, per batch, target and predicted values are gathered and subsequently reduced
-             to a recall score using a reducer func, also see batch_metric_reducer_funcs:
+            In general there is no strict signature for the functions here.
+            However for defaults, the following is assumed:
+                gather_func(gathered_input_data: Tuple[Union[T, float, int]]) -> Tuple[Union[T, float, int]]
+                Where T is a Tensor type.
 
-                 def get_target_and_predicted(batch, auxiliary_results, **kwargs):
-                        target = batch[1]
-                        predicted = auxiliary_results[0]
+            Per Deep Learning library a default implementation is provided for this parameter.
 
-                        return target, predicted
+        :param combine_metric_inputs_funcs: A dict with keys representing the metric names
+            (e.g. "loss", "classification", etc.), the values are functions that can
+            combine metric inputs from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
+            or of a window of batches.
 
-                 batch_metric_funcs = {
-                    'recall': get_target_and_predicted
-                 }
+            In general there is no strict signature for the functions here.
+            However for defaults, the following is assumed:
+                combine_func(gathered_input_data: Iterable[Tuple[Union[T, float, int]]])
+                    -> Tuple[Union[Iterable, T, float, int]]
+                Where T is a Tensor type (numpy arrays are also allowed)
 
-                 The corresponding reducer_func could be:
+            Default: If no combine_metric_inputs_funcs are provided, the defaults are as follows:
+                * for 'loss': the loss and num_samples are summed over all batch data given using `CombineBatchTuples`
+                * for other metrics: it is assumed that the output of the gather_batch_data_funcs are
+                  tuples of Tensors of the Deep Learning library used (numpy arrays are also allowed).
 
-                def calc_recall(batch_metrics_list):
-                    target = []
-                    predicted = []
-                    # append all batch-level data
-                    for t, p in batch_metrics_list:
-                        target.append(t)
-                        predicted.append(p)
+                To do this `CombineBatchTuples` is also used here.
 
-                    return recall_score(t, p)
+        :param metric_funcs: A dict with keys representing the metric names
+            (e.g. "loss", "classification", etc.), the values are functions to
+            calculate the metric based on the gathered/combined metric inputs
 
-                 batch_metric_reducer_funcs = {
-                    'recall': calc_recall
-                 }
+            In general there is no strict signature for the functions here.
+            However for defaults, the following is assumed:
+                metric_func(combined_input_data: Tuple[Union[Iterable, T, float, int]]) -> Union[M, Tuple[M], Dict[M]]
+                Where M is a scalar float/int/numpy.number
 
-        :type batch_metric_funcs: dict
+            Default: If no metric_funcs are provided, the defaults are as follows:
+                * for 'loss': the average loss is calculated; it is assumed that
+                * for other metrics: it is assumed that the output of the gather_batch_data_funcs are
+                  tuples of Tensors of the Deep Learning library used (numpy arrays are also allowed).
 
-        :type model_evaluate_func: callable
+                  To do this `CombineBatchTuples` is also used here.
 
-        :param batch_metric_reducer_funcs: Optional.
-                 A dict with keys representing the metric names (e.g. "loss", "recall", etc.) and
-                 the corresponding values are functions to calculate the overall or reduced metric value,
-                 based on metrics, or other data, gathered per batch, also see batch_metric_funcs
+            Example metric_funcs dict:
 
-                 The functions will be called as follows:
+                def average_loss(combined_metric_inputs):
+                    loss_sum, tot_num_samples = combined_metric_inputs
 
-                 reducer_func(batch_metrics_list), where batch_metrics_list is a list with metrics or
-                 other data gathered per batch.
+                    return loss_sum/tot_num_samples
 
-                 See `batch_metric_funcs` for example.
+                def calc_classification_quality(combined_metric_inputs):
+                    target, predicted = combined_metric_inputs
 
-                 By default, for each metric name, available as keys of the batch_metric_funcs, an averaging function
-                 is provided. This averaging function assumes a list of tuples:
-                 (summed_metric, num_samples)
-                 ...
-                 (summed_metric, num_samples)
+                    recall, precision = ... calculate precision and recall based in target and predicted ...
 
-                 See default_metric_reducer_func in this package.
+                    return {
+                        'recall': recall,
+                        'precision': precision
+                    }
 
-        :type batch_metric_reducer_funcs: dict
+                metric_funcs = {
+                    'loss': average_loss,
+                    'classification': calc_classification_quality
+                }
+
+            NOTE :
+             * When a tuple is returned, the LogProgress logger will always only print the first value in the tuple
+             * When a dict is returned, the LogProgress logger will print values for all keys in the dict
+               (e.g. recall and precision)
 
         :param batch_chunk_size: If given, batches will be evaluated by chunking it to
                  smaller batches of size batch_chunk_size
@@ -375,15 +361,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
                  Reduce all batch metric results of the chunks using batch_chunk_metric_reducer_funcs
         :type batch_chunk_size: int
-
-        :param batch_chunk_metric_reducer_funcs: Optional, when providing batch_chunk_size
-            Similar to batch_metric_reducer_funcs, reduces the batch metric results for all batch chunk to a final
-            metric
-
-            If batch_chunk_size is provided, but no batch_chunk_metric_reducer_funcs are provided, the
-            batch_metric_reducer_funcs are used instead by default.
-
-        :type batch_chunk_metric_reducer_funcs: dict
 
         :param show_dataset_evaluation_progress If True, the progress of dataset evaluation will be logged
         :type show_dataset_evaluation_progress
@@ -406,51 +383,60 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             self._model_evaluate_func = model_evaluate_func
 
         try:
-            if batch_metric_funcs is None:
-                batch_metric_funcs = {
-                    "loss": forward_loss
+            if gather_metric_inputs_funcs is None:
+                gather_metric_inputs_funcs = {
+                    "loss": gather_loss
                 }
 
-            self.check_funcs(batch_metric_funcs)
+            self.check_funcs(gather_metric_inputs_funcs)
         except InvalidParametersException as e:
-            raise InvalidParametersException("The batch metrics funcs are invalid") from e
+            raise InvalidParametersException("The gather metric inputs funcs are invalid") from e
 
-        if batch_metric_reducer_funcs is None:
-            batch_metric_reducer_funcs = {}
+        if gather_distributed_inputs_funcs is None:
+            gather_distributed_inputs_funcs = {}
 
-        # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
-        for metric_name in batch_metric_funcs.keys():
-            if metric_name not in batch_metric_reducer_funcs:
-                self._log.debug(f'batch_metric_reducer_funcs: '
-                                f'Adding default_metric_reducer_func for metric {metric_name}')
-                batch_metric_reducer_funcs[metric_name] = default_metric_reducer_func
+        # For the different deep learning library backends supported, defaults should be provided
+        for metric_name in gather_metric_inputs_funcs.keys():
+            if metric_name not in gather_distributed_inputs_funcs:
+                raise InvalidParametersException(
+                    f'No gather_distributed_inputs_func provided for metric : {metric_name}')
 
         try:
-            self.check_funcs(batch_metric_reducer_funcs, func_names=batch_metric_funcs.keys())
+            self.check_funcs(gather_distributed_inputs_funcs, func_names=gather_metric_inputs_funcs.keys())
         except InvalidParametersException as e:
-            raise InvalidParametersException("The batch metric reducer funcs are invalid") from e
+            raise InvalidParametersException("There are issues with the provided gather_distributed_inputs_funcs") \
+                from e
 
-        if batch_chunk_size is not None:
-            if batch_chunk_metric_reducer_funcs is None:
-                batch_chunk_metric_reducer_funcs = batch_metric_reducer_funcs.copy()
+        # For the different deep learning library backends supported, defaults should be provided
+        if combine_metric_inputs_funcs is None:
+            combine_metric_inputs_funcs = {}
 
-            # Add default metric averaging funcs for metrics that don't have a metric averaging func provided:
-            for metric_name in batch_metric_funcs.keys():
-                if metric_name not in batch_chunk_metric_reducer_funcs:
-                    self._log.debug(f'batch_chunk_metric_reducer_funcs: '
-                                    f'Adding default_metric_reducer_func for metric {metric_name}')
-                    batch_chunk_metric_reducer_funcs[metric_name] = default_metric_reducer_func
+        for metric_name in gather_metric_inputs_funcs.keys():
+            if metric_name not in combine_metric_inputs_funcs:
+                raise InvalidParametersException(f'No combine_metric_inputs_func provided for metric : {metric_name}')
 
-            try:
-                self.check_funcs(batch_chunk_metric_reducer_funcs, func_names=batch_metric_funcs.keys())
-            except InvalidParametersException as e:
-                raise InvalidParametersException("The batch CHUNK metric reducer funcs are invalid") from e
+        try:
+            self.check_funcs(combine_metric_inputs_funcs, func_names=gather_metric_inputs_funcs.keys())
+        except InvalidParametersException as e:
+            raise InvalidParametersException("There are issues with the provided combine_metric_inputs_funcs") \
+                from e
 
-        self._batch_metric_funcs = batch_metric_funcs
-        self._batch_metric_reducer_funcs = batch_metric_reducer_funcs
+        for metric_name in gather_metric_inputs_funcs.keys():
+            if metric_name not in metric_funcs:
+                raise InvalidParametersException(f'No metric_func provided for metric : {metric_name}')
+
+        try:
+            self.check_funcs(metric_funcs, func_names=gather_metric_inputs_funcs.keys())
+        except InvalidParametersException as e:
+            raise InvalidParametersException("There are issues with the provided metric_funcs") \
+                from e
+
+        self._gather_metric_inputs_funcs = gather_metric_inputs_funcs
+        self._gather_distributed_inputs_funcs = gather_distributed_inputs_funcs
+        self._combine_metric_inputs_funcs = combine_metric_inputs_funcs
+        self._metric_funcs = metric_funcs
 
         self._batch_chunk_size = batch_chunk_size
-        self._batch_chunk_metric_reducer_funcs = batch_chunk_metric_reducer_funcs
 
         self._show_dataset_evaluation_progress = show_dataset_evaluation_progress
 
@@ -466,7 +452,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :return:
         :rtype:
         """
-        return list(self._batch_metric_funcs.keys())
+        return list(self._gather_metric_inputs_funcs.keys())
 
     def calc_batch_metrics_for(self,
                                batch_data,
@@ -528,9 +514,17 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         }}
 
         success = True
-        for metric_name, batch_metric_func in self._batch_metric_funcs.items():
+        for metric_name, gather_metric_inputs_func in self._gather_metric_inputs_funcs.items():
             try:
-                metrics_output[metric_name] = batch_metric_func(**metric_func_args)
+                metric_inputs = gather_metric_inputs_func(**metric_func_args)
+
+                gather_distributed_inputs_func = self._gather_distributed_inputs_funcs[metric_name]
+                metric_inputs = gather_distributed_inputs_func(metric_inputs)
+
+                metric_func = self._metric_funcs[metric_name]
+                metric = metric_func(metric_inputs)
+
+                metrics_output[metric_name] = (metric, metric_inputs)
             except Exception as e:
                 _.log_exception(self._log, f"Evaluating metric {metric_name} using model batch output failed", e)
                 success = False
