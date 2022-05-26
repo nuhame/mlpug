@@ -389,8 +389,11 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                 # Track metrics for all datasets of interest
                 mlp.callbacks.AutoTensorboard(dataset_name='training', **tb_args),
                 mlp.callbacks.AutoTensorboard(dataset_name='validation', **tb_args),
-                mlp.callbacks.AutoTensorboard(dataset_name='training_params', **tb_args)
+                mlp.callbacks.AutoTensorboard(dataset_name='training_params', **tb_args),
             ]
+
+            if self._args.describe_logs_object:
+                self._callbacks += [mlp.callbacks.DescribeLogsObject(log_condition_func=log_metrics)]
 
     def _setup_training_manager(self):
         """

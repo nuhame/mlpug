@@ -64,13 +64,15 @@ class GatherNextSentencePredictionData:
         # Transport the target tensor to the current device such that we can use the gathering process.
         targets = batch[4].to(self.device)
 
-        # Detach to save memory
-        nsp_logits = auxiliary_results["nsp_logits"].detach()
-        # Delete tensor since we don't need it anymore
+        nsp_logits = auxiliary_results["nsp_logits"]
+        # Remove tensor from results because we don't need it anymore
         del auxiliary_results["nsp_logits"]
 
         prediction_probability = self.softmax(nsp_logits)
         predictions = torch.argmax(prediction_probability, dim=1)
+
+        # remove from GPU
+        nsp_logits = nsp_logits.cpu()
 
         if self.is_distributed:
             targets = self._gather(targets)
