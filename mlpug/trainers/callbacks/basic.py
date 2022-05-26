@@ -270,12 +270,48 @@ class BatchSizeLogger(Callback):
 
 class DescribeLogsObject(Callback):
 
-    def __init__(self, batch_level=True, name=None, **pretty_print_kwargs):
-        super().__init__(name=name)
+    def __init__(self,
+                 batch_level=True,
+                 log_condition_func=None,
+                 indent=1,
+                 width=120,
+                 depth=8,
+                 compact=True,
+                 sort_dicts=False,
+                 name="DescribeLogsObject",
+                 **kwargs):
+        """
+
+        :param batch_level:
+        :param log_condition_func: Optional, if evaluated to True a description of the logs object will be logged
+                                   log_condition_func(logs, dataset_batch) -> Bool
+
+                                   This function is only applied when batch_level=True
+
+        PrettyPrinter params:
+        :param indent:
+        :param width:
+        :param depth:
+        :param compact:
+        :param sort_dicts:
+
+        :param name:
+        :param kwargs:
+        """
+        super().__init__(name=name, **kwargs)
+
+        if log_condition_func is not None and not callable(log_condition_func):
+            raise ValueError("log_condition_func must be callable and have "
+                             "signature log_condition_func(logs, dataset_batch) -> Bool")
 
         self._batch_level = batch_level
-        self._pretty_print_kwargs = pretty_print_kwargs
-        self._printer = pprint.PrettyPrinter(**pretty_print_kwargs)
+        self._log_condition_func = log_condition_func
+
+        self._printer = pprint.PrettyPrinter(indent=indent,
+                                             width=width,
+                                             depth=depth,
+                                             compact=compact,
+                                             sort_dicts=sort_dicts)
 
     def on_batch_training_completed(self, training_batch, logs):
         """
@@ -287,6 +323,9 @@ class DescribeLogsObject(Callback):
         """
 
         if not self._batch_level:
+            return True
+
+        if not self._log_condition_func(logs, training_batch):
             return True
 
         return self._safe_describe(logs)
