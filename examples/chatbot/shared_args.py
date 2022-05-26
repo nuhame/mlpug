@@ -47,6 +47,12 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='When flag is set, will log a description of the logs object for '
              'demonstration or debugging purposes')
 
+    parser.add_argument(
+        '--inspect-sliding-windows',
+        action='store_true',
+        help='When flag is set, will log info related to the sliding metric windows used for '
+             'demonstration or debugging purposes')
+
     return parser
 
 
@@ -63,3 +69,4 @@ def describe_args(args, logger):
     logger.info(f"Dropout rate: {args.dropout_rate}")
     logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")
     logger.info(f"Log a description of logs object: {args.describe_logs_object}")
+    logger.info(f"Inspect sliding metric windows: {args.inspect_sliding_windows}")
