@@ -65,6 +65,9 @@ class SlidingWindow(Base):
         else:
             self.window = list()
 
+    def __len__(self):
+        return len(self.window)
+
     def get_state(self):
         return {
             "window": self.window,
