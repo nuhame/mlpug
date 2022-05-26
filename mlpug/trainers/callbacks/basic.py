@@ -1,11 +1,12 @@
 import sys
-
+import pprint
 import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
-from mlpug.utils import get_value_at, is_chunkable
+from mlpug.utils import get_value_at, is_chunkable, describe_data
 
 import basics.base_utils as _
+from basics.logging_utils import log_exception
 
 
 class LogProgress(Callback):
@@ -265,3 +266,87 @@ class BatchSizeLogger(Callback):
             training_batch[0].size(self._batch_dimension)
 
         return True
+
+
+class DescribeLogsObject(Callback):
+
+    def __init__(self,
+                 batch_level=True,
+                 log_condition_func=None,
+                 indent=1,
+                 width=120,
+                 depth=8,
+                 compact=True,
+                 sort_dicts=False,
+                 name="DescribeLogsObject",
+                 **kwargs):
+        """
+
+        :param batch_level:
+        :param log_condition_func: Optional, if evaluated to True a description of the logs object will be logged
+                                   log_condition_func(logs, dataset_batch) -> Bool
+
+                                   This function is only applied when batch_level=True
+
+        PrettyPrinter params:
+        :param indent:
+        :param width:
+        :param depth:
+        :param compact:
+        :param sort_dicts:
+
+        :param name:
+        :param kwargs:
+        """
+        super().__init__(name=name, **kwargs)
+
+        if log_condition_func is not None and not callable(log_condition_func):
+            raise ValueError("log_condition_func must be callable and have "
+                             "signature log_condition_func(logs, dataset_batch) -> Bool")
+
+        self._batch_level = batch_level
+        self._log_condition_func = log_condition_func
+
+        self._printer = pprint.PrettyPrinter(indent=indent,
+                                             width=width,
+                                             depth=depth,
+                                             compact=compact,
+                                             sort_dicts=sort_dicts)
+
+    def on_batch_training_completed(self, training_batch, logs):
+        """
+
+        :param training_batch:
+        :param logs:
+
+        :return: success (True or False)
+        """
+
+        if not self._batch_level:
+            return True
+
+        if not self._log_condition_func(logs, training_batch):
+            return True
+
+        return self._safe_describe(logs)
+
+    def on_epoch_completed(self, logs):
+        if self._batch_level:
+            return True
+
+        return self._safe_describe(logs)
+
+    def _safe_describe(self, logs):
+        try:
+            self._describe(logs)
+        except Exception as e:
+            log_exception(self._log, "Unable to describe and log the logs object", e)
+            return False
+
+        return True
+
+    def _describe(self, logs):
+        logs_description_data = describe_data(logs)
+        logs_description = self._printer.pformat(logs_description_data)
+
+        self._log.info(f"Current state of the logs object :\n{logs_description}\n")
