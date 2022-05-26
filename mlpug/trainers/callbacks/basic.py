@@ -331,9 +331,7 @@ class DescribeLogsObject(Callback):
         return self._safe_describe(logs)
 
     def on_epoch_completed(self, logs):
-        if self._batch_level:
-            return True
-
+        # Always logs the description at the epoch level
         return self._safe_describe(logs)
 
     def _safe_describe(self, logs):
