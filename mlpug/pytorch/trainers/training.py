@@ -1,3 +1,4 @@
+import math
 import torch
 
 from torch.cuda.amp import autocast
@@ -7,7 +8,9 @@ from functools import reduce
 
 import basics.base_utils as _
 
-from mlpug.trainers.training import *
+from mlpug.utils import get_value_at
+
+from mlpug.trainers.training import normalize_evaluation, extend_auxiliary_results
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
