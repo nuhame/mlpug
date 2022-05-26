@@ -343,13 +343,15 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
             # to provide the the training set here.
-            mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator),
+            mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator,
+                                                inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate validation loss and classification quality, every <progress_log_period> batches
             mlp.callbacks.TestMetricsLogger(self._batch_validation_set,
                                             'validation',
                                             metric_evaluator=all_metrics_evaluator,
                                             log_condition_func=log_metrics,
-                                            batch_averaging_window=avg_window_validation),
+                                            batch_averaging_window=avg_window_validation,
+                                            inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate training metrics only once per epoch over the whole dataset
             mlp.callbacks.TestMetricsLogger(self._batch_training_set,
                                             'training',
