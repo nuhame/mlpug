@@ -4,7 +4,7 @@ import math
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.mlpug_exceptions import CallbackInvalidException
-from mlpug.utils import has_key, get_key_paths, SlidingWindow
+from mlpug.utils import has_key, get_key_paths, SlidingWindow, describe_data
 
 from mlpug.evaluation import MetricEvaluator
 
@@ -40,6 +40,7 @@ class MetricsLoggerBase(Callback):
                  batch_averaging_window=None,
                  log_condition_func=None,
                  sliding_window_factory=None,
+                 inspect_sliding_windows=False,
                  name=None,
                  **kwargs):
         """
@@ -82,6 +83,9 @@ class MetricsLoggerBase(Callback):
 
         :param sliding_window_factory: Optional. Function to create SlidingWindow instances
 
+        :param inspect_sliding_windows: When set to True, information about the contents of the sliding windows
+                                        will be provided. This feature is useful for debugging.
+
         :param name:
         :type name:
         """
@@ -107,6 +111,8 @@ class MetricsLoggerBase(Callback):
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
 
         self._sliding_window_factory = SlidingWindow if not callable(sliding_window_factory) else sliding_window_factory
+
+        self._inspect_sliding_windows = inspect_sliding_windows
 
         self._name = name
 
@@ -305,6 +311,11 @@ class MetricsLoggerBase(Callback):
                 self._metric_windows[metric_path] = sliding_window
 
             sliding_window.slide(metric_value)
+
+            if self._inspect_sliding_windows:
+                self._log.info(f"Sliding window for metric {metric_path}:\n"
+                               f"Total length: {len(sliding_window)}\n"
+                               f"Last added metric data:\n{describe_data(metric_value)}\n")
 
     def _reduce(self, batch_metric_data_lists, reduced_metrics_log):
 
