@@ -1,1 +1,1 @@
-from .training import Trainer, DefaultTrainer, TrainingManager
+from .training import TrainingManager, Trainer, DefaultTrainer
