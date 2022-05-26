@@ -1,11 +1,12 @@
 import sys
-
+import pprint
 import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
-from mlpug.utils import get_value_at, is_chunkable
+from mlpug.utils import get_value_at, is_chunkable, describe_data
 
 import basics.base_utils as _
+from basics.logging_utils import log_exception
 
 
 class LogProgress(Callback):
@@ -265,3 +266,48 @@ class BatchSizeLogger(Callback):
             training_batch[0].size(self._batch_dimension)
 
         return True
+
+
+class DescribeLogsObject(Callback):
+
+    def __init__(self, batch_level=True, name=None, **pretty_print_kwargs):
+        super().__init__(name=name)
+
+        self._batch_level = batch_level
+        self._pretty_print_kwargs = pretty_print_kwargs
+        self._printer = pprint.PrettyPrinter(**pretty_print_kwargs)
+
+    def on_batch_training_completed(self, training_batch, logs):
+        """
+
+        :param training_batch:
+        :param logs:
+
+        :return: success (True or False)
+        """
+
+        if not self._batch_level:
+            return True
+
+        return self._safe_describe(logs)
+
+    def on_epoch_completed(self, logs):
+        if self._batch_level:
+            return True
+
+        return self._safe_describe(logs)
+
+    def _safe_describe(self, logs):
+        try:
+            self._describe(logs)
+        except Exception as e:
+            log_exception(self._log, "Unable to describe and log the logs object", e)
+            return False
+
+        return True
+
+    def _describe(self, logs):
+        logs_description_data = describe_data(logs)
+        logs_description = self._printer.pformat(logs_description_data)
+
+        self._log.info(f"Current state of the logs object :\n{logs_description}\n")
