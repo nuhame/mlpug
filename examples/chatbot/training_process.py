@@ -393,7 +393,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             ]
 
             if self._args.describe_logs_object:
-                self._callbacks += [mlp.callbacks.DescribeLogsObject()]
+                self._callbacks += [mlp.callbacks.DescribeLogsObject(log_condition_func=log_metrics)]
 
     def _setup_training_manager(self):
         """
