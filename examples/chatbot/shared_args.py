@@ -41,6 +41,12 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         type=float, required=False, default=2.0,
         help='LM task loss weight in overall loss, combined with Next Sentence Prediction loss')
 
+    parser.add_argument(
+        '--describe-logs-object',
+        action='store_true',
+        help='When flag is set, will log a description of the logs object for '
+             'demonstration or debugging purposes')
+
     return parser
 
 
@@ -56,3 +62,4 @@ def describe_args(args, logger):
     logger.info(f"Weight decay: {args.weight_decay}")
     logger.info(f"Dropout rate: {args.dropout_rate}")
     logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")
+    logger.info(f"Log a description of logs object: {args.describe_logs_object}")

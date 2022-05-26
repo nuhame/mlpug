@@ -2,6 +2,7 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 from mlpug.trainers.callbacks.basic import LogProgress as LogProgressBase
 from mlpug.trainers.callbacks.basic import BatchSizeLogger as BatchSizeLoggerBase
+from mlpug.trainers.callbacks.basic import DescribeLogsObject as DescribeLogsObjectBase
 
 
 class LogProgress(MultiProcessingMixin, LogProgressBase):
@@ -14,4 +15,8 @@ class LogProgress(MultiProcessingMixin, LogProgressBase):
 
 
 class BatchSizeLogger(MultiProcessingMixin, BatchSizeLoggerBase):
+    pass
+
+
+class DescribeLogsObject(MultiProcessingMixin, DescribeLogsObjectBase):
     pass
