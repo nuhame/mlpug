@@ -8,7 +8,7 @@ import numpy as np
 from mlpug.base import Base
 import basics.base_utils as _
 
-from mlpug.batch_chunking import ChunkableBatchDataset
+from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchDataset
 
 from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
@@ -90,7 +90,6 @@ class CombineBatchTuples(CombineBatchData):
         Assumes that batch data in the iterable are tuples.
         Also see CombineBatchData.
 
-
         :param tuples:    Real world example, with first item NOT a numpy array or int/float scalar:
                           [
                               # Batch 1
@@ -167,7 +166,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  combine_metric_inputs_funcs=None,
                  metric_funcs=None,
                  batch_chunk_size=None,
-                 show_dataset_evaluation_progress=False,
+                 show_progress=False,
                  name="MetricEvaluator",
                  **kwargs):
 
@@ -362,8 +361,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  Reduce all batch metric results of the chunks using batch_chunk_metric_reducer_funcs
         :type batch_chunk_size: int
 
-        :param show_dataset_evaluation_progress If True, the progress of dataset evaluation will be logged
-        :type show_dataset_evaluation_progress
+        :param show_progress If True, the progress of dataset evaluation will be logged
+        :type show_progress
         """
 
         super().__init__(pybase_logger_name=name, **kwargs)
@@ -438,7 +437,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         self._batch_chunk_size = batch_chunk_size
 
-        self._show_dataset_evaluation_progress = show_dataset_evaluation_progress
+        self._show_progress = show_progress
 
         self._name = name
 
@@ -454,52 +453,34 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         """
         return list(self._gather_metric_inputs_funcs.keys())
 
-    def calc_batch_metrics_for(self,
-                               batch_data,
-                               metrics_output,
-                               evaluate_settings=None,
-                               model_output=None,
-                               force_no_chunking=False):
+    def gather_batch_metric_inputs(self,
+                                   batch_data,
+                                   evaluate_settings=None,
+                                   model_output=None):
         """
-
-        Calculate metrics of given batch, optionally applying evaluate_settings
 
         :param batch_data:
-        :type batch_data:
-
-        :param metrics_output: Dict to which the calculated metrics will be written
-        :type metrics_output: Dict
-
         :param evaluate_settings:
-        :type evaluate_settings:
-
         :param model_output: Optional, externally calculated model output for given batch_data
-        :type model_output: dict
 
-        :param force_no_chunking: Optional, will force not to chunk batch when set to true
-        :param force_no_chunking: bool
-
-        :return: True on success, else False
-        :rtype: Bool
-
+        :return: (gathered inputs, success boolean)
+                  gathered inputs is a Dict or None
         """
-        if not force_no_chunking and self._batch_chunk_size is not None and model_output is None:
+
+        is_chunkable_batch = isinstance(batch_data, ChunkableBatch)
+
+        if is_chunkable_batch and self._batch_chunk_size is not None and model_output is None:
             chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
-            # Set force_no_chunking = True, because the batches will now already be chunks of a batch
-            return self.calc_dataset_metrics_for(
+            return self.gather_dataset_metric_inputs(
                 chunk_dataset,
-                metrics_output,
                 evaluate_settings=evaluate_settings,
-                batch_metric_reducer_funcs=self._batch_chunk_metric_reducer_funcs,
-                show_dataset_evaluation_progress=False,
-                force_no_chunking=True,
+                show_progress=False,
                 dataset_name="batch chunks")
 
-        if not can_get_and_set_items(metrics_output):
-            self._log.error(f"The given metrics output variable is not valid ({metrics_output}), "
-                            f"unable to calculate metrics on batch")
-            return False
+        if is_chunkable_batch:
+            # The batch is chunkable but, we will are not using the chunks: get the full batch.
+            batch_data = batch_data.source()
 
         if model_output is None:
             try:
@@ -513,6 +494,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             'evaluate_settings': evaluate_settings
         }}
 
+        gathered_inputs = {}
         success = True
         for metric_name, gather_metric_inputs_func in self._gather_metric_inputs_funcs.items():
             try:
@@ -521,24 +503,192 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 gather_distributed_inputs_func = self._gather_distributed_inputs_funcs[metric_name]
                 metric_inputs = gather_distributed_inputs_func(metric_inputs)
 
-                metric_func = self._metric_funcs[metric_name]
-                metric = metric_func(metric_inputs)
-
-                metrics_output[metric_name] = (metric, metric_inputs)
+                gathered_inputs[metric_name] = metric_inputs
             except Exception as e:
-                _.log_exception(self._log, f"Evaluating metric {metric_name} using model batch output failed", e)
+                _.log_exception(self._log, f"Gathering inputs for metric {metric_name} failed", e)
                 success = False
 
-        return success
+        return gathered_inputs, success
+
+    def gather_dataset_metric_inputs(self,
+                                     dataset,
+                                     evaluate_settings=None,
+                                     dataset_name=None,
+                                     show_progress=None):
+        """
+        Gathers the batch metric inputs over the dataset provided
+
+        :param dataset: Iterable batch dataset
+        :param evaluate_settings:
+        :param dataset_name:
+        :param show_progress:
+
+        :return: Tuple:
+                    Dict with, per metric, list of gathered inputs over dataset
+                    Boolean indicating success
+
+        """
+        if show_progress is None:
+            show_progress = self._show_progress
+
+        if show_progress:
+            metric_names = self.get_metric_names()
+
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._log.debug(f"Gathering batch metric inputs ({', '.join(metric_names)}) over the "
+                            f"{'' if dataset_name is None else dataset_name} dataset")
+
+        gathered_metric_inputs = {}
+        for dataset_batch in dataset:
+            all_batch_metric_inputs, success = self.gather_batch_metric_inputs(dataset_batch, evaluate_settings)
+            if not success:
+                self._log.error(f"Gathering of batch metric inputs failed, will stop gathering metric inputs over the "
+                                f"{'' if dataset_name is None else dataset_name} dataset")
+                return gathered_metric_inputs, False
+
+            for metric_name, batch_metric_inputs in all_batch_metric_inputs.items():
+                if metric_name not in gathered_metric_inputs:
+                    gathered_metric_inputs[metric_name] = []
+
+                gathered_metric_inputs[metric_name] += [batch_metric_inputs]
+
+            if show_progress:
+                sys.stdout.write('>')
+                sys.stdout.flush()
+
+        if show_progress:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+
+        return gathered_metric_inputs, True
+
+    def combine_gathered_metric_inputs(self,
+                                       gathered_metric_inputs,
+                                       dataset_name=None,
+                                       show_progress=None):
+        """
+
+        :param gathered_metric_inputs:
+        :param dataset_name:
+        :param show_progress:
+
+        :return: combined_metric_inputs, success
+        """
+        if show_progress is None:
+            show_progress = self._show_progress
+
+        if show_progress:
+            metric_names = self.get_metric_names()
+
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._log.debug(f"Combining gathered batch metric inputs ({', '.join(metric_names)}) over the "
+                            f"{'' if dataset_name is None else dataset_name} dataset")
+
+        combined_metric_inputs = {}
+        success = True
+        for metric_name, combine_func in self._combine_metric_inputs_funcs.items():
+            if metric_name not in gathered_metric_inputs:
+                continue
+
+            try:
+                metric_inputs_list = gathered_metric_inputs[metric_name]
+                combined_metric_inputs[metric_name] = combine_func(metric_inputs_list)
+
+                if show_progress:
+                    sys.stdout.write('+')
+                    sys.stdout.flush()
+            except Exception as e:
+                _.log_exception(self._log, f"Combining gathered inputs for metric {metric_name} failed", e)
+                success = False
+
+        if show_progress:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+
+        return combined_metric_inputs, success
+
+    def calc_batch_metrics_for(self,
+                               batch_data,
+                               evaluate_settings=None,
+                               model_output=None,
+                               return_gathered_inputs=False):
+        """
+
+        Calculate metrics of given batch, optionally applying evaluate_settings
+
+        :param batch_data:
+        :type batch_data:
+
+        :param evaluate_settings:
+        :type evaluate_settings:
+
+        :param model_output: Optional, externally calculated model output for given batch_data
+        :type model_output: dict
+
+        :param return_gathered_inputs: Optional, when True will also return the gathered inputs to
+                                       calculate the metrics
+        :param return_gathered_inputs: bool
+
+        :return: Dict {
+                        "metrics": Dict with calculated metrics,
+                        # Only if return_gathered_inputs:
+                        "inputs": Dict with gathered inputs to calculate the metrics,
+
+                        "success": True if batch metric calculations were successful, else False
+                      }
+
+        """
+        if isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None and model_output is None:
+            chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
+
+            # Set force_no_chunking = True, because the batches will now already be chunks of a batch
+            return self.calc_dataset_metrics_for(
+                chunk_dataset,
+                evaluate_settings=evaluate_settings,
+                show_progress=False,
+                return_gathered_inputs=return_gathered_inputs,
+                dataset_name="batch chunks")
+
+        results = {
+            "metrics": None,
+            "success": False
+        }
+
+        gathered_inputs, success = self.gather_batch_metric_inputs(batch_data, evaluate_settings, model_output)
+
+        if return_gathered_inputs:
+            results["inputs"] = gathered_inputs
+
+        if not success:
+            self._log.error(f"Gathering inputs to calculate batch metrics failed, stopping ...")
+            return results
+
+        metrics_output = {}
+        success = True
+        for metric_name, metric_func in self._metric_funcs.items():
+            if metric_name not in gathered_inputs:
+                continue
+
+            try:
+                metric_inputs = gathered_inputs[metric_name]
+                metrics_output[metric_name] = metric_func(metric_inputs)
+            except Exception as e:
+                _.log_exception(self._log, f"Evaluating metric {metric_name} over batch failed", e)
+                success = False
+
+        results["metrics"] = metrics_output
+        results["success"] = success
+
+        return results
 
     def calc_dataset_metrics_for(self,
                                  dataset,
-                                 metrics_output,
                                  evaluate_settings=None,
                                  dataset_name=None,
-                                 batch_metric_reducer_funcs=None,
-                                 show_dataset_evaluation_progress=None,
-                                 force_no_chunking=False):
+                                 show_progress=None,
+                                 return_gathered_inputs=False):
         """
         Calculate metrics over whole dataset, by looping over the batches in the given dataset, optionally
         applying evaluate_settings
@@ -546,133 +696,104 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :param dataset:
         :type dataset:
 
-        :param metrics_output: Dict to which the calculated metrics will be written
-        :type metrics_output: Dict
-
         :param evaluate_settings:
         :type evaluate_settings:
 
         :param dataset_name:
         :type dataset_name:
 
-        :param batch_metric_reducer_funcs: Optional alternative dict wth reducer functions
-        :type batch_metric_reducer_funcs: dict
+        :param show_progress: Optional alternative value
+        :type show_progress: bool
 
-        :param show_dataset_evaluation_progress: Optional alternative value
-        :type show_dataset_evaluation_progress: bool
+        :param return_gathered_inputs: Optional, when True will also return the gathered inputs to
+                                       calculate the metrics
+        :param return_gathered_inputs: bool
 
-        :param force_no_chunking: Optional, will force not to chunk batch when set to true
-        :param force_no_chunking: bool
+        :return Dict {
+                        "metrics": Dict with calculated metrics,
+                        # Only if return_gathered_inputs:
+                        "inputs": Dict with gathered inputs to calculate the metrics,
 
-        :return: True on success, else False
-        :rtype: Bool
+                        "success": True if batch metric calculations were successful, else False
+                     }
         """
         if not hasattr(dataset, '__iter__'):
             self._log.error(f"The given dataset {str(dataset)} is not iterable, unable to calculate metrics on dataset")
             return False
 
-        if not can_get_and_set_items(metrics_output):
-            self._log.error(f"The given metrics output variable is not valid ({metrics_output}), "
-                            f"unable to calculate metrics on dataset")
-            return False
+        if show_progress is None:
+            show_progress = self._show_progress
 
-        if show_dataset_evaluation_progress is None:
-            show_dataset_evaluation_progress = self._show_dataset_evaluation_progress
+        results = {
+            "metrics": None,
+            "success": False
+        }
 
-        metric_names = list(self._batch_metric_funcs.keys())
+        # ################## START: GATHER BATCH INPUTS OVER DATASET #####################
+        gathered_inputs, success = self.gather_dataset_metric_inputs(
+            dataset,
+            evaluate_settings=evaluate_settings,
+            dataset_name=dataset_name,
+            show_progress=show_progress)
 
-        if show_dataset_evaluation_progress:
+        if not success:
+            self._log.error(f"Gathering of batch metric inputs over the "
+                            f"{'' if dataset_name is None else dataset_name} dataset failed, "
+                            f"unable to calculate dataset metrics.")
+            return results
+        # #################### END: GATHER BATCH INPUTS OVER DATASET #####################
+
+        # #################### START: COMBINE GATHERED BATCH INPUTS ######################
+        gathered_inputs, success = self.combine_gathered_metric_inputs(
+            gathered_inputs,
+            dataset_name,
+            show_progress)
+
+        if return_gathered_inputs:
+            results["inputs"] = gathered_inputs
+
+        if not success:
+            self._log.error(f"Combining of gathered metric inputs over the "
+                            f"{'' if dataset_name is None else dataset_name} dataset failed, "
+                            f"unable to calculate dataset metrics.")
+            return results
+        # ###################### END: COMBINE GATHERED BATCH INPUTS #######################
+
+        # ###################### START: CALCULATE DATASET METRICS #########################
+        if show_progress:
+            metric_names = list(self._gather_metric_inputs_funcs.keys())
+
             sys.stdout.write('\n')
             sys.stdout.flush()
-            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) on whole "
+            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) over the "
                             f"{'' if dataset_name is None else dataset_name} dataset")
 
-        batch_metric_data_lists = {}
+        metrics_output = {}
+        success = True
+        for metric_name, metric_func in self._metric_funcs.items():
+            if metric_name not in gathered_inputs:
+                continue
 
-        metric_paths = None
-        for dataset_batch in dataset:
-            batch_metric_data_map = {}
-            batch_success = self.calc_batch_metrics_for(dataset_batch,
-                                                        batch_metric_data_map,
-                                                        evaluate_settings,
-                                                        force_no_chunking=force_no_chunking)
-            if not batch_success:
-                return False
+            try:
+                metric_inputs = gathered_inputs[metric_name]
+                metrics_output[metric_name] = metric_func(metric_inputs)
+            except Exception as e:
+                _.log_exception(self._log, f"Evaluating metric {metric_name} over dataset failed", e)
+                success = False
 
-            if metric_paths is None:
-                metric_paths = get_key_paths(batch_metric_data_map,
-                                             keys_to_consider=metric_names,
-                                             keys_not_to_consider=["auxiliary_results"])
-
-            for metric_path in metric_paths:
-                batch_metric_data = get_value_at(metric_path, batch_metric_data_map)
-
-                batch_metric_data_list = batch_metric_data_lists[metric_path] \
-                    if metric_path in batch_metric_data_lists else None
-
-                if batch_metric_data_list is None:
-                    batch_metric_data_list = []
-                    batch_metric_data_lists[metric_path] = batch_metric_data_list
-
-                batch_metric_data_list += [batch_metric_data]
-
-            if show_dataset_evaluation_progress:
+            if show_progress:
                 sys.stdout.write('#')
                 sys.stdout.flush()
 
-        if show_dataset_evaluation_progress:
+        if show_progress:
             sys.stdout.write('\n')
             sys.stdout.flush()
+        # ####################### END: CALCULATE DATASET METRICS ##########################
 
-        return self.reduce(batch_metric_data_lists,
-                           metrics_output,
-                           batch_metric_reducer_funcs=batch_metric_reducer_funcs,
-                           dataset_name=dataset_name)
+        results["metrics"] = metrics_output
+        results["success"] = success
 
-    def reduce(self, batch_metric_data_lists, metrics_output, batch_metric_reducer_funcs=None, dataset_name=None):
-        """
-
-        Use the `batch_metric_reducer_funcs` to reduce the lists available in the `batch_metric_data_lists` dict
-
-        The keys of `batch_metric_data_lists` must be the key path to the reduced metrics. Example:
-        batch_metric_data_lists = {
-            'loss': [ ... data to use to calculated loss ... ],
-            'classification.F1': [ ... data to use to calculated F1 ... ]
-        }
-
-        To get the correct key paths you can use the `get_key_paths` as a utility
-
-        :param batch_metric_data_lists: See above.
-        :type batch_metric_data_lists: Dict
-
-        :param metrics_output: Dict to which the reduced metrics will be written
-        :type metrics_output: Dict
-
-        :param batch_metric_reducer_funcs: Optional alternative dict wth reducer functions
-        :type batch_metric_reducer_funcs: dict
-
-        :param dataset_name: Used for logging purposes
-        :type dataset_name:
-
-        :return: True on success, else False
-        :rtype:
-        """
-        success = True
-
-        if batch_metric_reducer_funcs is None:
-            batch_metric_reducer_funcs = self._batch_metric_reducer_funcs
-
-        for metric_path, batch_metric_data_list in batch_metric_data_lists.items():
-            try:
-                reducer_func = get_value_at(metric_path, batch_metric_reducer_funcs)
-                set_value_at(metric_path, metrics_output, reducer_func(batch_metric_data_list))
-            except Exception as e:
-                _.log_exception(self._log, f"Exception occurred reducing {metric_path} for "
-                                           f"{'' if dataset_name is None else dataset_name} dataset "
-                                           f"batch metric data", e)
-                success = False
-
-        return success
+        return results
 
     def _create_default_model_evaluate_func(self):
         """
