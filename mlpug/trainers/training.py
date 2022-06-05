@@ -441,13 +441,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
 
         update = self._update_cb_success
+        call_cb = self._call_callbacks
 
-        update(self._call_callbacks('on_training_start',
-                                    self.num_epochs,
-                                    self.num_batches_per_epoch,
-                                    self.epoch,
-                                    self.batch_step,
-                                    self.global_iter))
+        update(call_cb('on_training_start',
+                       self.num_epochs,
+                       self.num_batches_per_epoch,
+                       self.epoch,
+                       self.batch_step,
+                       self.global_iter))
 
         for epoch in range(self.epoch, self.num_epochs):
             self.epoch = epoch
@@ -470,7 +471,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             current = None
             epoch_started = True
             epoch_stopped_early = False
-            for training_batch in iter(training_dataset):
+            for training_batch in training_dataset:
                 batch_training_start_time = time.time()
 
                 if self._stop_training:
@@ -485,10 +486,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 # on_epoch_start needs to be called in the loop, because some callbacks might need the current object
                 if epoch_started:
-                    update(self._call_callbacks('on_epoch_start', self.logs))
+                    update(call_cb('on_epoch_start', self.logs))
                     epoch_started = False
 
-                update(self._call_callbacks('on_batch_training_start', training_batch, logs))
+                update(call_cb('on_batch_training_start', training_batch, logs))
 
                 # Previous batch duration is only available on_batch_training_start
                 # In this way it is not double recorded in Tensorboard
@@ -512,13 +513,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                     _.log_exception(self._log, err_msg, e)
 
-                    update(self._call_callbacks('on_batch_training_failed', e, logs))
+                    update(call_cb('on_batch_training_failed', e, logs))
                     training_stopped_on_error = True
 
                 if training_stopped_on_error:
                     break
 
-                update(self._call_callbacks('on_batch_training_completed', training_batch, logs))
+                update(call_cb('on_batch_training_completed', training_batch, logs))
 
                 self.batch_step += 1
                 self.global_iter += 1
@@ -541,21 +542,21 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 mean_batch_duration = self._calc_window_average("training_params.batch.duration")
                 epoch_duration = self._calc_window_sum("training_params.batch.duration")
 
-                set_value_at("training_params.window_average.duration", current, mean_batch_duration)
+                set_value_at("training_params.sliding_window.duration", current, mean_batch_duration)
                 set_value_at("training_params.epoch.duration", current, epoch_duration)
 
-                update(self._call_callbacks('on_epoch_completed', logs))
+                update(call_cb('on_epoch_completed', logs))
 
             if training_stopped_on_error:
                 break
 
             self.batch_step = 0
 
-        update(self._call_callbacks('on_training_ended',
-                                    stopped_early=epoch_stopped_early or training_stopped_early,
-                                    stopped_on_error=training_stopped_on_error,
-                                    interrupted=False,
-                                    callback_calls_success=self.logs["cb_calls_success"]))
+        update(call_cb('on_training_ended',
+                       stopped_early=epoch_stopped_early or training_stopped_early,
+                       stopped_on_error=training_stopped_on_error,
+                       interrupted=False,
+                       callback_calls_success=self.logs["cb_calls_success"]))
 
         if not training_stopped_on_error:
             if self.logs["cb_calls_success"]:
@@ -572,17 +573,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             "batch_step": self.batch_step,
             "global_iter": self.global_iter,
 
-            "training": {
-                "batch": {},
-                "window_average": {},
-                "dataset": {},
-            },
+            "training": {},
 
             "training_params": {
                 "batch": {
                     "duration": self._previous_batch_duration,
                 },
-                "window_average": {
+                "sliding_window": {
                     "duration": self._calc_window_average("training_params.batch.duration")
                 },
                 "epoch": {

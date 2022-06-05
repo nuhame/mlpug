@@ -244,9 +244,9 @@ if __name__ == "__main__":
 
     # For Tensorboard
     metric_names = {
-        'batch.loss': 'cross_entropy',
-        'batch.duration': 'training_time',
-        'window_average.duration': 'training_time',
+        'batch.loss': 'cross entropy',
+        'batch.duration': 'training time',
+        'sliding_window.duration': 'training time',
         'dataset.duration': 'training_time',
         'batch_size': 'size'
     }
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     if is_first_worker:
         callbacks += [
             mlp.callbacks.BatchSizeLogger(),
-            mlp.callbacks.CheckpointManager(metric_to_monitor='validation.window_average.loss',
+            mlp.callbacks.CheckpointManager(metric_to_monitor='validation.sliding_window.loss',
                                             base_checkpoint_filename=args.experiment_name,
                                             archive_last_model_checkpoint_every=20000),
             mlp.callbacks.LogProgress(log_period=progress_logging_period, set_names=["training", "validation"]),
@@ -386,7 +386,7 @@ if __name__ == "__main__":
                                       metric_names=metric_names,
                                       ignore_missing_metrics=True),
             # Batch-level average batch duration
-            mlp.callbacks.Tensorboard(['window_average.duration'],
+            mlp.callbacks.Tensorboard(['sliding_window.duration'],
                                       experiment_name=experiment_name,
                                       dataset_name='training_params',
                                       metrics_are_averages=True,
