@@ -14,15 +14,13 @@ from mlpug.utils import get_value_at, set_value_at
 
 
 class MetricsLoggingMode(Enum):
-    # TODO : Add BATCH_METRICS_ONLY Option
-    BATCH_AND_WINDOW_AVERAGE_METRICS = "BATCH_AND_WINDOW_AVERAGE_METRICS"
-    WINDOW_AVERAGE_METRICS = "WINDOW_AVERAGE_METRICS"
+    BATCH_METRICS_ONLY = "BATCH_METRICS_ONLY"
+    BATCH_AND_SLIDING_WINDOW_METRICS = "BATCH_AND_SLIDING_WINDOW_METRICS"
     WHOLE_DATASET_METRICS = "WHOLE_DATASET_METRICS"
 
     @staticmethod
-    def will_log_window_average_metrics(mode):
-        return mode in {MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
-                        MetricsLoggingMode.WINDOW_AVERAGE_METRICS}
+    def will_log_sliding_window_metrics(mode):
+        return mode is MetricsLoggingMode.BATCH_AND_SLIDING_WINDOW_METRICS
 
     def __str__(self):
         return str(self.value)
@@ -37,7 +35,7 @@ class MetricsLoggerBase(Callback):
                  logging_mode,
                  dataset=None,
                  evaluate_settings=None,
-                 batch_averaging_window=None,
+                 sliding_window_length=None,
                  log_condition_func=None,
                  sliding_window_factory=None,
                  inspect_sliding_windows=False,
@@ -48,9 +46,11 @@ class MetricsLoggerBase(Callback):
         Different modes of operation:
 
         Batch level: After every batch training iteration:
+            Calculate batch metrics only
+                log metrics per batch                   batch_level = True, mode = BATCH_METRICS
             Calculate metrics over a sliding window
-                log metrics per batch and over window   batch_level = True, mode = BATCH_AND_WINDOW_AVERAGE_METRICS
-                log metrics over window only            batch_level = True, mode = WINDOW_AVERAGE_METRICS
+                log metrics per batch and over window   batch_level = True, mode = BATCH_AND_SLIDING_WINDOW_METRICS
+                log metrics over window only            batch_level = True, mode = SLIDING_WINDOW_METRICS
             Calculate metrics over whole data set       batch_level = True, mode = WHOLE_DATASET_METRICS
 
         Epoch level: After every training epoch:
@@ -78,8 +78,8 @@ class MetricsLoggerBase(Callback):
                                   logs object provided to the callback methods
         :type evaluate_settings:
 
-        :param batch_averaging_window: Window length in batches, over which the average metric must be calculated
-        :type batch_averaging_window: Int
+        :param sliding_window_length: Window length in batches, over which the average metric must be calculated
+        :type sliding_window_length: Int
 
         :param sliding_window_factory: Optional. Function to create SlidingWindow instances
 
@@ -106,7 +106,7 @@ class MetricsLoggerBase(Callback):
 
         self._evaluate_settings = evaluate_settings
 
-        self._batch_averaging_window = batch_averaging_window
+        self._sliding_window_length = sliding_window_length
 
         self._log_condition_func = log_condition_func or (lambda logs, dataset_batch: True)
 
@@ -156,24 +156,24 @@ class MetricsLoggerBase(Callback):
                           start_batch,
                           start_update_iter):
 
-        will_log_window_average_metrics = MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode)
+        will_log_sliding_window_metrics = MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode)
 
         if not self.instance_valid():
-            if will_log_window_average_metrics:
+            if will_log_sliding_window_metrics:
                 self._log.error(f"{self} is not valid, unable to set up averaging window ... ")
             else:
                 self._log.error(f"{self} is not valid, skipping this hook ... ")
             return False
 
-        if will_log_window_average_metrics and \
-                (self._batch_averaging_window is None or self._batch_averaging_window <= 0):
-            self._log.error(f"A valid batch processing window is required for "
+        if will_log_sliding_window_metrics and \
+                (self._sliding_window_length is None or self._sliding_window_length <= 0):
+            self._log.error(f"A valid batch sliding window length is required for "
                             f"metric logging mode ({self._logging_mode}, the {self} will not function")
             self._valid = False
 
             return False
 
-        if will_log_window_average_metrics:
+        if will_log_sliding_window_metrics:
             self._init_metric_windows()
 
         return True
@@ -196,29 +196,32 @@ class MetricsLoggerBase(Callback):
         else:
             current = self._get_logs_base(logs)
 
-            batch_metrics = {}
-            if not self._calc_batch_metric_data_from(dataset_batch, batch_metrics, logs):
+            results = self._calc_batch_metric_data_from(dataset_batch, logs)
+            if not results["success"]:
                 return False
 
-            base_path = f"{self._dataset_name}.batch"
-            dataset_batch_logs = get_value_at(base_path, current)
+            batch_metrics = results["metrics"]
+
+            batch_path = f"{self._dataset_name}.batch"
+            dataset_batch_logs = get_value_at(batch_path, current)
 
             # Merge in new batch level results
             dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
-            if self._logging_mode is MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS:
-                set_value_at(base_path, current, dataset_batch_logs)
+            set_value_at(batch_path, current, dataset_batch_logs)
 
-            metric_names = self._metric_evaluator.get_metric_names()
-            metric_paths = get_key_paths(dataset_batch_logs,
-                                         keys_to_consider=metric_names,
-                                         keys_not_to_consider=["auxiliary_results"])
+            if self._logging_mode.will_log_sliding_window_metrics():
+                self._update_metrics_windows_with(results["inputs"])
 
-            self._update_metrics_windows_for(metric_paths, dataset_batch_logs, base_path=base_path)
+                sliding_window_metrics, success = self._calc_sliding_window_metrics()
+                if not success:
+                    return False
 
-            # gather all window data
-            batch_metrics_lists = {p: s.window for p, s in self._metric_windows.items()}
-            if not self._reduce(batch_metrics_lists, current[self._dataset_name]['window_average']):
-                return False
+                sliding_window_path = f"{self._dataset_name}.sliding_window"
+                dataset_sliding_window_logs = get_value_at(sliding_window_path, current)
+
+                # Merge in new batch level results
+                dataset_sliding_window_logs = {**dataset_sliding_window_logs, **sliding_window_metrics}
+                set_value_at(sliding_window_path, current, dataset_sliding_window_logs)
 
             return True
 
@@ -243,7 +246,7 @@ class MetricsLoggerBase(Callback):
             current[self._dataset_name] = {}
 
         dataset_metrics = current[self._dataset_name]
-        for metric_level in ['batch', 'window_average', 'dataset']:
+        for metric_level in ['batch', 'sliding_window', 'dataset']:
             if metric_level not in dataset_metrics:
                 dataset_metrics[metric_level] = {}
 
@@ -256,17 +259,34 @@ class MetricsLoggerBase(Callback):
 
         return evaluate_settings
 
-    def _calc_whole_dataset_metrics(self, logs, log_path):
+    def _calc_whole_dataset_metrics(self, logs, dataset_metrics_log_path):
+        """
+
+        :param logs:
+        :param dataset_metrics_log_path:
+        :return: True on success
+        """
 
         current = self._get_logs_base(logs)
-        metrics_log = get_value_at(log_path, current)
+        dataset_metrics_log = get_value_at(dataset_metrics_log_path, current)
 
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
-        return self._metric_evaluator.calc_dataset_metrics_for(self._dataset,
-                                                               metrics_log,
-                                                               evaluate_settings=evaluate_settings,
-                                                               dataset_name=self._dataset_name)
+        results = self._metric_evaluator.calc_dataset_metrics_for(
+            self._dataset,
+            evaluate_settings=evaluate_settings,
+            dataset_name=self._dataset_name)
+
+        if not results["success"]:
+            return False
+
+        dataset_metrics = results["metrics"]
+
+        # Merge in new batch level results
+        dataset_metrics_log = {**dataset_metrics_log, **dataset_metrics}
+        set_value_at(dataset_metrics_log_path, current, dataset_metrics_log)
+
+        return True
 
     def _init_metric_windows(self, reset=False):
         if reset:
@@ -277,7 +297,7 @@ class MetricsLoggerBase(Callback):
 
         return True
 
-    def _calc_batch_metric_data_from(self, batch, batch_metrics, logs):
+    def _calc_batch_metric_data_from(self, batch, logs):
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
         model_output = None
@@ -293,35 +313,52 @@ class MetricsLoggerBase(Callback):
                 'auxiliary_results': auxiliary_results
             }
 
-        return self._metric_evaluator.calc_batch_metrics_for(batch,
-                                                             batch_metrics,
-                                                             evaluate_settings=evaluate_settings,
-                                                             model_output=model_output)
+        return self._metric_evaluator.calc_batch_metrics_for(
+            batch,
+            evaluate_settings=evaluate_settings,
+            model_output=model_output,
+            return_gathered_inputs=self._logging_mode.will_log_sliding_window_metrics())
 
-    def _update_metrics_windows_for(self, metric_paths, batch_metrics, base_path):
-        for metric_path in metric_paths:
-            metric_value = get_value_at(metric_path, batch_metrics)
-
-            full_metric_path = f"{base_path}.{metric_path}"
-            sliding_window = self._metric_windows[metric_path] if metric_path in self._metric_windows else None
+    def _update_metrics_windows_with(self, batch_metric_inputs):
+        for metric_name, metric_inputs in batch_metric_inputs.keys():
+            sliding_window = self._metric_windows[metric_name] if metric_name in self._metric_windows else None
             if sliding_window is None:
-                self._log.debug(f"Creating sliding window for {full_metric_path}")
+                self._log.debug(f"Creating sliding window for metric {metric_name}")
 
-                sliding_window = self._sliding_window_factory(length=self._batch_averaging_window, name=full_metric_path)
-                self._metric_windows[metric_path] = sliding_window
+                sliding_window = self._sliding_window_factory(length=self._sliding_window_length, name=metric_name)
+                self._metric_windows[metric_name] = sliding_window
 
-            sliding_window.slide(metric_value)
+            sliding_window.slide(metric_inputs)
 
             if self._inspect_sliding_windows:
-                self._log.info(f"Sliding window for metric {metric_path}:\n"
+                self._log.info(f"Sliding window for metric {metric_name}:\n"
                                f"Total length: {len(sliding_window)}\n"
-                               f"Last added metric data:\n{describe_data(metric_value)}\n")
+                               f"Last added metric input data:\n{describe_data(metric_inputs)}\n")
 
-    def _reduce(self, batch_metric_data_lists, reduced_metrics_log):
+    def _calc_sliding_window_metrics(self):
+        """
 
-        return self._metric_evaluator.reduce(batch_metric_data_lists,
-                                             reduced_metrics_log,
-                                             dataset_name=self._dataset_name)
+        :return: (metric_outputs: dict, success: bool)
+                  metric_output is dict with calculated metrics
+        """
+        # Gather batch metric inputs from sliding windows
+        gathered_metric_inputs = {metric_name: sliding_window.window
+                                  for metric_name, sliding_window in self._metric_windows.items()}
+
+        combined_metric_inputs, success = self._metric_evaluator.combine_gathered_metric_inputs(
+            gathered_metric_inputs,
+            dataset_name=self._dataset_name,
+            show_progress=False)
+
+        if not success:
+            self._log.error("Failed to combine batch metric inputs for sliding window(s), "
+                            f"unable to calculate sliding window metrics for dataset {self._dataset_name}")
+            return None, False
+
+        return self._metric_evaluator.calc_metrics_using(
+            combined_metric_inputs,
+            dataset_name=self._dataset_name,
+            show_progress=False)
 
     def _get_callback_properties_for_hash(self):
         """
@@ -345,7 +382,7 @@ class MetricsLoggerBase(Callback):
             "logging_mode": self._logging_mode,
             "dataset": self._dataset is not None,
             "evaluate_settings": self._evaluate_settings is not None,
-            "batch_averaging_window": self._batch_averaging_window,
+            "sliding_window_length": self._sliding_window_length,
             "log_condition_func": self._log_condition_func is not None,
             "sliding_window_factory": self._sliding_window_factory is not None
         }
@@ -364,7 +401,7 @@ class MetricsLoggerBase(Callback):
         self._valid = True
 
         if not hasattr(self._dataset, '__iter__'):
-            if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
+            if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
                 self._log.debug("Training batch evaluation results will be used to calculate and log metrics.")
             else:
                 self._log.error(f"No valid dataset provided to calculated metrics on, "
@@ -409,7 +446,7 @@ class TrainingMetricsLogger(MetricsLoggerBase):
     def __init__(self,
                  metric_evaluator,
                  batch_level=True,
-                 logging_mode=MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS,
+                 logging_mode=MetricsLoggingMode.BATCH_AND_SLIDING_WINDOW_METRICS,
                  **kwargs):
 
         super().__init__(
@@ -426,15 +463,15 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                           start_batch,
                           start_update_iter):
 
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
-            if self._batch_averaging_window is None:
-                self._batch_averaging_window = math.ceil(num_batches_per_epoch/2.0)
-                self._log.debug(f"Set batch_averaging_window to half of "
-                                f"number of batches per epoch : {self._batch_averaging_window}")
+        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
+            if self._sliding_window_length is None:
+                self._sliding_window_length = math.ceil(num_batches_per_epoch/2.0)
+                self._log.debug(f"Set sliding_window_length to half of "
+                                f"number of batches per epoch : {self._sliding_window_length}")
 
-            if self._batch_averaging_window == math.inf:
+            if self._sliding_window_length == math.inf:
                 self._log.error("The batch average window is infinite, unable to calculate window average. "
-                                "Please set a finite batch_averaging_window during construction of this "
+                                "Please set a finite sliding_window_length during construction of this "
                                 "TrainingMetricsLogger.")
                 self._valid = False
                 return False
@@ -458,7 +495,7 @@ class TestMetricsLogger(MetricsLoggerBase):
                  **kwargs):
 
         if logging_mode is None:
-            logging_mode = MetricsLoggingMode.BATCH_AND_WINDOW_AVERAGE_METRICS \
+            logging_mode = MetricsLoggingMode.BATCH_AND_SLIDING_WINDOW_METRICS \
                 if batch_level else MetricsLoggingMode.WHOLE_DATASET_METRICS
 
         super().__init__(dataset=dataset,
@@ -477,22 +514,27 @@ class TestMetricsLogger(MetricsLoggerBase):
                           start_batch,
                           start_update_iter):
 
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode):
-            if self._batch_averaging_window is None:
+        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
+            if self._sliding_window_length is None:
                 try:
-                    self._batch_averaging_window = len(self._dataset)
-                    if self._batch_averaging_window == math.inf:
-                        self._log.error(f"The batch average window of the {self._dataset_name} data set is infinite, "
-                                        f"unable to calculate window average. "
-                                        f"Please set a finite batch_processing_window during construction of "
-                                        f"this TestMetricsLogger.")
+                    self._sliding_window_length = int(0.5*len(self._dataset))+1
+                    if self._sliding_window_length < 2:
+                        self._log.error(f"The sliding window length for the {self._dataset_name} data set is "
+                                        f"too small : {self._sliding_window_length}, "
+                                        f"unable to calculate metrics over sliding window.")
+                        self._valid = False
+                    elif self._sliding_window_length == math.inf:
+                        self._log.error(f"The sliding window length for the {self._dataset_name} data set is infinite, "
+                                        f"unable to calculate metrics over sliding window. "
+                                        f"Please set a finite sliding_window_length during construction of "
+                                        f"this {self}.")
                         self._valid = False
                     else:
-                        self._log.debug(f"Set batch averaging window to number of batches in "
-                                        f"{self._dataset_name} data set : {self._batch_averaging_window}")
+                        self._log.debug(f"Set the sliding window length to half of the number of batches in "
+                                        f"{self._dataset_name} data set : {self._sliding_window_length}")
                 except Exception as e:
-                    _.log_exception(self._log, f"Unable to assess data set length to set the batch averaging window, "
-                                               f"{self} will not function", e)
+                    _.log_exception(self._log, f"Unable to assess data set length to set the "
+                                               f"batch sliding window length, {self} will not function", e)
                     self._valid = False
 
         return super().on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
@@ -510,7 +552,7 @@ class TestMetricsLogger(MetricsLoggerBase):
             self._log.error('A problem occurred, will not continue executing this hook')
             return success
 
-        if MetricsLoggingMode.will_log_window_average_metrics(self._logging_mode) and \
+        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode) and \
                 self._dataset_iterator is None:
             self._dataset_iterator = iter(self._dataset)
 
