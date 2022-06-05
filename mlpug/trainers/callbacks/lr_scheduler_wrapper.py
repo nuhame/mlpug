@@ -22,7 +22,7 @@ class LRSchedulerWrapper(Callback, metaclass=abc.ABCMeta):
         :param schedulers: A single scheduler instance or a dict or list of schedulers
         :param batch_level: True if the LR schedulers should be updated after every batch, else after every epoch
         :param metric_to_monitor: key path to metric value in the log object,
-                                  e.g. `validation.window_average.perplexity`, used by the schedulers. If None, it is
+                                  e.g. `validation.sliding_window.perplexity`, used by the schedulers. If None, it is
                                   assumed that the schedulers don't monitor any metric.
         """
         super().__init__(name=name, **kwargs)

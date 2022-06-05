@@ -61,7 +61,7 @@ class LogProgress(Callback):
 
         self.metric_level_names = {
             'batch': 'Batch',
-            'window_average': "Moving average",
+            'sliding_window': "Computed over sliding window",
             'dataset': "Computed over dataset",
             'epoch': "Epoch"
         }
@@ -93,7 +93,7 @@ class LogProgress(Callback):
                                                                     logs["final_batch_step"],
                                                                     average_duration))
 
-            for metric_level in ['batch', 'window_average', 'dataset', 'epoch']:
+            for metric_level in ['batch', 'sliding_window', 'dataset', 'epoch']:
                 self._write_metric_logs(metric_level, logs)
                 self._write(f'\n')
 
@@ -111,7 +111,7 @@ class LogProgress(Callback):
                                                                       logs["final_epoch"],
                                                                       duration))
         success = True
-        for metric_level in ['window_average', 'dataset', 'epoch']:
+        for metric_level in ['sliding_window', 'dataset', 'epoch']:
             self._write_metric_logs(metric_level, logs)
             self._write(f'\n')
 
@@ -127,7 +127,7 @@ class LogProgress(Callback):
         try:
             training_params = current["training_params"]
 
-            average_batch_duration = training_params["window_average"]["duration"]
+            average_batch_duration = training_params["sliding_window"]["duration"]
             if average_batch_duration and average_batch_duration > 0:
                 batch_step = current["batch_step"]
                 final_batch_step = logs["final_batch_step"]
@@ -148,7 +148,7 @@ class LogProgress(Callback):
 
         duration_str = "[UNKNOWN]"
         try:
-            duration = current["training_params"]["window_average"]["duration"]
+            duration = current["training_params"]["sliding_window"]["duration"]
             if duration and duration > 0.0:
                 duration = int(duration*1000)
                 duration_str = f"{duration}ms"
