@@ -46,6 +46,17 @@ def no_reduction(batch_metrics_list):
     return batch_metrics_list
 
 
+def overlapping_metrics(metric_names1, metric_names2):
+    """
+    Returns all metric names that are in metric_names1 and in metric_names2, in order of metric_names1
+    :param metric_names1:
+    :param metric_names2:
+    :return:
+    """
+
+    return [name for name in metric_names1 if name in metric_names2]
+
+
 class CombineBatchData(metaclass=abc.ABCMeta):
 
     def __init__(self, dim: int = 0):
@@ -548,6 +559,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                     Boolean indicating success
 
         """
+        dataset_desc = 'dataset' if dataset_name is None else f'{dataset_name} dataset'
+
         if show_progress is None:
             show_progress = self._show_progress
 
@@ -556,15 +569,14 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
             sys.stdout.write('\n')
             sys.stdout.flush()
-            self._log.debug(f"Gathering batch metric inputs ({', '.join(metric_names)}) over the "
-                            f"{'' if dataset_name is None else dataset_name} dataset")
+            self._log.debug(f"Gathering batch metric inputs ({', '.join(metric_names)}) over the {dataset_desc}")
 
         gathered_metric_inputs = {}
         for dataset_batch in dataset:
             all_batch_metric_inputs, success = self.gather_batch_metric_inputs(dataset_batch, evaluate_settings)
             if not success:
-                self._log.error(f"Gathering of batch metric inputs failed, will stop gathering metric inputs over the "
-                                f"{'' if dataset_name is None else dataset_name} dataset")
+                self._log.error(f"Gathering of batch metric inputs failed, will stop gathering "
+                                f"metric inputs over the {dataset_desc}")
                 return gathered_metric_inputs, False
 
             for metric_name, batch_metric_inputs in all_batch_metric_inputs.items():
@@ -595,16 +607,18 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :return: combined_metric_inputs, success
         """
+        dataset_desc = 'dataset' if dataset_name is None else f'{dataset_name} dataset'
+
         if show_progress is None:
             show_progress = self._show_progress
 
         if show_progress:
-            metric_names = self.get_metric_names()
+            metric_names = overlapping_metrics(self._combine_metric_inputs_funcs.keys(), gathered_metric_inputs.keys())
 
             sys.stdout.write('\n')
             sys.stdout.flush()
-            self._log.debug(f"Combining gathered batch metric inputs ({', '.join(metric_names)}) over the "
-                            f"{'' if dataset_name is None else dataset_name} dataset")
+            self._log.debug(f"Combining gathered {dataset_desc} batch metric inputs "
+                            f"(for metrics {', '.join(metric_names)})")
 
         combined_metric_inputs = {}
         success = True
@@ -703,6 +717,47 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         return results
 
+    def calc_metrics_using(self,
+                           metric_inputs,
+                           dataset_name=None,
+                           show_progress=None):
+        """
+
+        Calculate metrics using a prepared set of metrics inputs
+
+        :param metric_inputs: dict, with per metric (key) data to calculate metrics using the available `metric_funcs`
+        :param dataset_name:
+        :param show_progress:
+
+        :return: (metric_outputs: dict, success: bool)
+                  metric_output is dict with calculated metrics
+        """
+        dataset_desc = 'dataset' if dataset_name is None else f'{dataset_name} dataset'
+
+        if show_progress is None:
+            show_progress = self._show_progress
+
+        if show_progress:
+            metric_names = overlapping_metrics(self._metric_funcs.keys(), metric_inputs.keys())
+
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) using data from the {dataset_desc}")
+
+        metrics_output = {}
+        success = True
+        for metric_name, metric_func in self._metric_funcs.items():
+            if metric_name not in metric_inputs:
+                continue
+
+            try:
+                metrics_output[metric_name] = metric_func(metric_inputs[metric_name])
+            except Exception as e:
+                _.log_exception(self._log, f"Evaluating metric {metric_name} using given metric inputs failed", e)
+                success = False
+
+        return metrics_output, success
+
     def calc_dataset_metrics_for(self,
                                  dataset,
                                  evaluate_settings=None,
@@ -741,8 +796,17 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             self._log.error(f"The given dataset {str(dataset)} is not iterable, unable to calculate metrics on dataset")
             return False
 
+        dataset_desc = 'dataset' if dataset_name is None else f'{dataset_name} dataset'
+
         if show_progress is None:
             show_progress = self._show_progress
+
+        if show_progress:
+            metric_names = self.get_metric_names()
+
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) over the {dataset_desc}")
 
         results = {
             "metrics": None,
@@ -757,8 +821,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             show_progress=show_progress)
 
         if not success:
-            self._log.error(f"Gathering of batch metric inputs over the "
-                            f"{'' if dataset_name is None else dataset_name} dataset failed, "
+            self._log.error(f"Gathering of batch metric inputs over the {dataset_desc} failed, "
                             f"unable to calculate dataset metrics.")
             return results
         # #################### END: GATHER BATCH INPUTS OVER DATASET #####################
@@ -773,41 +836,19 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             results["inputs"] = gathered_inputs
 
         if not success:
-            self._log.error(f"Combining of gathered metric inputs over the "
-                            f"{'' if dataset_name is None else dataset_name} dataset failed, "
+            self._log.error(f"Combining of gathered batch metric inputs over the {dataset_desc} failed, "
                             f"unable to calculate dataset metrics.")
             return results
         # ###################### END: COMBINE GATHERED BATCH INPUTS #######################
 
         # ###################### START: CALCULATE DATASET METRICS #########################
-        if show_progress:
-            metric_names = list(self._gather_metric_inputs_funcs.keys())
+        metrics_output, success = self.calc_metrics_using(gathered_inputs)
 
-            sys.stdout.write('\n')
-            sys.stdout.flush()
-            self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) over the "
-                            f"{'' if dataset_name is None else dataset_name} dataset")
+        if not success:
+            self._log.error(f"Evaluating metrics over the {dataset_desc} failed")
 
-        metrics_output = {}
-        success = True
-        for metric_name, metric_func in self._metric_funcs.items():
-            if metric_name not in gathered_inputs:
-                continue
-
-            try:
-                metric_inputs = gathered_inputs[metric_name]
-                metrics_output[metric_name] = metric_func(metric_inputs)
-            except Exception as e:
-                _.log_exception(self._log, f"Evaluating metric {metric_name} over dataset failed", e)
-                success = False
-
-            if show_progress:
-                sys.stdout.write('#')
-                sys.stdout.flush()
-
-        if show_progress:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
         # ####################### END: CALCULATE DATASET METRICS ##########################
 
         results["metrics"] = metrics_output
