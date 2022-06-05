@@ -9,6 +9,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from torch.optim import AdamW
 
+from torch.nn.functional import softmax
+
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
@@ -30,9 +32,9 @@ except Exception as e:
 
 
 def worker_fn(rank, args, world_size):
-    # if rank == 0:
-    #     import pydevd_pycharm
-    #     pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+    if rank == 0:
+        import pydevd_pycharm
+        pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     mlp.logging.use_fancy_colors()
 
@@ -41,67 +43,32 @@ def worker_fn(rank, args, world_size):
     training_process.start()
 
 
-class GatherNextSentencePredictionData:
+def gather_next_sentence_prediction_data(batch, auxiliary_results, **kwargs):
+    # Batch is a tuple with the following items :
+    # [0] input_ids_batch,
+    # [1] token_type_ids_batch,
+    # [2] token_labels_ids_batch,
+    # [3] last_token_idx_batch,
+    # [4] reply_class_batch
 
-    def __init__(self, is_primary=True, is_distributed=False, num_devices=1, device='cpu'):
+    targets = batch[4]
 
-        self.is_primary = is_primary
-        self.is_distributed = is_distributed
-        self.num_devices = num_devices
+    nsp_logits = auxiliary_results["nsp_logits"]
 
-        self.device = device
+    prediction_probability = softmax(nsp_logits, dim=1)
+    predictions = torch.argmax(prediction_probability, dim=1)
 
-        self.softmax = torch.nn.Softmax(dim=1)
+    return targets, predictions
 
-    def __call__(self, batch, auxiliary_results, **kwargs):
-        # Batch is a tuple with the following items :
-        # [0] input_ids_batch,
-        # [1] token_type_ids_batch,
-        # [2] token_labels_ids_batch,
-        # [3] last_token_idx_batch,
-        # [4] reply_class_batch
 
-        # Transport the target tensor to the current device such that we can use the gathering process.
-        targets = batch[4].to(self.device)
+def clean_up_batch_data(loss, auxiliary_results, **kwargs):
+    loss.detach_()
 
-        nsp_logits = auxiliary_results["nsp_logits"]
-        # Remove tensor from results because we don't need it anymore
-        del auxiliary_results["nsp_logits"]
+    # Remove tensor from results because we don't need it anymore
+    nsp_logits = auxiliary_results["nsp_logits"]
+    del auxiliary_results["nsp_logits"]
 
-        prediction_probability = self.softmax(nsp_logits)
-        predictions = torch.argmax(prediction_probability, dim=1)
-
-        # remove from GPU
-        nsp_logits = nsp_logits.cpu()
-
-        if self.is_distributed:
-            targets = self._gather(targets)
-            predictions = self._gather(predictions)
-
-        if targets is not None:
-            targets = targets.cpu().numpy()
-
-        if predictions is not None:
-            predictions = predictions.cpu().numpy()
-
-        # This looks a bit strange (inception-like), but we are simply reusing the function
-        # to calculate the classification quality over multiple batches, to calculate the
-        # classification quality over one batch. It also returns the gathered targets and predictions.
-        return calc_classification_quality([(None, targets, predictions)])
-
-    def _gather(self, tensor):
-        gathered_tensors = None
-
-        # Gather the targets and predictions on primary device
-        if self.is_primary:
-            gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.num_devices)]
-
-        torch.distributed.gather(tensor, gather_list=gathered_tensors)
-
-        if self.is_primary:
-            gathered_tensors = torch.concat(gathered_tensors, dim=0)
-
-        return gathered_tensors
+    nsp_logits.cpu()
 
 
 # MLPug needs a TrainModel that outputs the loss
@@ -116,17 +83,13 @@ class TrainModel(torch.nn.Module):
         self.activation_checkpointing = activation_checkpointing
 
     def forward(self, batch_data, evaluate_settings, inference_mode=None):
+        batch_data = (tensor.to(self.device) for tensor in batch_data)
+
         input_ids_batch, \
             token_type_ids_batch, \
             token_labels_ids_batch, \
             last_token_idx_batch, \
             reply_class_batch = batch_data
-
-        input_ids_batch = input_ids_batch.to(self.device)
-        token_type_ids_batch = token_type_ids_batch.to(self.device)
-        token_labels_ids_batch = token_labels_ids_batch.to(self.device)
-        last_token_idx_batch = last_token_idx_batch.to(self.device)
-        reply_class_batch = reply_class_batch.to(self.device)
 
         results = self.model(
             input_ids=input_ids_batch,
@@ -275,17 +238,15 @@ class TrainingProcess(TrainingProcessBase):
             "eps": 1e-8,
         })
 
-    def _create_gather_loss_function(self):
-        # Using default implementation.
-        # In distributed training mode, this will average the loss of the batches on all devices
-        return mlp.evaluation.GatherLossSimple(requester=str(self))
-
     def _create_gather_classification_data_function(self):
-        # In distributed training mode, this will gather the Next Sentence Predictions and Targets
-        return GatherNextSentencePredictionData(is_primary=self.is_primary,
-                                                is_distributed=self.is_distributed,
-                                                num_devices=self.num_devices,
-                                                device=self._device)
+        return gather_next_sentence_prediction_data
+
+    def _create_gather_distributed_classification_data_function(self):
+        # Use default implementation made available by MLPug
+        return mlp.evaluation.GatherTensorTuple(self._device)
+
+    def _create_clean_up_batch_data_func(self):
+        return clean_up_batch_data
 
     def _setup_callbacks(self):
         super()._setup_callbacks()

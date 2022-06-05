@@ -52,8 +52,9 @@ class MultiProcessingMixin:
 
     def __init__(self, *args,
                  is_distributed=None,
-                 is_primary=None,
                  device_rank=None,
+                 is_primary=None,
+                 world_size=None,
                  disable_logging=None,
                  **kwargs):
 
@@ -68,6 +69,9 @@ class MultiProcessingMixin:
         if is_primary is None:
             is_primary = (not is_distributed) or mp_context.is_primary()
 
+        if world_size is None:
+            world_size = mp_context.world_size() if is_distributed else 1
+
         if is_distributed and bool(DEBUG_MULTI_PROCESSING) is True:
             disable_logging = False
 
@@ -77,6 +81,7 @@ class MultiProcessingMixin:
         self._is_distributed = is_distributed
         self._device_rank = device_rank
         self._is_primary = is_primary
+        self._world_size = world_size
 
         super().__init__(*args, disable_logging=disable_logging, **kwargs)
 
@@ -85,12 +90,16 @@ class MultiProcessingMixin:
         return self._is_distributed
 
     @property
+    def device_rank(self):
+        return self._device_rank
+
+    @property
     def is_primary(self):
         return self._is_primary
 
     @property
-    def device_rank(self):
-        return self._device_rank
+    def world_size(self):
+        return self._world_size
 
     def _pybase_get_logger_name(self):
         if self.is_distributed:
