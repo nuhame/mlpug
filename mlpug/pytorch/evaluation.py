@@ -5,10 +5,10 @@ import abc
 import torch
 import torch.distributed as dist
 
-from mlpug.batch_chunking import BatchChunkingResults
-from mlpug.evaluation import default_metric_reducer_func
+from mlpug.evaluation import CombineBatchTuples as CombineBatchTuplesBase
+from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
+from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
-
 
 from mlpug.base import Base
 
@@ -16,153 +16,71 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 # ####### DEFAULT GATHER LOSS METHODS ########
-class GatherLossBase(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
+class GatherLoss(Base):
+    """
+    To calculate the average loss, this class GatherLoss that all the batches have equal size.
+    """
 
-    def __init__(self,
-                 name,
-                 delete_training_loss=True,
-                 delete_auxiliary_results=True,
-                 requester=None,
-                 **kwargs):
-
+    def __init__(self, requester=None, name="GatherLoss", **kwargs):
         if requester is not None:
             name += f'[{requester}]'
 
-        super(GatherLossBase, self).__init__(pybase_logger_name=name, **kwargs)
-
-        self._delete_training_loss = delete_training_loss
-        self._delete_auxiliary_results = delete_auxiliary_results
+        super().__init__(pybase_logger_name=name, **kwargs)
 
         self.requester = requester
 
-        self._gather_loss_func = None
-        if self.is_distributed:
-            self._log.info(f"Using distributed gather loss function")
-            self._gather_loss_func = self._gather_loss_distributed
-        else:
-            self._log.info(f"Using gather loss function")
-            self._gather_loss_func = self._gather_loss
-
-    def _do_detatch_auxiliary_results(self, auxiliary_results):
-        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
-        if type(auxiliary_results) is BatchChunkingResults:
-            for aux in auxiliary_results:
-                aux[0].detach_()
-                aux[1].detach_()
-        else:
-            auxiliary_results[0].detach_()
-            auxiliary_results[1].detach_()
-
-    def _do_delete_auxiliary_results(self, auxiliary_results):
-        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
-        if type(auxiliary_results) is BatchChunkingResults:
-            for (ls, ns) in auxiliary_results:
-                del ls
-                del ns
-        else:
-            (ls, ns) = auxiliary_results
-            del ls
-            del ns
-
-    @abc.abstractmethod
-    def __call__(self, loss, auxiliary_results, **kwargs):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def _gather_loss(self, **kwargs):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def _gather_loss_distributed(self, **kwargs):
-        raise NotImplementedError()
-
-
-class GatherLossSimple(GatherLossBase):
-
-    def __init__(self, delete_training_loss=True, requester=None, name="GatherLossSimple", **kwargs):
-        super().__init__(name,
-                         delete_training_loss=delete_training_loss,
-                         requester=requester,
-                         **kwargs)
-
     def __call__(self, loss, **kwargs):
-        training_loss = loss
+        loss = loss
 
-        loss, loss_sum, num_samples = self._gather_loss_func(loss=training_loss, **kwargs)
-
-        if self._delete_training_loss:
-            del training_loss
-
-        return loss, loss_sum, num_samples
-
-    def _gather_loss(self, loss, **kwargs):
-        loss = loss.item()
-        return loss, loss, 1
-
-    def _gather_loss_distributed(self, loss, **kwargs):
-        loss_sum = loss
-        dist.all_reduce(loss_sum)
-        num_devices = dist.get_world_size()
-        loss = loss_sum / num_devices
-
-        return loss.item(), loss_sum.item(), num_devices
+        return loss, 1
 
 
-class GatherMaskedLoss(GatherLossBase):
+class GatherMaskedLoss(Base):
+    """
+    Useful when using masking. In your TrainingModel, return the summed loss and number of unmasked samples as a part
+    of the auxiliary result. E.g.:
 
-    def __init__(self,
-                 delete_training_loss=True,
-                 delete_auxiliary_results=True,
-                 requester=None,
-                 name="GatherMaskedLoss",
-                 **kwargs):
-        super().__init__(name, delete_training_loss, delete_auxiliary_results, requester, **kwargs)
+    return loss, loss_sum, num_samples
+    """
+
+    def __init__(self, requester=None, name="GatherMaskedLoss", **kwargs):
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super().__init__(name, requester, **kwargs)
 
     def __call__(self, loss, auxiliary_results, **kwargs):
-        training_loss = loss
+        loss_sum = auxiliary_results[0]
+        num_samples = auxiliary_results[1]
 
-        self._do_detatch_auxiliary_results(auxiliary_results)
-
-        # When auxiliary_results is a BatchChunkingResults list, it was created by batch chunking
-        if type(auxiliary_results) is BatchChunkingResults:
-            loss_sum = 0
-            num_samples = 0
-            for aux in auxiliary_results:
-                loss_sum += aux[0]
-                num_samples += aux[1]
-        else:
-            loss_sum = auxiliary_results[0]
-            num_samples = auxiliary_results[1]
-
-        loss, loss_sum, num_samples = self._gather_loss_func(loss_sum=loss_sum, num_samples=num_samples, **kwargs)
-
-        if self._delete_training_loss:
-            del training_loss
-
-        if self._delete_auxiliary_results:
-            self._do_delete_auxiliary_results(auxiliary_results)
-
-        return loss, loss_sum, num_samples
-
-    def _gather_loss(self, loss_sum, num_samples, **kwargs):
-        loss_sum = loss_sum.item()
-        num_samples = num_samples.item()
-
-        loss = loss_sum/num_samples
-
-        return loss, loss_sum, num_samples
-
-    def _gather_loss_distributed(self, loss_sum, num_samples, **kwargs):
-        dist.all_reduce(loss_sum)
-        dist.all_reduce(num_samples)
-
-        loss_sum = loss_sum.item()
-        num_samples = num_samples.item()
-
-        loss = loss_sum / num_samples
-
-        return loss, loss_sum, num_samples
+        return loss_sum, num_samples
 # ############################################
+
+
+# DEFAULT FUNCTION TO GATHER LOSS IN DISTRIBUTED COMPUTING CONTEXT
+def gather_loss_distributed(loss_sum, tot_num_samples):
+    dist.all_reduce(loss_sum)
+    dist.all_reduce(tot_num_samples)
+
+    return loss_sum.item(), tot_num_samples.item()
+
+
+# DEFAULT FUNCTION TO COMBINE GATHERED METRIC INPUTS
+class ConcatTensorsMixin:
+
+    def _handle_other_type(self, list_of_items, first_item=None):
+        if isinstance(first_item, torch.Tensor):
+            return torch.concat(list_of_items, dim=self.dim)
+        else:
+            return list_of_items
+
+
+class CombineBatchTuples(ConcatTensorsMixin, CombineBatchTuplesBase):
+    pass
+
+
+class CombineBatchDicts(ConcatTensorsMixin, CombineBatchDictsBase):
+    pass
 
 
 class DefaultLossEvaluator:
@@ -182,14 +100,61 @@ class DefaultLossEvaluator:
 
 class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
 
-    def __init__(self, *args, batch_metric_funcs=None, name="MetricEvaluator", **kwargs):
+    def __init__(self,
+                 gather_metric_inputs_funcs=None,
+                 gather_distributed_inputs_funcs=None,
+                 combine_metric_inputs_funcs=None,
+                 combine_metric_inputs_func=None,
+                 metric_funcs=None,
+                 batch_dim=0,
+                 name="MetricEvaluator",
+                 **kwargs):
+        """
 
-        if batch_metric_funcs is None:
-            batch_metric_funcs = {
-                "loss": GatherLossSimple(requester=name)
-            }
+        See MetricEvaluatorBase for information on all parameters
 
-        super().__init__(batch_metric_funcs, *args, name=name, **kwargs)
+        :param batch_dim: Default is 0, used by default combine_metric_inputs_funcs:
+            CombineBatchTuples(dim=batch_dim)
+
+        :param name:
+        :param kwargs:
+        """
+
+        if gather_metric_inputs_funcs is None:
+            gather_metric_inputs_funcs = {}
+
+        if "loss" not in gather_metric_inputs_funcs:
+            gather_metric_inputs_funcs["loss"] = GatherLoss(requester=name)
+
+        metric_names = gather_metric_inputs_funcs.keys()
+
+        if gather_distributed_inputs_funcs is None:
+            gather_distributed_inputs_funcs = {}
+
+        if "loss" not in gather_distributed_inputs_funcs:
+            gather_distributed_inputs_funcs["loss"] = gather_loss_distributed
+
+        if combine_metric_inputs_funcs is None:
+            if not callable(combine_metric_inputs_func):
+                combine_metric_inputs_funcs = {}
+
+        if combine_metric_inputs_funcs is not None:
+            for metric_name in metric_names:
+                if metric_name not in combine_metric_inputs_funcs:
+                    combine_metric_inputs_funcs[metric_name] = CombineBatchTuples(dim=batch_dim)
+
+        if metric_funcs is None:
+            metric_funcs = {}
+
+        if "loss" not in metric_funcs:
+            metric_funcs["loss"] = average_loss
+
+        super().__init__(gather_metric_inputs_funcs=gather_metric_inputs_funcs,
+                         gather_distributed_inputs_funcs=gather_distributed_inputs_funcs,
+                         combine_metric_inputs_funcs=combine_metric_inputs_funcs,
+                         combine_metric_inputs_func=combine_metric_inputs_func,
+                         name=name,
+                         **kwargs)
 
     def _create_default_model_evaluate_func(self):
         return DefaultLossEvaluator(self._trainer)

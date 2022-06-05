@@ -25,6 +25,11 @@ def gather_loss(loss, **kwargs):
     return loss, 1
 
 
+# DEFAULT LOSS METRIC FUNCTION
+def average_loss(loss_sum, tot_num_samples):
+    return loss_sum/tot_num_samples
+
+
 def default_metric_reducer_func(batch_metrics_list):
     # unzip
     _, metric_sum_list, num_samples_list = list(zip(*batch_metrics_list))
@@ -164,6 +169,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  gather_metric_inputs_funcs=None,
                  gather_distributed_inputs_funcs=None,
                  combine_metric_inputs_funcs=None,
+                 combine_metric_inputs_func=None,
                  metric_funcs=None,
                  batch_chunk_size=None,
                  show_progress=False,
@@ -305,6 +311,11 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
                 To do this `CombineBatchTuples` is also used here.
 
+            Per Deep Learning library a default implementation is provided for this parameter.
+
+        :param combine_metric_inputs_func: Instead of `combine_metric_inputs_funcs`, you can provide
+            one function that will be used by all metrics defined in `gather_metric_inputs_funcs`
+
         :param metric_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions to
             calculate the metric based on the gathered/combined metric inputs
@@ -391,11 +402,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         except InvalidParametersException as e:
             raise InvalidParametersException("The gather metric inputs funcs are invalid") from e
 
-        if gather_distributed_inputs_funcs is None:
-            gather_distributed_inputs_funcs = {}
+        metric_names = gather_metric_inputs_funcs.keys()
+
+        if type(gather_distributed_inputs_funcs) is not dict:
+            raise InvalidParametersException("No gather_distributed_inputs_funcs dict provided")
 
         # For the different deep learning library backends supported, defaults should be provided
-        for metric_name in gather_metric_inputs_funcs.keys():
+        for metric_name in metric_names:
             if metric_name not in gather_distributed_inputs_funcs:
                 raise InvalidParametersException(
                     f'No gather_distributed_inputs_func provided for metric : {metric_name}')
@@ -407,10 +420,17 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 from e
 
         # For the different deep learning library backends supported, defaults should be provided
-        if combine_metric_inputs_funcs is None:
-            combine_metric_inputs_funcs = {}
+        if type(combine_metric_inputs_funcs) is not dict:
+            if callable(combine_metric_inputs_func):
+                combine_metric_inputs_funcs = {metric_name: combine_metric_inputs_func for metric_name in metric_names}
+            else:
+                raise InvalidParametersException("Either provide one combine_metric_inputs_func or "
+                                                 "the combine_metric_inputs_funcs dict")
+        elif callable(combine_metric_inputs_func):
+            raise InvalidParametersException("Either provide one combine_metric_inputs_func or "
+                                             "the combine_metric_inputs_funcs dict, not both.")
 
-        for metric_name in gather_metric_inputs_funcs.keys():
+        for metric_name in metric_names:
             if metric_name not in combine_metric_inputs_funcs:
                 raise InvalidParametersException(f'No combine_metric_inputs_func provided for metric : {metric_name}')
 
@@ -420,7 +440,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             raise InvalidParametersException("There are issues with the provided combine_metric_inputs_funcs") \
                 from e
 
-        for metric_name in gather_metric_inputs_funcs.keys():
+        for metric_name in metric_names:
             if metric_name not in metric_funcs:
                 raise InvalidParametersException(f'No metric_func provided for metric : {metric_name}')
 
