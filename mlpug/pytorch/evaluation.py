@@ -1,68 +1,69 @@
-import os
-
 import abc
+from typing import Collection, Tuple, Dict
 
 import torch
 import torch.distributed as dist
 
+from evaluation import GatherLoss
 from mlpug.evaluation import CombineBatchTuples as CombineBatchTuplesBase
 from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.base import Base
-
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
-# ####### DEFAULT GATHER LOSS METHODS ########
-class GatherLoss(Base):
-    """
-    To calculate the average loss, this class GatherLoss that all the batches have equal size.
-    """
-
-    def __init__(self, requester=None, name="GatherLoss", **kwargs):
-        if requester is not None:
-            name += f'[{requester}]'
-
-        super().__init__(pybase_logger_name=name, **kwargs)
-
-        self.requester = requester
-
-    def __call__(self, loss, **kwargs):
-        loss = loss
-
-        return loss, 1
-
-
-class GatherMaskedLoss(Base):
-    """
-    Useful when using masking. In your TrainingModel, return the summed loss and number of unmasked samples as a part
-    of the auxiliary result. E.g.:
-
-    return loss, loss_sum, num_samples
-    """
-
-    def __init__(self, requester=None, name="GatherMaskedLoss", **kwargs):
-        if requester is not None:
-            name += f'[{requester}]'
-
-        super().__init__(name, requester, **kwargs)
-
-    def __call__(self, loss, auxiliary_results, **kwargs):
-        loss_sum = auxiliary_results[0]
-        num_samples = auxiliary_results[1]
-
-        return loss_sum, num_samples
-# ############################################
-
-
 # DEFAULT FUNCTION TO GATHER LOSS IN DISTRIBUTED COMPUTING CONTEXT
-def gather_loss_distributed(loss_sum, tot_num_samples):
+def gather_loss_distributed(loss_data: Tuple):
+    loss_sum, tot_num_samples = loss_data
+
     dist.all_reduce(loss_sum)
     dist.all_reduce(tot_num_samples)
 
     return loss_sum.item(), tot_num_samples.item()
+
+
+# DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
+class GatherTensorData(MultiProcessingMixin, metaclass=abc.ABCMeta):
+    def __init__(self, device, batch_dim=0, **kwargs):
+        """
+        If applicable, concatenate the tensors from different devices in a distributed computing setting
+
+        :param device:
+        """
+        super().__init__(**kwargs)
+        self.device = device
+        self.batch_dim = batch_dim
+
+    @abc.abstractmethod
+    def __call__(self, gathered_input_data: Collection):
+        raise NotImplementedError()
+
+    def _gather(self, tensor):
+        gathered_tensors = None
+
+        if self.is_primary:
+            gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.world_size)]
+
+        torch.distributed.gather(tensor, gather_list=gathered_tensors)
+
+        if self.is_primary:
+            gathered_tensors = torch.concat(gathered_tensors, dim=self.batch_dim)
+
+        return gathered_tensors
+
+
+class GatherTensorTuple(GatherTensorData):
+
+    def __call__(self, gathered_input_data: Tuple):
+        return (self._gather(tensor) for tensor in gathered_input_data)
+
+
+class GatherTensorDict(GatherTensorData):
+
+    def __call__(self, gathered_input_data: Dict):
+        return {metric_name: self._gather(tensor)
+                for metric_name, tensor in gathered_input_data.items()}
 
 
 # DEFAULT FUNCTION TO COMBINE GATHERED METRIC INPUTS

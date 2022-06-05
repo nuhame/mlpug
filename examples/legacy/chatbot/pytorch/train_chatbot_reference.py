@@ -9,6 +9,7 @@ from torch import optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as PT_DDP
 
+import evaluation
 from examples.legacy.chatbot.shared import create_argument_parser
 
 from examples.legacy.chatbot.pytorch.original_chatbot_tutorial.model_data_generation import \
@@ -353,7 +354,7 @@ if __name__ == "__main__":
 
     average_loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
                                                             batch_metric_funcs={
-                                                                "loss": mlp.evaluation.GatherMaskedLoss()
+                                                                "loss": evaluation.GatherMaskedLoss()
                                                             },
                                                             name="AverageLossEvaluator")
 

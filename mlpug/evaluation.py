@@ -14,36 +14,54 @@ from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
 
 
-def gather_loss(loss, **kwargs):
+class GatherLoss(Base):
     """
-    Warning: this simple default implementation assumes that all batches have the same number of samples.
+    Warning: To calculate the average loss, this class assumes that all the batches have equal size.
+    """
 
-    :param loss:
-    :param kwargs:
-    :return:
+    def __init__(self, requester=None, name="GatherLoss", **kwargs):
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super().__init__(pybase_logger_name=name, **kwargs)
+
+        self.requester = requester
+
+    def __call__(self, loss, **kwargs):
+        loss = loss
+
+        return loss, 1
+
+
+class GatherMaskedLoss(Base):
     """
-    return loss, 1
+    Useful when using masking. In your TrainingModel, return the summed loss and number of unmasked samples as a part
+    of the auxiliary result. E.g.:
+
+    return loss, loss_sum, num_samples
+    """
+
+    def __init__(self, requester=None, name="GatherMaskedLoss", **kwargs):
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super().__init__(name, requester, **kwargs)
+
+    def __call__(self, loss, auxiliary_results, **kwargs):
+        loss_sum = auxiliary_results[0]
+        num_samples = auxiliary_results[1]
+
+        return loss_sum, num_samples
 
 
 # DEFAULT LOSS METRIC FUNCTION
-def average_loss(loss_sum, tot_num_samples):
+def average_loss(metrics_inputs):
+    loss_sum, tot_num_samples = metrics_inputs
     return loss_sum/tot_num_samples
 
 
-def default_metric_reducer_func(batch_metrics_list):
-    # unzip
-    _, metric_sum_list, num_samples_list = list(zip(*batch_metrics_list))
-
-    metric_sum = sum(metric_sum_list)
-    num_samples = sum(num_samples_list)
-
-    metric = metric_sum/num_samples
-
-    return metric, metric_sum, num_samples
-
-
-def no_reduction(batch_metrics_list):
-    return batch_metrics_list
+def do_nothing(**kwargs):
+    pass
 
 
 def overlapping_metrics(metric_names1, metric_names2):
@@ -179,6 +197,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  trainer=None,
                  gather_metric_inputs_funcs=None,
                  gather_distributed_inputs_funcs=None,
+                 clean_up_batch_data_func=None,
                  combine_metric_inputs_funcs=None,
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
@@ -210,11 +229,14 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
          2) `gather_distributed_inputs_funcs`, a dict with, for each metric, a function that can
             gather the metric inputs from different devices in a distributed computing context, if applicable
 
-         3) `combine_metric_inputs_funcs`, a dict with, for each metric, a function that can
+         3) `clean_up_batch_data_func`, an optional function that can be used to clean-up batch data
+             that is not used any more after gathering the metric inputs. This is useful to optimize memory usage.
+
+         4) `combine_metric_inputs_funcs`, a dict with, for each metric, a function that can
             combine metric inputs from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
             or of a window of batches.
 
-         4) `metric_funcs`, a dict with, for each metric, a function to
+         5) `metric_funcs`, a dict with, for each metric, a function to
             calculate the metric based on the gathered/combined metric inputs
 
         In a default situation, for loss no functions need to be provided, defaults are available for all functions
@@ -303,6 +325,12 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 Where T is a Tensor type.
 
             Per Deep Learning library a default implementation is provided for this parameter.
+
+        :param clean_up_batch_data_func: An optional function that can be used to clean-up batch data
+            that is not used any more after gathering the metric inputs. This is useful to optimize memory usage.
+
+            The following function signature is assumed:
+                func(batch, evaluate_settings, loss, auxiliary_results) -> None
 
         :param combine_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
@@ -406,7 +434,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         try:
             if gather_metric_inputs_funcs is None:
                 gather_metric_inputs_funcs = {
-                    "loss": gather_loss
+                    "loss": GatherLoss(requester=name)
                 }
 
             self.check_funcs(gather_metric_inputs_funcs)
@@ -429,6 +457,9 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         except InvalidParametersException as e:
             raise InvalidParametersException("There are issues with the provided gather_distributed_inputs_funcs") \
                 from e
+
+        if not callable(clean_up_batch_data_func):
+            clean_up_batch_data_func = do_nothing
 
         # For the different deep learning library backends supported, defaults should be provided
         if type(combine_metric_inputs_funcs) is not dict:
@@ -463,6 +494,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         self._gather_metric_inputs_funcs = gather_metric_inputs_funcs
         self._gather_distributed_inputs_funcs = gather_distributed_inputs_funcs
+        self._clean_up_batch_data_func = clean_up_batch_data_func
         self._combine_metric_inputs_funcs = combine_metric_inputs_funcs
         self._metric_funcs = metric_funcs
 
@@ -538,6 +570,11 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             except Exception as e:
                 _.log_exception(self._log, f"Gathering inputs for metric {metric_name} failed", e)
                 success = False
+
+        try:
+            self._clean_up_batch_data_func(**metric_func_args)
+        except Exception as e:
+            _.log_exception(self._log, f"Cleaning up batch data failed (ignoring this failure)", e)
 
         return gathered_inputs, success
 

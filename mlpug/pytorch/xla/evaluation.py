@@ -10,8 +10,8 @@ from mlpug.pytorch.evaluation import MetricEvaluator as MetricEvaluatorPyTorch
 from mlpug.utils import is_chunkable
 
 from mlpug.pytorch.evaluation import \
-    GatherLossSimple as GatherLossSimplePytorch, \
-    GatherMaskedLoss as GatherMaskedLossPyTorch
+    GatherLossSimple as GatherLossSimplePytorch
+from evaluation import GatherMaskedLoss as GatherMaskedLossPyTorch
 
 
 class GatherLossSimple(GatherLossSimplePytorch):

@@ -35,27 +35,17 @@ except Exception as e:
                                  "see https://scikit-learn.org/stable/install.html#installing-the-latest-release", e)
 
 
-def calc_classification_quality(batch_classification_data):
-    concat = CombineBatchTuples()
-
-    # batch_classification_data is a list of tuples:
-    # [
-    #   (batch classification quality dict, batch labels numpy array, batch predictions numpy array)
-    #   ...
-    #   (batch classification quality dict, batch labels numpy array, batch predictions numpy array)
-    # ]
-    _, labels, predictions = concat(batch_classification_data)
+def calc_classification_quality(classification_data):
+    labels, predictions = classification_data
 
     num_samples = len(labels)
     accuracy = np.sum(labels == predictions)/num_samples
 
-    q = {
+    return {
         "accuracy": accuracy,
         # Added for demonstration purposes
         "num_samples": num_samples
     }
-
-    return q, labels, predictions
 
 
 class TrainingProcess(Base, metaclass=abc.ABCMeta):
@@ -244,9 +234,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             batch_chunk_size=self._args.batch_chunk_size)
 
     @abc.abstractmethod
-    def _create_gather_loss_function(self):
+    def _create_gather_classification_data_function(self):
         """
-        Returns function that can gather and reduce loss from one or more devices (when performing distributed training)
+        Returns function that can gather classification data (prediction and target data)
+
         Implementation depends on specific ML Library you are using
 
         :return:
@@ -254,10 +245,21 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         raise NotImplementedError("Please implement in your child class")
 
     @abc.abstractmethod
-    def _create_gather_classification_data_function(self):
+    def _create_gather_distributed_classification_data_function(self):
         """
-        Returns function that can gather and reduce classification data (prediction and target data)
-        from one or more devices (when performing distributed training)
+        Returns function that can gather classification data, gathered per device, over multiple devices
+        in a distributed training setting
+
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        raise NotImplementedError("Please implement in your child class")
+
+    @abc.abstractmethod
+    def _create_clean_up_batch_data_func(self):
+        """
+        Returns function that can cleanup the batch data to optimize memory use
 
         Implementation depends on specific ML Library you are using
 
@@ -297,35 +299,67 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             "pretrained_model": self._args.pretrained_model
         }
 
-        loss_gather_func = self._create_gather_loss_function()
+        # In general, the MetricEvaluator defines the following steps to calculate metrics:
+        #
+        # * Gather inputs from the batch data to calculate metrics of interest
+        #   (using "gather_metric_inputs_funcs" dict, with a function per metric)
+        #
+        # * Gather metric inputs, gathered on different devices, when relevant
+        #   (using "gather_distributed_inputs_funcs" dict, with a function per metric)
+        #
+        #   These metric inputs are used to calculate the batch metrics of interest.
+        #   In our case the loss and the output candidate classification quality.
+        #   (using "metric_funcs" dict, with a function per metric)
+        #
+        # * Combine the gathered metric inputs per batch
+        #   (using "combine_metric_inputs_funcs" dict, with a function per metric)
+        #
+        # * Use the combined metric inputs to calculate the metrics over a dataset and/or
+        #   a sliding window of batches;
+        #   (using "metric_funcs" dict, with a function per metric)
+        #
+        # Although you can define functions for all steps, in many cases suitable defaults are available.
+        #
 
         # Every batch we will calculate the training and validation loss
-        # In distributed training mode, this will be done by gathering the loss calculated on all devices
+        # We are using all the default loss gathering functions here.
         loss_only_evaluator = mlp.evaluation.MetricEvaluator(
-            batch_metric_funcs={
-                'loss': loss_gather_func
-            },
             # The trainer knows how to evaluate the model
             trainer=self._trainer,
             batch_chunk_size=self._args.batch_chunk_size,
             name="LossOnlyEvaluator")
 
-        # Every epoch we will also calculated the candidate output classification quality
+        # Every epoch we will also calculated the loss and candidate output classification quality over the whole
         all_metrics_evaluator = mlp.evaluation.MetricEvaluator(
-            batch_metric_funcs={
-                # gather loss data and calculate average loss per batch
-                'loss': loss_gather_func,
-                # gather classification targets and predictions (next sentence prediction) and
-                # calculate batch classification quality
+            gather_metric_inputs_funcs={
+                # We will use the default function for loss, so we don't need to add it here
+                #
+                # Gather classification targets and predictions (next sentence prediction)
+                # The implementation depends on the Deep Learning library backend
                 'classification': self._create_gather_classification_data_function()
             },
-            # The trainer knows how to evaluate the model
-            trainer=self._trainer,
-            batch_metric_reducer_funcs={
-                # Use default reducer for loss (not shown here)
-                # Use the gathered classification targets and predictions to calculate Precision, Recall and F1
+            gather_distributed_inputs_funcs={
+                # We will use the default function for loss, so we don't need to add it here
+                #
+                # Gather the classification data, gathered on all devices used, when using distributed training
+                # The implementation depends on the Deep Learning library backend
+                'classification': self._create_gather_distributed_classification_data_function()
+            },
+            #
+            # The implementation depends on the Deep Learning library backend
+            clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
+            #
+            # We will use the defaults for combine_metric_inputs_funcs
+            #
+            metric_funcs={
+                # We will use the default function for loss, so we don't need to add it here
+                #
+                # Compute the classification quality
                 'classification': calc_classification_quality
             },
+            #
+            # The trainer knows how to evaluate the model
+            trainer=self._trainer,
             # When batch_chunk_size is given, perform gradient accumulation in chunks with batch_chunk_size samples
             batch_chunk_size=self._args.batch_chunk_size,
             show_dataset_evaluation_progress=True,
