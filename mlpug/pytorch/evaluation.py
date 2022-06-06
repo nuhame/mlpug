@@ -27,10 +27,10 @@ class GatherLossDistributed(MultiProcessingMixin, Base):
 
         super().__init__(pybase_logger_name=name, **kwargs)
 
-    def __call__(self, loss_data: Tuple):
+    def __call__(self, loss_data: Tuple[torch.Tensor, int]):
         loss_sum, tot_num_samples = loss_data
 
-        tot_num_samples = torch.tensor(tot_num_samples)
+        tot_num_samples = torch.tensor(tot_num_samples).to(loss_sum.device)
 
         if self.is_distributed:
             # Reduce to primary device
@@ -83,7 +83,7 @@ class GatherTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
         else:
             gathered_tensors = tensor
 
-        if self.convert_to_numpy:
+        if gathered_tensors is not None and self.convert_to_numpy:
             gathered_tensors = gathered_tensors.cpu().numpy()
 
         return gathered_tensors
