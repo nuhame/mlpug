@@ -547,11 +547,25 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         if is_chunkable_batch and self._batch_chunk_size is not None and model_output is None:
             chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
-            return self.gather_dataset_metric_inputs(
+            gathered_inputs, success = self.gather_dataset_metric_inputs(
                 chunk_dataset,
                 evaluate_settings=evaluate_settings,
                 show_progress=False,
                 dataset_name="batch chunks")
+
+            if not success:
+                self._log.error(f"Gathering of metric inputs from batch chunks failed")
+                return gathered_inputs, False
+
+            gathered_inputs, success = self.combine_gathered_metric_inputs(
+                gathered_inputs,
+                "batch chunks",
+                show_progress=False)
+
+            if not success:
+                self._log.error(f"Combining metric inputs of batch chunks failed")
+
+            return gathered_inputs, success
 
         if is_chunkable_batch:
             # The batch is chunkable but, we will are not using the chunks: get the full batch.
@@ -615,9 +629,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         if show_progress:
             metric_names = self.get_metric_names()
-
-            sys.stdout.write('\n')
-            sys.stdout.flush()
             self._log.debug(f"Gathering batch metric inputs ({', '.join(metric_names)}) over the {dataset_desc}")
 
         gathered_metric_inputs = {}
@@ -663,9 +674,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         if show_progress:
             metric_names = overlapping_metrics(self._combine_metric_inputs_funcs.keys(), gathered_metric_inputs.keys())
-
-            sys.stdout.write('\n')
-            sys.stdout.flush()
             self._log.debug(f"Combining gathered {dataset_desc} batch metric inputs "
                             f"(for metrics {', '.join(metric_names)})")
 
@@ -678,17 +686,9 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             try:
                 metric_inputs_list = gathered_metric_inputs[metric_name]
                 combined_metric_inputs[metric_name] = combine_func(metric_inputs_list)
-
-                if show_progress:
-                    sys.stdout.write('+')
-                    sys.stdout.flush()
             except Exception as e:
                 _.log_exception(self._log, f"Combining gathered inputs for metric {metric_name} failed", e)
                 success = False
-
-        if show_progress:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
 
         return combined_metric_inputs, success
 
@@ -788,9 +788,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         if show_progress:
             metric_names = overlapping_metrics(self._metric_funcs.keys(), metric_inputs.keys())
-
-            sys.stdout.write('\n')
-            sys.stdout.flush()
             self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) using data from the {dataset_desc}")
 
         metrics_output = {}
@@ -891,7 +888,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         # ###################### END: COMBINE GATHERED BATCH INPUTS #######################
 
         # ###################### START: CALCULATE DATASET METRICS #########################
-        metrics_output, success = self.calc_metrics_using(gathered_inputs)
+        metrics_output, success = self.calc_metrics_using(gathered_inputs, dataset_name, show_progress)
 
         if not success:
             self._log.error(f"Evaluating metrics over the {dataset_desc} failed")
