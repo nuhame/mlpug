@@ -49,6 +49,9 @@ class MultiProcessingManager:
 
 
 class MultiProcessingMixin:
+    """
+    Assumed to be used in combination with a class derived from mlpug.base.Base
+    """
 
     def __init__(self, *args,
                  is_distributed=None,

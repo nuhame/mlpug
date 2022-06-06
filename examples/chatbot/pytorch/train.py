@@ -17,7 +17,6 @@ from basics.logging import get_logger
 import mlpug.pytorch as mlp
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
-from examples.chatbot.training_process import calc_classification_quality
 from examples.chatbot.pytorch.batch_collator import BatchCollator
 
 from examples.chatbot.pytorch.shared_args import create_arg_parser, describe_args
@@ -32,9 +31,9 @@ except Exception as e:
 
 
 def worker_fn(rank, args, world_size):
-    if rank == 0:
-        import pydevd_pycharm
-        pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+    # if rank == 0:
+    #     import pydevd_pycharm
+    #     pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     mlp.logging.use_fancy_colors()
 

@@ -362,7 +362,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             trainer=self._trainer,
             # When batch_chunk_size is given, perform gradient accumulation in chunks with batch_chunk_size samples
             batch_chunk_size=self._args.batch_chunk_size,
-            show_dataset_evaluation_progress=True,
+            show_progress=True,
             name="AllMetricsEvaluator")
 
         def log_metrics(logs, dataset_batch):
@@ -384,7 +384,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                             'validation',
                                             metric_evaluator=all_metrics_evaluator,
                                             log_condition_func=log_metrics,
-                                            batch_averaging_window=avg_window_validation,
+                                            sliding_window_length=avg_window_validation,
                                             inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate training metrics only once per epoch over the whole dataset
             mlp.callbacks.TestMetricsLogger(self._batch_training_set,

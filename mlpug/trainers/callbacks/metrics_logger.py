@@ -18,9 +18,8 @@ class MetricsLoggingMode(Enum):
     BATCH_AND_SLIDING_WINDOW_METRICS = "BATCH_AND_SLIDING_WINDOW_METRICS"
     WHOLE_DATASET_METRICS = "WHOLE_DATASET_METRICS"
 
-    @staticmethod
-    def will_log_sliding_window_metrics(mode):
-        return mode is MetricsLoggingMode.BATCH_AND_SLIDING_WINDOW_METRICS
+    def will_log_sliding_window_metrics(self):
+        return self.value is MetricsLoggingMode.BATCH_AND_SLIDING_WINDOW_METRICS.value
 
     def __str__(self):
         return str(self.value)
@@ -156,7 +155,7 @@ class MetricsLoggerBase(Callback):
                           start_batch,
                           start_update_iter):
 
-        will_log_sliding_window_metrics = MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode)
+        will_log_sliding_window_metrics = self._logging_mode.will_log_sliding_window_metrics()
 
         if not self.instance_valid():
             if will_log_sliding_window_metrics:
@@ -320,7 +319,7 @@ class MetricsLoggerBase(Callback):
             return_gathered_inputs=self._logging_mode.will_log_sliding_window_metrics())
 
     def _update_metrics_windows_with(self, batch_metric_inputs):
-        for metric_name, metric_inputs in batch_metric_inputs.keys():
+        for metric_name, metric_inputs in batch_metric_inputs.items():
             sliding_window = self._metric_windows[metric_name] if metric_name in self._metric_windows else None
             if sliding_window is None:
                 self._log.debug(f"Creating sliding window for metric {metric_name}")
@@ -401,7 +400,7 @@ class MetricsLoggerBase(Callback):
         self._valid = True
 
         if not hasattr(self._dataset, '__iter__'):
-            if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
+            if self._logging_mode.will_log_sliding_window_metrics():
                 self._log.debug("Training batch evaluation results will be used to calculate and log metrics.")
             else:
                 self._log.error(f"No valid dataset provided to calculated metrics on, "
@@ -463,7 +462,7 @@ class TrainingMetricsLogger(MetricsLoggerBase):
                           start_batch,
                           start_update_iter):
 
-        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
+        if self._logging_mode.will_log_sliding_window_metrics():
             if self._sliding_window_length is None:
                 self._sliding_window_length = math.ceil(num_batches_per_epoch/2.0)
                 self._log.debug(f"Set sliding_window_length to half of "
@@ -514,7 +513,7 @@ class TestMetricsLogger(MetricsLoggerBase):
                           start_batch,
                           start_update_iter):
 
-        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode):
+        if self._logging_mode.will_log_sliding_window_metrics():
             if self._sliding_window_length is None:
                 try:
                     self._sliding_window_length = int(0.5*len(self._dataset))+1
@@ -552,8 +551,7 @@ class TestMetricsLogger(MetricsLoggerBase):
             self._log.error('A problem occurred, will not continue executing this hook')
             return success
 
-        if MetricsLoggingMode.will_log_sliding_window_metrics(self._logging_mode) and \
-                self._dataset_iterator is None:
+        if self._logging_mode.will_log_sliding_window_metrics() and self._dataset_iterator is None:
             self._dataset_iterator = iter(self._dataset)
 
         return True
