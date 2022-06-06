@@ -4,7 +4,9 @@ from typing import Collection, Tuple, Dict
 import torch
 import torch.distributed as dist
 
-from evaluation import GatherLoss
+from mlpug.base import Base
+
+from mlpug.evaluation import GatherLoss
 from mlpug.evaluation import CombineBatchTuples as CombineBatchTuplesBase
 from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
@@ -14,55 +16,89 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 # DEFAULT FUNCTION TO GATHER LOSS IN DISTRIBUTED COMPUTING CONTEXT
-def gather_loss_distributed(loss_data: Tuple):
-    loss_sum, tot_num_samples = loss_data
+class GatherLossDistributed(MultiProcessingMixin, Base):
 
-    dist.all_reduce(loss_sum)
-    dist.all_reduce(tot_num_samples)
+    def __init__(self, requester=None, name=None, **kwargs):
+        if name is None:
+            name = self.__class__.__name__
 
-    return loss_sum.item(), tot_num_samples.item()
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super().__init__(pybase_logger_name=name, **kwargs)
+
+    def __call__(self, loss_data: Tuple):
+        loss_sum, tot_num_samples = loss_data
+
+        tot_num_samples = torch.tensor(tot_num_samples)
+
+        if self.is_distributed:
+            # Reduce to primary device
+            dist.reduce(loss_sum, 0)
+            dist.reduce(tot_num_samples, 0)
+
+        return loss_sum.item(), tot_num_samples.item()
 
 
 # DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
-class GatherTensorData(MultiProcessingMixin, metaclass=abc.ABCMeta):
-    def __init__(self, device, batch_dim=0, **kwargs):
+class GatherTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
+    def __init__(self,
+                 device,
+                 batch_dim=0,
+                 convert_to_numpy=True,
+                 requester=None,
+                 name=None,
+                 **kwargs):
         """
         If applicable, concatenate the tensors from different devices in a distributed computing setting
 
         :param device:
         """
-        super().__init__(**kwargs)
+        if name is None:
+            name = self.__class__.__name__
+
+        if requester is not None:
+            name += f'[{requester}]'
+
+        super().__init__(pybase_logger_name=name, **kwargs)
         self.device = device
         self.batch_dim = batch_dim
+        self.convert_to_numpy = convert_to_numpy
 
     @abc.abstractmethod
-    def __call__(self, gathered_input_data: Collection):
+    def __call__(self, gathered_input_data: Collection) -> Collection:
         raise NotImplementedError()
 
     def _gather(self, tensor):
-        gathered_tensors = None
+        if self.is_distributed:
+            gathered_tensors = None
 
-        if self.is_primary:
-            gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.world_size)]
+            if self.is_primary:
+                gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.world_size)]
 
-        torch.distributed.gather(tensor, gather_list=gathered_tensors)
+            torch.distributed.gather(tensor, gather_list=gathered_tensors)
 
-        if self.is_primary:
-            gathered_tensors = torch.concat(gathered_tensors, dim=self.batch_dim)
+            if self.is_primary:
+                gathered_tensors = torch.concat(gathered_tensors, dim=self.batch_dim)
+        else:
+            gathered_tensors = tensor
+
+        if self.convert_to_numpy:
+            gathered_tensors = gathered_tensors.cpu().numpy()
 
         return gathered_tensors
 
 
 class GatherTensorTuple(GatherTensorData):
 
-    def __call__(self, gathered_input_data: Tuple):
-        return (self._gather(tensor) for tensor in gathered_input_data)
+    def __call__(self, gathered_input_data: Tuple) -> Collection:
+        return tuple(self._gather(tensor.to(self.device)) for tensor in gathered_input_data)
 
 
 class GatherTensorDict(GatherTensorData):
 
-    def __call__(self, gathered_input_data: Dict):
-        return {metric_name: self._gather(tensor)
+    def __call__(self, gathered_input_data: Dict) -> Collection:
+        return {metric_name: self._gather(tensor.to(self.device))
                 for metric_name, tensor in gathered_input_data.items()}
 
 
@@ -133,7 +169,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
             gather_distributed_inputs_funcs = {}
 
         if "loss" not in gather_distributed_inputs_funcs:
-            gather_distributed_inputs_funcs["loss"] = gather_loss_distributed
+            gather_distributed_inputs_funcs["loss"] = GatherLossDistributed(requester=name)
 
         if combine_metric_inputs_funcs is None:
             if not callable(combine_metric_inputs_func):
@@ -154,6 +190,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                          gather_distributed_inputs_funcs=gather_distributed_inputs_funcs,
                          combine_metric_inputs_funcs=combine_metric_inputs_funcs,
                          combine_metric_inputs_func=combine_metric_inputs_func,
+                         metric_funcs=metric_funcs,
                          name=name,
                          **kwargs)
 

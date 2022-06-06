@@ -1,7 +1,7 @@
 import sys
 import abc
 
-from typing import Iterable, Tuple, Dict, Collection
+from typing import Optional, Iterable, Tuple, Dict, Collection
 
 import numpy as np
 
@@ -28,8 +28,6 @@ class GatherLoss(Base):
         self.requester = requester
 
     def __call__(self, loss, **kwargs):
-        loss = loss
-
         return loss, 1
 
 
@@ -55,7 +53,10 @@ class GatherMaskedLoss(Base):
 
 
 # DEFAULT LOSS METRIC FUNCTION
-def average_loss(metrics_inputs):
+def average_loss(metrics_inputs: Optional[Tuple]):
+    if metrics_inputs is None:
+        return metrics_inputs
+
     loss_sum, tot_num_samples = metrics_inputs
     return loss_sum/tot_num_samples
 
@@ -84,10 +85,12 @@ class CombineBatchData(metaclass=abc.ABCMeta):
         self.dim = dim
 
     @abc.abstractmethod
-    def __call__(self, iterable: Iterable[Collection]) -> Collection:
+    def __call__(self, iterable: Optional[Iterable[Collection]]) -> Optional[Collection]:
         """
         Assumes that the input is a iterable of batch data, where each batch data object contains items that are
         numpy arrays and/or int/float scalars.
+
+        If the input iterable is None it returned immediately
 
         When a batch data item value is a numpy array, the array values for this item are concatenated
         When a batch data item value is a float/int scalar, the array values for this item are summed
@@ -118,7 +121,7 @@ class CombineBatchData(metaclass=abc.ABCMeta):
 
 class CombineBatchTuples(CombineBatchData):
 
-    def __call__(self, tuples: Iterable[Tuple]) -> Tuple:
+    def __call__(self, tuples: Optional[Iterable[Tuple]]) -> Optional[Tuple]:
         """
 
         Assumes that batch data in the iterable are tuples.
@@ -139,7 +142,11 @@ class CombineBatchTuples(CombineBatchData):
                   all M num_samples summed,
                   all M values of other data type in a list)
 
+                 Returns None when the input tuples is None
+
         """
+        if tuples is None:
+            return tuples
 
         lists_of_items = zip(*tuples)
 
@@ -148,7 +155,7 @@ class CombineBatchTuples(CombineBatchData):
 
 class CombineBatchDicts(CombineBatchData):
 
-    def __call__(self, dicts: Iterable[Dict]) -> Dict:
+    def __call__(self, dicts: Optional[Iterable[Dict]]) -> Dict:
         """
 
         Assumes that batch data in the iterable are dict's.
@@ -178,7 +185,12 @@ class CombineBatchDicts(CombineBatchData):
                     "num_samples": sum of all M num_samples,
                     "other_data": all M values of other data type in a list
                 }
+
+                Returns None when the input dicts is None
         """
+        if dicts is None:
+            return dicts
+
         try:
             first_dict = next(iter(dicts))
             keys = first_dict.keys()
@@ -929,6 +941,9 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     @staticmethod
     def is_valid(ev):
         return has_method(ev, 'get_metric_names') and \
+               has_method(ev, 'gather_batch_metric_inputs') and \
+               has_method(ev, 'gather_dataset_metric_inputs') and \
+               has_method(ev, 'combine_gathered_metric_inputs') and \
                has_method(ev, 'calc_batch_metrics_for') and \
-               has_method(ev, 'calc_dataset_metrics_for') and \
-               has_method(ev, 'reduce')
+               has_method(ev, 'calc_metrics_using') and \
+               has_method(ev, 'calc_dataset_metrics_for')
