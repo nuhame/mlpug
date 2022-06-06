@@ -31,9 +31,9 @@ except Exception as e:
 
 
 def worker_fn(rank, args, world_size):
-    # if rank == 0:
-    #     import pydevd_pycharm
-    #     pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+    if rank == 0:
+        import pydevd_pycharm
+        pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     mlp.logging.use_fancy_colors()
 

@@ -36,6 +36,9 @@ except Exception as e:
 
 
 def calc_classification_quality(classification_data):
+    if classification_data is None:
+        return classification_data
+
     labels, predictions = classification_data
 
     num_samples = len(labels)
