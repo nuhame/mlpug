@@ -179,13 +179,13 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
 
             self._back_propagate_from(loss)
-
-            # Reduce memory usage
-            loss.detach_()
         else:
             chunk_losses, chunk_aux_results, chunk_lengths = self._calc_gradients_chunked(batch_data, training_settings)
 
             loss, auxiliary_results = self._combine_chunk_results(chunk_losses, chunk_aux_results, chunk_lengths)
+
+        # Reduce memory usage
+        loss.detach_()
 
         return loss, auxiliary_results
 
