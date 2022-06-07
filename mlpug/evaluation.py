@@ -723,16 +723,20 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                       }
 
         """
-        if isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None and model_output is None:
-            chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
+        if isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None:
+            if model_output is None:
+                chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
-            # Set force_no_chunking = True, because the batches will now already be chunks of a batch
-            return self.calc_dataset_metrics_for(
-                chunk_dataset,
-                evaluate_settings=evaluate_settings,
-                show_progress=False,
-                return_gathered_inputs=return_gathered_inputs,
-                dataset_name="batch chunks")
+                # Set force_no_chunking = True, because the batches will now already be chunks of a batch
+                return self.calc_dataset_metrics_for(
+                    chunk_dataset,
+                    evaluate_settings=evaluate_settings,
+                    show_progress=False,
+                    return_gathered_inputs=return_gathered_inputs,
+                    dataset_name="batch chunks")
+            else:
+                # TODO: Handle situation where model_output is available
+                pass
 
         results = {
             "metrics": None,
