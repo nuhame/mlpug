@@ -34,6 +34,7 @@ def normalize_evaluation(results):
         }
 
 
+# TODO: remove this method is obsolete
 def extend_auxiliary_results(aux, value, key=None):
     type_aux = type(aux)
     if type_aux is dict:
@@ -499,10 +500,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
-                    loss, auxiliary_results = self.trainer.train_on(training_batch, logs["training_settings"])
+                    loss, model_outputs = self.trainer.train_on(training_batch, logs["training_settings"])
 
                     set_value_at("training.batch.loss", current, loss)
-                    set_value_at("training.batch.auxiliary_results", current, auxiliary_results)
+                    set_value_at("training.batch.model_outputs", current, model_outputs)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -866,18 +867,23 @@ class Trainer(Base, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def train_on(self, batch_data, training_settings=None):
         """
-        TODO : Should this also return only one dict with 'loss' and 'auxiliary_results' keys?
-               (Just like evaluate_loss)
-
         Use batch_data to perform a training iteration
 
         :param batch_data: batch_data object (e.g. dict, list, tuple)
         :param training_settings: optional training_settings object (usually dict)
 
-        :return: loss, auxiliary_results
+        :return: loss, model_outputs
 
-        loss : number (e.g. float)
-        auxiliary_results : can be anything, e.g dict or list with values or data items
+                 model_outputs is a
+                    List with single tuple:
+                        [(loss, auxiliary_results, num_samples)]
+                 or
+                    BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+                        [(loss, auxiliary_results, num_samples),  # Chunk 1
+                         ...
+                         (loss, auxiliary_results, num_samples)]  # Chunk N
+
+        :rtype: Tuple[Tensor, Union[List[Tuple], BatchChunkingResults[Tuple]]
         """
         raise NotImplemented("Please implement this method in your child class")
 
