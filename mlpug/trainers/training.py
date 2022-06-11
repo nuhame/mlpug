@@ -58,8 +58,10 @@ class NormalizeEvaluationResults(Base):
                 results['num_samples'] = 1
                 if not self.did_warn:
                     self.did_warn = True
-                    self._log.warning("'num_samples' key and value not found in your training model evaluation results. " +
-                                      self.NUM_SAMPLES_WARNING_MESSAGE)
+                    self._log.warning(
+                        "'num_samples' key and value not found in your training model evaluation results. " +
+                        self.NUM_SAMPLES_WARNING_MESSAGE
+                    )
 
             if 'auxiliary_results' not in results:
                 results['auxiliary_results'] = None
