@@ -10,7 +10,7 @@ import basics.base_utils as _
 
 from mlpug.utils import get_value_at, has_key
 
-from mlpug.trainers.training import normalize_evaluation, extend_auxiliary_results
+from mlpug.trainers.training import extend_auxiliary_results
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
@@ -74,8 +74,6 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             self._log.info(f"Using scaler instance for automatic mixed precision : {self._scaler}")
 
-        self._num_samples_provided_by_user = None
-
     def set_learning_rate_for(self, optimizer_name, lr):
         """
 
@@ -109,7 +107,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             with autocast():
                 results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
-                return normalize_evaluation(results)
+
+                return self.normalize_evaluation(results)
         else:
             return super().evaluate_loss(batch_data, inference_mode, evaluate_settings)
 
@@ -134,15 +133,15 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         :return: loss, model_outputs
 
                  model_outputs is a
-                    List with single tuple:
-                        [(loss, auxiliary_results, num_samples)]
+                    List with single normalized results dict:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]
                  or
                     BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                        [(loss, auxiliary_results, num_samples),  # Chunk 1
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                          ...
-                         (loss, auxiliary_results, num_samples)]  # Chunk N
+                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Tensor, Union[List[Tuple], BatchChunkingResults[Tuple]]
+        :rtype: Tuple[Tensor, Union[List[Dict], BatchChunkingResults[Dict]]
 
         """
 
@@ -176,15 +175,15 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         :return: loss, model_outputs
 
                  model_outputs is a
-                    List with single tuple:
-                        [(loss, auxiliary_results, num_samples)]
+                    List with single normalized results dict:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]
                  or
                     BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                        [(loss, auxiliary_results, num_samples),  # Chunk 1
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                          ...
-                         (loss, auxiliary_results, num_samples)]  # Chunk N
+                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Tensor, Union[List[Tuple], BatchChunkingResults[Tuple]]
+        :rtype: Tuple[Tensor, Union[List[Dict], BatchChunkingResults[Dict]]
 
         :raises MLPugException, LossNotAvailableException
         """
@@ -193,6 +192,25 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             if not self.batch_chunk_size else self._calc_gradients_chunked(batch_data, training_settings)
 
     def _calc_gradients_single_batch(self, batch_data, training_settings=None):
+        """
+
+        :param batch_data:
+        :param training_settings:
+
+       :return: loss, model_outputs
+
+                 model_outputs is a
+                    List with single normalized results dict:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]
+                 or
+                    BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
+                         ...
+                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
+
+        :rtype: Tuple[Tensor, Union[List[Dict]]
+
+        """
         results = self.evaluate_loss(batch_data,
                                      inference_mode=False,
                                      evaluate_settings=training_settings)
@@ -201,22 +219,6 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
             raise LossNotAvailableException()
 
         loss = results['loss']
-        auxiliary_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
-
-        # At this point we don't know how to evaluate bacth size.
-        # So, by default we are assuming that each batch has the same size
-        num_samples = 1
-        if has_key(auxiliary_results, 'num_samples'):
-            if self._num_samples_provided_by_user is None:
-                self._num_samples_provided_by_user = True
-
-            # Use the batch size provided by the user
-            num_samples = auxiliary_results['num_samples']
-
-        elif self._num_samples_provided_by_user is True:
-            raise MLPugException("Unexpected: user has provided the num_samples in a batch before through "
-                                 "auxiliary_results['num_samples'], however in this batch, the num_samples are "
-                                 "not provided by the user.")
 
         self._back_propagate_from(loss)
 
@@ -224,7 +226,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         loss.detach_()
 
         # loss, and single model output
-        return loss, [(loss, auxiliary_results, num_samples)]
+        return loss, [results]
 
     def _calc_gradients_chunked(self, batch_data, training_settings=None):
         """
@@ -233,16 +235,19 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         This method slices the `batch_data` in slices of size `self.batch_chunk_size`. For each slice the loss is
         calculated and the gradients are updated through back prop.
 
-        return: chunk_losses, chunk_aux_results, chunk_lengths
-                All three outputs are lists
+        :return: loss, model_outputs
+                model_outputs: BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+                    [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
+                     ...
+                     {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
+
+        :rtype: Tuple[Tensor, BatchChunkingResults[Dict]]
         """
 
         if not is_chunkable(batch_data):
             raise BatchNotChunkableException()
 
         model_outputs = BatchChunkingResults()
-
-        num_samples_warning_given = False
 
         batch_size = len(batch_data)
         num_chunks = math.ceil(batch_size / self.batch_chunk_size)
@@ -260,23 +265,16 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
                 raise LossNotAvailableException()
 
             loss = results['loss']
-            aux_results = get_value_at('auxiliary_results', results, warn_on_failure=False)
-
-            if has_key(aux_results, 'num_samples') and not num_samples_warning_given:
-                self._log.warning("The given 'num_samples' in auxiliary_results will not be used when "
-                                  "chunking batches for gradient accumulation, because we need the total number of "
-                                  "samples of the complete, unchunked, batch to be known beforehand."
-                                  "The chunk length will be used, instead of the given num_samples.")
-                num_samples_warning_given = True
 
             # loss is assumed to be the average over the sample loss for the chunk
             # Divide through batch size to factor in that this loss is part of a larger batch.
             last_chunk = chunk_idx == (num_chunks-1)
             self._back_propagate_from(chunk_len*loss/batch_size, last_chunk=last_chunk)
 
-            model_outputs += (loss.detach_(),  # Detach from graph to reduce memory
-                              aux_results,
-                              chunk_len)
+            # Reduce memory usage
+            loss.detach_()
+
+            model_outputs += [results]
 
         loss = reduce(lambda tot, mo: tot + (mo[2] * mo[0]), model_outputs, 0)
         num_samples = reduce(lambda tot, mo: tot + mo[2], model_outputs, 0)
@@ -284,42 +282,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         loss /= num_samples
 
         # loss, and model outputs for each chunk
-        return loss, model_output
-
-    def _combine_chunk_results(self, chunk_losses, chunk_aux_results, chunk_lengths):
-        """
-        This default implementation assumes that the loss for a chunk is the average loss of all samples in the chunk.
-        There is no specific combination logic to combine the chunk auxiliary results
-
-        :returns loss, auxiliary_results
-                    loss: weighted average of chunk losses
-                    auxiliary_results: list of dicts or tuples extended with number of samples
-                                       used per chunk ("chunk_length"):
-                                        [
-                                            ...
-
-                                            {
-                                                ... chunk aux. results ...,
-                                                "chunk_length": num samples in chunk
-                                            }
-                                            or
-                                            (... chunk aux. results ..., <chunk_length>)
-
-                                            ...
-                                        ]
-        """
-
-        loss = reduce(lambda tot, c: tot+(c[1]*c[0]), zip(chunk_losses, chunk_lengths), 0)
-        num_samples = reduce(lambda tot, l: tot+l, chunk_lengths, 0)
-
-        loss /= num_samples
-
-        auxiliary_results = [extend_auxiliary_results(aux, chunk_length, key="chunk_length")
-                             for aux, chunk_length in zip(chunk_aux_results, chunk_lengths)]
-
-        auxiliary_results = BatchChunkingResults(auxiliary_results)
-
-        return loss, auxiliary_results
+        return loss, model_outputs
 
     def _back_propagate_from(self, loss, last_chunk=False):
         if self.use_mixed_precision:

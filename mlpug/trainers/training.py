@@ -20,21 +20,95 @@ from mlpug.mlpug_exceptions import TrainerInvalidException
 logger = get_logger(os.path.basename(__file__))
 
 
-def normalize_evaluation(results):
-    if type(results) is dict:
-        return results
-    elif type(results) is tuple:
-        return {
-            "loss": results[0],
-            "auxiliary_results": results[1:]
-        }
-    else:
-        return {
-            "loss": results
-        }
+class NormalizeEvaluationResults(Base):
+
+    NUM_SAMPLES_WARNING_MESSAGE = "You need to return the number of samples used in your batch. " \
+                                  "A default of num_samples=1 will be added to your results, " \
+                                  "this will result in correct average metrics if " \
+                                  "all batches have the same sample size."
+
+    def __init__(self, do_warn=True, name=None):
+        super().__init__(pybase_logger_name=name)
+
+        self.did_warn = not do_warn
+
+    def __call__(self, results):
+        """
+
+        Ensures that the training model evaluation results are normalized as a dict
+        containing the required loss and num_samples, and the optional auxiliary_results value
+
+        :param results: Dict, Tuple or only single Tensor loss value
+
+        :return: Normalized results dict
+                 {
+                    'loss': <loss tensor>,
+                    'num_samples': <int>,
+                    'auxiliary_results': <Any>
+                }
+
+        :raises ValueError when the loss value is missing
+
+        """
+        if type(results) is dict:
+            if 'loss' not in results:
+                raise ValueError("Your training model evaluation results dict must contain a 'loss' key and value")
+
+            if 'num_samples' not in results:
+                results['num_samples'] = 1
+                if not self.did_warn:
+                    self.did_warn = True
+                    self._log.warning("'num_samples' key and value not found in your training model evaluation results. " +
+                                      self.NUM_SAMPLES_WARNING_MESSAGE)
+
+            if 'auxiliary_results' not in results:
+                results['auxiliary_results'] = None
+
+            return results
+        elif type(results) is tuple:
+            if len(results) == 0:
+                raise ValueError("Results are empty: your training model evaluation results tuple "
+                                 "must at least contain a loss value.")
+
+            loss = results[0]
+
+            if len(results) > 1:
+                num_samples = results[1]
+            else:
+                num_samples = 1
+                if not self.did_warn:
+                    self.did_warn = True
+                    logger.warning("No second value found in your training model evaluation results tuple, "
+                                   "representing the num_samples in your batch. " + self.NUM_SAMPLES_WARNING_MESSAGE)
+
+            auxiliary_results = None
+            if len(results) > 2:
+                auxiliary_results = results[2:]
+
+                if len(auxiliary_results) == 1:
+                    # If exactly three tuple values were given, the third value is assumed to be the auxiliary results
+                    auxiliary_results = auxiliary_results[0]
+
+            return {
+                "loss": loss,
+                "num_samples": num_samples,
+                "auxiliary_results": auxiliary_results
+            }
+        else:
+            # Assuming only the loss was returned
+            if not self.did_warn:
+                self.did_warn = True
+                logger.warning("No second value found in your training model evaluation results, "
+                               "representing the num_samples in your batch. " + self.NUM_SAMPLES_WARNING_MESSAGE)
+
+            return {
+                "loss": results,
+                "num_samples": 1,
+                "auxiliary_results": None
+            }
 
 
-# TODO: remove this method is obsolete
+# TODO: remove, this method is obsolete
 def extend_auxiliary_results(aux, value, key=None):
     type_aux = type(aux)
     if type_aux is dict:
@@ -683,17 +757,26 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
 class Trainer(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, model_components, optimizers, name="Trainer", **kwargs):
+    def __init__(self,
+                 model_components,
+                 optimizers,
+                 warn_about_evaluation_results_issues=True,
+                 name="Trainer",
+                 **kwargs):
         """
 
         :param model_components: dict with model components
         :param optimizers: dict with optimizers
+        :param warn_about_evaluation_results_issues: If True, any issues with normalizing of the
+            training model evaluation results, which can be overcome, will be logged as a warning.
 
         """
         super(Trainer, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.model_components = model_components
         self.optimizers = optimizers
+
+        self.normalize_evaluation = NormalizeEvaluationResults(do_warn=warn_about_evaluation_results_issues)
 
         self._validate()
 
@@ -875,15 +958,15 @@ class Trainer(Base, metaclass=abc.ABCMeta):
         :return: loss, model_outputs
 
                  model_outputs is a
-                    List with single tuple:
-                        [(loss, auxiliary_results, num_samples)]
+                    List with single normalized results dict:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]
                  or
                     BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                        [(loss, auxiliary_results, num_samples),  # Chunk 1
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                          ...
-                         (loss, auxiliary_results, num_samples)]  # Chunk N
+                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Tensor, Union[List[Tuple], BatchChunkingResults[Tuple]]
+        :rtype: Tuple[Tensor, Union[List[Dict], BatchChunkingResults[Dict]]
         """
         raise NotImplemented("Please implement this method in your child class")
 
@@ -898,6 +981,7 @@ class Trainer(Base, metaclass=abc.ABCMeta):
         :return: dict:
             {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
@@ -909,7 +993,7 @@ class Trainer(Base, metaclass=abc.ABCMeta):
             evaluate_settings = {}
 
         results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
-        return normalize_evaluation(results)
+        return self.normalize_evaluation(results)
 
     @abc.abstractmethod
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
@@ -924,12 +1008,13 @@ class Trainer(Base, metaclass=abc.ABCMeta):
                                Tensorflow:  inference_mode required here
 
         :return: dict or tuple
-            {
+           {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
-            (loss, ... auxiliary results ...)
+            (loss, num_samples, ... auxiliary results ...)
         """
         raise NotImplemented("Please implement this method in your child class")
 
@@ -987,18 +1072,18 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         :param model_components: dict or list with model components(s), or a single model instance
 
         :param batch_chunk_size: optional batch chunk size (int)
-                                 If given, batches are processed in chunks of size `batch_chunk_size` samples to
-                                 calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
-                                 there is not an exact multiple that is equal to the `batch_data` size
+            If given, batches are processed in chunks of size `batch_chunk_size` samples to
+            calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
+            there is not an exact multiple that is equal to the `batch_data` size
 
-                                 Note 1.
-                                 Chunked processing of a batch only works when the `batch_data` object, received
-                                 by the `train_on` method, implements the `__len__` and `__getitem__` methods.
-                                 Here the `__getitem__` method must be able to deal with slices.
+            Note 1.
+            Chunked processing of a batch only works when the `batch_data` object, received
+            by the `train_on` method, implements the `__len__` and `__getitem__` methods.
+            Here the `__getitem__` method must be able to deal with slices.
 
-                                 Note 2.
-                                 When using chunked batch processing, the default implementation assumes that the
-                                 loss, calculated over a chunk, is the average of the sample losses
+            Note 2.
+            When using chunked batch processing, the default implementation assumes that the
+            loss, calculated over a chunk, is the average of the sample losses
 
         :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
         """
@@ -1054,10 +1139,11 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         :return: dict or tuple
             {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
-            (loss, ... auxiliary results ...)
+            (loss, num_samples, ... auxiliary results ...)
         """
 
         if isinstance(batch_data, ChunkableBatch):
