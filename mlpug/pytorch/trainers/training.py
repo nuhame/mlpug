@@ -8,15 +8,13 @@ from functools import reduce
 
 import basics.base_utils as _
 
-from mlpug.utils import get_value_at, has_key
-
-from mlpug.trainers.training import extend_auxiliary_results
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
-from mlpug.mlpug_exceptions import MLPugException, TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
-from mlpug.pytorch.utils import is_chunkable, SlidingWindow
+from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
+from mlpug.pytorch.utils import SlidingWindow
+from mlpug.batch_chunking import is_chunkable
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 from mlpug.batch_chunking import BatchChunkingResults
@@ -276,8 +274,8 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             model_outputs += [results]
 
-        loss = reduce(lambda tot, mo: tot + (mo[2] * mo[0]), model_outputs, 0)
-        num_samples = reduce(lambda tot, mo: tot + mo[2], model_outputs, 0)
+        loss = reduce(lambda tot, mo: tot + (mo['num_samples'] * mo['loss']), model_outputs, 0)
+        num_samples = reduce(lambda tot, mo: tot + mo['num_samples'], model_outputs, 0)
 
         loss /= num_samples
 

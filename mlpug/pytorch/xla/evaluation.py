@@ -7,7 +7,7 @@ from mlpug.evaluation import default_metric_reducer_func
 
 from mlpug.pytorch.evaluation import MetricEvaluator as MetricEvaluatorPyTorch
 
-from mlpug.utils import is_chunkable
+from mlpug.batch_chunking import is_chunkable
 
 from mlpug.pytorch.evaluation import \
     GatherLossSimple as GatherLossSimplePytorch

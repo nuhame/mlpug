@@ -189,13 +189,6 @@ def can_get_and_set_items(o):
         hasattr(o, "__setitem__") and callable(o.__setitem__)
 
 
-def is_chunkable(batch):
-    return batch is not None and \
-           not isinstance(batch, (tuple, list)) and \
-           hasattr(batch, "__len__") and callable(batch.__len__) and \
-           hasattr(batch, "__getitem__") and callable(batch.__getitem__)
-
-
 def has_method(o, method_name):
     return o is not None and \
         hasattr(o, method_name) and \

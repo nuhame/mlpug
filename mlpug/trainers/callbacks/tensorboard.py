@@ -796,7 +796,7 @@ class AutoTensorboard(Callback):
         dataset_metrics = get_value_at(base_path, current_logs)
 
         # TODO : Make this a library level constant
-        skip_metric_names = {"auxiliary_results"}
+        skip_metric_names = {"auxiliary_results", "model_outputs"}
 
         metrics = {}
 

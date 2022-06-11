@@ -4,7 +4,13 @@ import abc
 
 from mlpug.base import Base
 from mlpug.mlpug_exceptions import BatchNotChunkableException
-from mlpug.utils import is_chunkable
+
+
+def is_chunkable(batch):
+    return batch is not None and \
+           not isinstance(batch, (tuple, list)) and \
+           hasattr(batch, "__len__") and callable(batch.__len__) and \
+           hasattr(batch, "__getitem__") and callable(batch.__getitem__)
 
 
 def has_batch_chunking_results(batch_metrics_list):
