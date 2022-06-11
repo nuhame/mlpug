@@ -3,7 +3,7 @@ import io
 import tensorflow as tf
 import h5py
 from tensorflow.python.keras.saving import hdf5_format
-from mlpug.pytorch.utils import is_chunkable
+from mlpug.batch_chunking import is_chunkable
 
 import basics.base_utils as _
 

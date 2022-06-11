@@ -8,7 +8,7 @@ import numpy as np
 from mlpug.base import Base
 import basics.base_utils as _
 
-from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchDataset
+from mlpug.batch_chunking import ChunkableBatch, BatchChunkingResults, ChunkableBatchDataset
 
 from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
@@ -27,29 +27,8 @@ class GatherLoss(Base):
 
         self.requester = requester
 
-    def __call__(self, loss, **kwargs):
-        return loss, 1
-
-
-class GatherMaskedLoss(Base):
-    """
-    Useful when using masking. In your TrainingModel, return the summed loss and number of unmasked samples as a part
-    of the auxiliary result. E.g.:
-
-    return loss, loss_sum, num_samples
-    """
-
-    def __init__(self, requester=None, name="GatherMaskedLoss", **kwargs):
-        if requester is not None:
-            name += f'[{requester}]'
-
-        super().__init__(name, requester, **kwargs)
-
-    def __call__(self, loss, auxiliary_results, **kwargs):
-        loss_sum = auxiliary_results[0]
-        num_samples = auxiliary_results[1]
-
-        return loss_sum, num_samples
+    def __call__(self, loss, num_samples, **kwargs):
+        return loss, num_samples
 
 
 # DEFAULT LOSS METRIC FUNCTION
@@ -690,6 +669,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 sys.stdout.write('>')
                 sys.stdout.flush()
 
+            return True
+
         if dataset is not None:
             for dataset_batch in dataset:
                 success = gather_metrics_for(batch=dataset_batch)
@@ -749,8 +730,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     def calc_batch_metrics_for(self,
                                batch_data=None,
                                model_outputs: Optional[Collection[Dict]] = None,
-                               evaluate_settings=None,
                                precalculated_loss=None,
+                               evaluate_settings=None,
                                return_gathered_inputs=False):
         """
 
@@ -763,11 +744,11 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                               (one model output for a single batch, or multiple outputs for multiple batch chunks)
         :type model_outputs: Collection[Dict]
 
-        :param evaluate_settings:
-        :type evaluate_settings:
-
         :param precalculated_loss: Optional externally calculated model output for given batch_data
         :type precalculated_loss: Union(Tensor, float, np.ndarray)
+
+        :param evaluate_settings:
+        :type evaluate_settings:
 
         :param return_gathered_inputs: Optional, when True will also return the gathered inputs to
                                        calculate the metrics
@@ -783,24 +764,32 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                     bool: success
 
         """
-        if isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None:
+        results = {
+            "metrics": None,
+        }
+        success = False
+
+        if batch_data is not None and model_outputs is not None:
+            self._log.error("Either provide a batch data or a list of model outputs, not both")
+            return results, success
+
+        evaluate_batch_in_chunks = isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None
+        model_outputs_are_batch_chunking_results = isinstance(model_outputs, BatchChunkingResults)
+        if evaluate_batch_in_chunks or model_outputs_are_batch_chunking_results:
 
             chunk_dataset = None
-            if model_outputs is None:
+            if not model_outputs_are_batch_chunking_results:
                 chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
             return self.calc_dataset_metrics_for(
                 dataset=chunk_dataset,
                 model_outputs=model_outputs,
+                precalculated_loss=precalculated_loss,
                 evaluate_settings=evaluate_settings,
                 show_progress=False,
                 return_gathered_inputs=return_gathered_inputs,
                 dataset_name="batch chunks")
 
-        results = {
-            "metrics": None,
-        }
-        success = False
         model_output = None
         if model_outputs is not None:
             if hasattr(model_outputs, '__iter__'):
@@ -894,8 +883,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     def calc_dataset_metrics_for(self,
                                  dataset: Optional[Iterable] = None,
                                  model_outputs: Optional[Iterable[Dict]] = None,
-                                 evaluate_settings=None,
                                  precalculated_loss=None,
+                                 evaluate_settings=None,
                                  dataset_name=None,
                                  show_progress=None,
                                  return_gathered_inputs=False):
@@ -989,7 +978,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         if not success:
             self._log.error(f"Combining of gathered batch metric inputs over the {dataset_desc} failed, "
                             f"unable to calculate dataset metrics.")
-            return results
+            return results, success
         # ###################### END: COMBINE GATHERED BATCH INPUTS #######################
 
         # ###################### START: CALCULATE DATASET METRICS #########################
@@ -998,17 +987,17 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         if not success:
             self._log.error(f"Evaluating metrics over the {dataset_desc} failed")
 
-        sys.stdout.write('\n')
-        sys.stdout.flush()
+        if show_progress:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
         # ####################### END: CALCULATE DATASET METRICS ##########################
 
         if precalculated_loss is not None:
             metrics_output["loss"] = precalculated_loss
 
         results["metrics"] = metrics_output
-        results["success"] = success
 
-        return results
+        return results, success
 
     def _create_default_model_evaluate_func(self):
         """

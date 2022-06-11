@@ -330,6 +330,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # The trainer knows how to evaluate the model
             trainer=self._trainer,
             batch_chunk_size=self._args.batch_chunk_size,
+            # The implementation depends on the Deep Learning library backend
+            clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             name="LossOnlyEvaluator")
 
         # Every epoch we will also calculated the loss and candidate output classification quality over the whole

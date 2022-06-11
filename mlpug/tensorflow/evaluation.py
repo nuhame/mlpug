@@ -5,7 +5,7 @@ import tensorflow as tf
 from mlpug.evaluation import default_metric_reducer_func
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.utils import is_chunkable
+from mlpug.batch_chunking import is_chunkable
 
 from mlpug.base import Base
 from basics.logging import get_logger

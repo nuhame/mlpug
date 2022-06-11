@@ -3,7 +3,8 @@ import pprint
 import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
-from mlpug.utils import get_value_at, is_chunkable, describe_data
+from mlpug.utils import get_value_at, describe_data
+from mlpug.batch_chunking import is_chunkable
 
 import basics.base_utils as _
 from basics.logging_utils import log_exception
@@ -195,7 +196,7 @@ class LogProgress(Callback):
 
         metric_names = set(metrics.keys())
         # TODO : Make this a library level constant
-        skip_metric_names = {"auxiliary_results", "duration"}
+        skip_metric_names = {"model_outputs", "auxiliary_results", "duration"}
 
         num_metrics = len(metric_names-skip_metric_names)
         if num_metrics < 1:

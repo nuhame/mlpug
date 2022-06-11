@@ -306,11 +306,14 @@ class MetricsLoggerBase(Callback):
             loss = get_value_at(f"{self._dataset_name}.batch.loss", current)
             model_outputs = get_value_at(f"{self._dataset_name}.batch.model_outputs", current)
 
+            # Use the model_outputs instead of the batch data
+            batch = None
+
         return self._metric_evaluator.calc_batch_metrics_for(
-            batch,
-            evaluate_settings=evaluate_settings,
-            precalculated_loss=loss,
+            batch_data=batch,
             model_outputs=model_outputs,
+            precalculated_loss=loss,
+            evaluate_settings=evaluate_settings,
             return_gathered_inputs=self._logging_mode.will_log_sliding_window_metrics())
 
     def _update_metrics_windows_with(self, batch_metric_inputs):
@@ -434,7 +437,7 @@ class TrainingMetricsLogger(MetricsLoggerBase):
     By default, gets already calculated model_output results from logs
 
     TODO : needs testing
-    TODO : what to do for batch_level=false? Allow usage of window average of metrics to be used for epoch level?
+    TODO : what to do for batch_level=false? Allow evaluation of metrics on the dataset level?
     """
 
     def __init__(self,
