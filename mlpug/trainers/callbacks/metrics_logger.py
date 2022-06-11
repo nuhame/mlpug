@@ -4,7 +4,7 @@ import math
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.mlpug_exceptions import CallbackInvalidException
-from mlpug.utils import has_key, get_key_paths, SlidingWindow, describe_data
+from mlpug.utils import has_key, SlidingWindow, describe_data
 
 from mlpug.evaluation import MetricEvaluator
 
@@ -195,8 +195,8 @@ class MetricsLoggerBase(Callback):
         else:
             current = self._get_logs_base(logs)
 
-            results = self._calc_batch_metric_data_from(dataset_batch, logs)
-            if not results["success"]:
+            results, success = self._calc_batch_metric_data_from(dataset_batch, logs)
+            if not success:
                 return False
 
             batch_metrics = results["metrics"]
@@ -271,12 +271,12 @@ class MetricsLoggerBase(Callback):
 
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
-        results = self._metric_evaluator.calc_dataset_metrics_for(
-            self._dataset,
+        results, success = self._metric_evaluator.calc_dataset_metrics_for(
+            dataset=self._dataset,
             evaluate_settings=evaluate_settings,
             dataset_name=self._dataset_name)
 
-        if not results["success"]:
+        if not success:
             return False
 
         dataset_metrics = results["metrics"]
@@ -299,23 +299,18 @@ class MetricsLoggerBase(Callback):
     def _calc_batch_metric_data_from(self, batch, logs):
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
-        model_output = None
+        model_outputs = None
+        loss = None
         if self._dataset is None:
             current = self._get_logs_base(logs)
             loss = get_value_at(f"{self._dataset_name}.batch.loss", current)
-            auxiliary_results = get_value_at(f"{self._dataset_name}.batch.auxiliary_results",
-                                             current,
-                                             warn_on_failure=False)
-
-            model_output = {
-                'loss': loss,
-                'auxiliary_results': auxiliary_results
-            }
+            model_outputs = get_value_at(f"{self._dataset_name}.batch.model_outputs", current)
 
         return self._metric_evaluator.calc_batch_metrics_for(
             batch,
             evaluate_settings=evaluate_settings,
-            model_output=model_output,
+            precalculated_loss=loss,
+            model_outputs=model_outputs,
             return_gathered_inputs=self._logging_mode.will_log_sliding_window_metrics())
 
     def _update_metrics_windows_with(self, batch_metric_inputs):
@@ -436,7 +431,7 @@ class MetricsLoggerBase(Callback):
 
 class TrainingMetricsLogger(MetricsLoggerBase):
     """
-    By default, gets already calculated loss and auxiliary results from logs
+    By default, gets already calculated model_output results from logs
 
     TODO : needs testing
     TODO : what to do for batch_level=false? Allow usage of window average of metrics to be used for epoch level?
