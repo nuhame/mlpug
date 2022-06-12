@@ -194,11 +194,37 @@ class LogProgress(Callback):
         if not _.is_dict(metrics):
             return None
 
-        metric_names = set(metrics.keys())
-        # TODO : Make this a library level constant
-        skip_metric_names = {"model_outputs", "auxiliary_results", "duration"}
+        all_metric_names = list(metrics.keys())
 
-        num_metrics = len(metric_names-skip_metric_names)
+        # Order metric names:
+        #  * first non-dicts (scalars, or tuple with scalar assumed) and
+        #  * secondly dicts, (or tuple with dict) which require higher log depth
+        scalar_metric_names = []
+        dict_metric_names = []
+        for metric_name in all_metric_names:
+            if type(metrics[metric_name]) is dict:
+                dict_metric_names += [metric_name]
+            else:
+                # Is it a tuple? What first value does the tuple have?
+                if type(metrics[metric_name]) is tuple:
+                    if len(metrics[metric_name]) > 0:
+                        if type(metrics[metric_name][0]) is dict:
+                            dict_metric_names += [metric_name]
+                        else:
+                            scalar_metric_names += [metric_name]
+                    else:
+                        # discard metric
+                        pass
+                else:
+                    scalar_metric_names += [metric_name]
+
+        metric_names = scalar_metric_names + dict_metric_names
+
+        # TODO : Make this a library level constant
+        skip_metric_names = ["model_outputs", "auxiliary_results", "duration"]
+        metric_names = [name for name in metric_names if name not in skip_metric_names]
+
+        num_metrics = len(metric_names)
         if num_metrics < 1:
             return None
 
@@ -207,9 +233,8 @@ class LogProgress(Callback):
             log += f"{base_metric:<15}: "
 
         metric_value_logs = []
-        for c, (metric, value) in enumerate(metrics.items()):
-            if metric in skip_metric_names:
-                continue
+        for c, metric in enumerate(metric_names):
+            value = metrics[metric]
 
             if type(value) is tuple:
                 # use the first value as metric value, the other values are auxiliary results meant for other purposes
