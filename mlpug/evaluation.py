@@ -28,7 +28,16 @@ class GatherLoss(Base):
         self.requester = requester
 
     def __call__(self, loss, num_samples, **kwargs):
-        return loss, num_samples
+        """
+        Gathers the loss sum over the samples and the number of samples
+
+        :param loss:
+        :param num_samples:
+        :param kwargs:
+        :return:
+        """
+        # Convert back from average to loss sum
+        return num_samples*loss, num_samples
 
 
 # DEFAULT LOSS METRIC FUNCTION
@@ -321,7 +330,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             that is not used any more after gathering the metric inputs. This is useful to optimize memory usage.
 
             The following function signature is assumed:
-                func(batch, evaluate_settings, loss, num_samples, auxiliary_results) -> None
+                func(batch, evaluate_settings, model_output) -> None
+
+                Where model_output is a dict:
+                {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
+
+                The model_output is the original dict as stored in the logs object, so
+                removing or replacing data in this dict will effect the data in the logs object.
 
         :param combine_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
@@ -508,7 +523,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         return list(self._gather_metric_inputs_funcs.keys())
 
     def gather_batch_metric_inputs(self,
-                                   batch_data: Iterable = None,
+                                   batch_data=None,
                                    model_output: Optional[Dict] = None,
                                    evaluate_settings=None,
                                    skip_metrics=None):
@@ -590,7 +605,11 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 success = False
 
         try:
-            self._clean_up_batch_data_func(**metric_func_args)
+            self._clean_up_batch_data_func(
+                batch=batch_data,
+                evaluate_settings=evaluate_settings,
+                model_output=model_output)
+
         except Exception as e:
             _.log_exception(self._log, f"Cleaning up batch data failed (ignoring this failure)", e)
 
@@ -649,6 +668,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             metric_names = self.get_metric_names()
             self._log.debug(f"Gathering batch metric inputs ({', '.join(metric_names)}) over the {dataset_desc}")
 
+            self._write_to_stdout('\n')
+
         def gather_metrics_for(batch=None, model_output=None):
             all_batch_metric_inputs, success = self.gather_batch_metric_inputs(batch_data=batch,
                                                                                model_output=model_output,
@@ -666,8 +687,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 gathered_metric_inputs[metric_name] += [batch_metric_inputs]
 
             if show_progress:
-                sys.stdout.write('>')
-                sys.stdout.flush()
+                self._write_to_stdout('>')
 
             return True
 
@@ -685,8 +705,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                     return gathered_metric_inputs, success
 
         if show_progress:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
+            self._write_to_stdout('\n')
 
         return gathered_metric_inputs, True
 
@@ -730,7 +749,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     def calc_batch_metrics_for(self,
                                batch_data=None,
                                model_outputs: Optional[Collection[Dict]] = None,
-                               precalculated_loss=None,
                                evaluate_settings=None,
                                return_gathered_inputs=False):
         """
@@ -743,9 +761,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         :param model_outputs: Optional, externally calculated model outputs
                               (one model output for a single batch, or multiple outputs for multiple batch chunks)
         :type model_outputs: Collection[Dict]
-
-        :param precalculated_loss: Optional externally calculated model output for given batch_data
-        :type precalculated_loss: Union(Tensor, float, np.ndarray)
 
         :param evaluate_settings:
         :type evaluate_settings:
@@ -784,7 +799,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             return self.calc_dataset_metrics_for(
                 dataset=chunk_dataset,
                 model_outputs=model_outputs,
-                precalculated_loss=precalculated_loss,
                 evaluate_settings=evaluate_settings,
                 show_progress=False,
                 return_gathered_inputs=return_gathered_inputs,
@@ -805,15 +819,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
             model_output = next(iter(model_outputs))
 
-        skip_metrics = None
-        if precalculated_loss is not None:
-            skip_metrics = "loss"
-
         gathered_inputs, success = self.gather_batch_metric_inputs(
             batch_data=batch_data,
             model_output=model_output,
-            evaluate_settings=evaluate_settings,
-            skip_metrics=skip_metrics)
+            evaluate_settings=evaluate_settings)
 
         if return_gathered_inputs:
             results["inputs"] = gathered_inputs
@@ -834,9 +843,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             except Exception as e:
                 _.log_exception(self._log, f"Evaluating metric {metric_name} over batch failed", e)
                 success = False
-
-        if precalculated_loss is not None:
-            metrics_output["loss"] = precalculated_loss
 
         results["metrics"] = metrics_output
 
@@ -883,7 +889,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
     def calc_dataset_metrics_for(self,
                                  dataset: Optional[Iterable] = None,
                                  model_outputs: Optional[Iterable[Dict]] = None,
-                                 precalculated_loss=None,
                                  evaluate_settings=None,
                                  dataset_name=None,
                                  show_progress=None,
@@ -901,9 +906,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param evaluate_settings:
         :type evaluate_settings:
-
-        :param precalculated_loss: Optional externally calculated model output for given dataset
-        :type precalculated_loss: Union(Tensor, float, np.ndarray)
 
         :param dataset_name:
         :type dataset_name:
@@ -942,21 +944,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         if show_progress:
             metric_names = self.get_metric_names()
-
-            sys.stdout.write('\n')
-            sys.stdout.flush()
             self._log.debug(f"Calculating metrics ({', '.join(metric_names)}) over the {dataset_desc}")
-
-        skip_metrics = None
-        if precalculated_loss is not None:
-            skip_metrics = ["loss"]
 
         # ################## START: GATHER BATCH INPUTS OVER DATASET #####################
         gathered_inputs, success = self.gather_dataset_metric_inputs(
             dataset=dataset,
             model_outputs=model_outputs,
             evaluate_settings=evaluate_settings,
-            skip_metrics=skip_metrics,
             dataset_name=dataset_name,
             show_progress=show_progress)
 
@@ -986,14 +980,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         if not success:
             self._log.error(f"Evaluating metrics over the {dataset_desc} failed")
-
-        if show_progress:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
         # ####################### END: CALCULATE DATASET METRICS ##########################
-
-        if precalculated_loss is not None:
-            metrics_output["loss"] = precalculated_loss
 
         results["metrics"] = metrics_output
 
@@ -1013,6 +1000,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         return lambda batch_data, settings: self._trainer.evaluate_loss(batch_data,
                                                                         inference_mode=True,
                                                                         evaluate_settings=settings)
+
+    def _write_to_stdout(self, text):
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
     def __str__(self):
         return self.get_name()
