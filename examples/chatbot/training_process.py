@@ -331,6 +331,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             trainer=self._trainer,
             batch_chunk_size=self._args.batch_chunk_size,
             # The implementation depends on the Deep Learning library backend
+
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             name="LossOnlyEvaluator")
 
@@ -377,12 +378,15 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             return batch_step % self._args.progress_log_period == 0
 
         # Since the validation metrics will only calculated every self._args.progress_log_period batches
+        avg_window_train = math.ceil(0.5 * len(self._batch_training_set) / self._args.progress_log_period)
         avg_window_validation = math.ceil(0.5 * len(self._batch_validation_set) / self._args.progress_log_period)
         self._callbacks = [
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
             # to provide the the training set here.
             mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator,
+                                                log_condition_func=log_metrics,
+                                                sliding_window_length=avg_window_train,
                                                 inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate validation loss and classification quality, every <progress_log_period> batches
             mlp.callbacks.TestMetricsLogger(self._batch_validation_set,
