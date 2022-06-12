@@ -60,14 +60,14 @@ def gather_next_sentence_prediction_data(batch, auxiliary_results, **kwargs):
     return targets, predictions
 
 
-def clean_up_batch_data(loss, auxiliary_results, **kwargs):
-    loss.detach_()
+def clean_up_batch_data(model_output, **kwargs):
+    loss = model_output["loss"]
 
-    # Remove tensor from results because we don't need it anymore
-    nsp_logits = auxiliary_results["nsp_logits"]
-    del auxiliary_results["nsp_logits"]
+    # Handy for debugging purposes to keep the scalar value
+    model_output["loss"] = loss.cpu().item()
 
-    nsp_logits.cpu()
+    # We don't need the auxiliary_results anymore
+    del model_output["auxiliary_results"]
 
 
 # MLPug needs a TrainModel that outputs the loss
@@ -102,6 +102,7 @@ class TrainModel(torch.nn.Module):
 
         return {
             "loss": loss,
+            "num_samples": input_ids_batch.shape[0],
             "auxiliary_results": {
                 # required to calculate next sentence prediction (classification) quality
                 # Detach graph to reduce memory usage
@@ -260,7 +261,7 @@ class TrainingProcess(TrainingProcessBase):
                 mlp.callbacks.DistributedSamplerManager(
                     self._validation_sampler,
                     name="DistributedSamplerManager[validation]")
-            ] + self._callbacks
+            ] + self._callbacks  # + [mlp.callbacks.EmptyCudaCache()]
 
     @staticmethod
     def get_logger_info(rank, num_devices, name):
