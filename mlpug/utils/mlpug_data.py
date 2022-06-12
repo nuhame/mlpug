@@ -1,3 +1,5 @@
+import numpy as np
+
 from mlpug.utils.utils import has_method
 from mlpug.batch_chunking import BatchChunkingResults
 
@@ -36,6 +38,7 @@ def describe_data(data):
     :return:
     """
     if isinstance(data, dict):
+        # tas = Type And Shape
         tas = {}
 
         for k, v in data.items():
@@ -50,8 +53,9 @@ def describe_data(data):
 
         return tas
 
-    if isinstance(data, BatchChunkingResults):
-        tas = []
+    if isinstance(data, list):
+        # Could also be a BatchChunkingResult
+        tas = data.__class__()
         for v in data:
             tas += [describe_data(v)]
 
@@ -75,3 +79,44 @@ def describe_data(data):
         d = data.device
 
     return ValueDescription(t, s, d)
+
+
+class MLPugDataCleaner:
+
+    def __call__(self, data):
+
+        if isinstance(data, dict):
+            values = {}
+
+            for k, v in data.items():
+                values[k] = self(v)
+
+            return values
+
+        if isinstance(data, tuple):
+            values = ()
+            for v in data:
+                values += (self(v),)
+
+            return values
+
+        if isinstance(data, list):
+            # Could also be a BatchChunkingResult
+            values = data.__class__()
+            for v in data:
+                values += [self(v)]
+
+            return values
+
+        if isinstance(data, np.ndarray):
+            # If there is only one element
+            if np.prod(data.shape) == 1:
+                return data.item()
+
+        if data is None or isinstance(data, (float, int, bool, str)):
+            return data
+
+        return self._handle_other_data_type(data)
+
+    def _handle_other_data_type(self, data):
+        return data
