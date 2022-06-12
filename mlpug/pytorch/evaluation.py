@@ -1,4 +1,5 @@
 import abc
+import sys
 from typing import Collection, Tuple, Dict
 
 import torch
@@ -197,3 +198,6 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
     def _create_default_model_evaluate_func(self):
         return DefaultLossEvaluator(self._trainer)
 
+    def _write_to_stdout(self, text):
+        if self.is_primary:
+            super()._write_to_stdout(text)
