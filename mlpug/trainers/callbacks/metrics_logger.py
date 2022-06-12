@@ -300,10 +300,8 @@ class MetricsLoggerBase(Callback):
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
         model_outputs = None
-        loss = None
         if self._dataset is None:
             current = self._get_logs_base(logs)
-            loss = get_value_at(f"{self._dataset_name}.batch.loss", current)
             model_outputs = get_value_at(f"{self._dataset_name}.batch.model_outputs", current)
 
             # Use the model_outputs instead of the batch data
@@ -312,7 +310,6 @@ class MetricsLoggerBase(Callback):
         return self._metric_evaluator.calc_batch_metrics_for(
             batch_data=batch,
             model_outputs=model_outputs,
-            precalculated_loss=loss,
             evaluate_settings=evaluate_settings,
             return_gathered_inputs=self._logging_mode.will_log_sliding_window_metrics())
 
