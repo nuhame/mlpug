@@ -1,11 +1,13 @@
 import torch
 
+from mlpug.base import Base
 from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 
-class BatchCollator:
+class BatchCollator(Base):
 
-    def __init__(self, pad_token_idx, ignore_label_idx=-100):
+    def __init__(self, pad_token_idx, ignore_label_idx=-100, name=None):
+        super().__init__(pybase_logger_name=name)
 
         self._pad_token_idx = pad_token_idx
         self._ignore_label_idx = ignore_label_idx
