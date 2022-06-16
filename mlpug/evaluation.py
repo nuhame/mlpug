@@ -37,10 +37,10 @@ class ChunkableTupleBatchDim0(Base):
 
     def __len__(self):
         # get batch size
-        return self._batch[0].size(0)
+        return self._batch[0].shape[0]
 
     def __getitem__(self, sample_slice):
-        return (v[sample_slice, ...] for v in self._batch)
+        return tuple(v[sample_slice, ...] for v in self._batch)
 
 
 class ChunkableTupleBatchDim1(Base):
@@ -52,10 +52,10 @@ class ChunkableTupleBatchDim1(Base):
 
     def __len__(self):
         # get batch size
-        return self._batch[0].size(1)
+        return self._batch[0].shape[1]
 
     def __getitem__(self, sample_slice):
-        return (v[:, sample_slice, ...] for v in self._batch)
+        return tuple(v[:, sample_slice, ...] for v in self._batch)
 
 
 class ChunkableBatchDataset(Base):
