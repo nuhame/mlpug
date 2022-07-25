@@ -806,7 +806,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         model_output = None
         if model_outputs is not None:
-            if hasattr(model_outputs, '__iter__'):
+            if not hasattr(model_outputs, '__iter__'):
                 self._log.error(f"The given model_outputs is not iterable, "
                                 f"unable to gather metric inputs over batch")
                 return results, success
