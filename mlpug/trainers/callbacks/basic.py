@@ -46,7 +46,7 @@ class LogProgress(Callback):
                 current = self._get_logs_base(logs)
                 batch_step = current["batch_step"]
 
-                return batch_step % self.log_period
+                return batch_step % self.log_period == 0
 
             log_condition_func = log_progress
 

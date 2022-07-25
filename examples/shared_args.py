@@ -38,7 +38,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
 
     parser.add_argument(
         '--progress-log-period',
-        type=int, required=False, default=20,
+        type=int, required=False, default=200,
         help='Period in global (batch) iterations before we log the training progress again.')
 
     parser.add_argument(
