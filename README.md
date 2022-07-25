@@ -1,7 +1,5 @@
 # MLPug
-MLPug is a Machine Learning library agnostic framework for model training. A lot of the functionality you need to train your model is independent of the 
-ML library you're using, e.g. PyTorch or Tensorflow. MLPug provides a single framework with a unified API for all such training functionality,
-independent of the ML library you are using. 
+MLPug is a Machine Learning library agnostic framework for model training and evaluation. A lot of the functionality you need to train and evaluate your model is independent of the ML library you're using, e.g. PyTorch or Tensorflow. MLPug provides a single framework with a unified API for all such training and evaluation functionality, independent of the ML library you are using. 
 
 **Thus, when switching ML library, you don't have to learn a new training API and you can reuse your own training code with no, or minimal, change! 🤩🎉**
 
@@ -68,9 +66,9 @@ import mlpug.tensorflow as mlp
 ```
 
 # What is MLPug?
-MLPug is a machine learning library agnostic framework for model training.
+MLPug is a machine learning library agnostic framework for model training and evaluation.
 
-A lot of the functionality you need to train your machine learning model is 
+A lot of the functionality you need to train and evaluate your machine learning model is 
 independent of the machine learning library you're using, e.g. PyTorch and Tensorflow.
 For instance, 
 
@@ -82,7 +80,7 @@ For instance,
 
 You need such functionality no matter what machine learning framework you are using.
 
-MLPug provides a single framework with a unified API for all such training functionality,
+MLPug provides a single framework with a unified API for all such training and evaluation functionality,
 independent of the machine learning library you are using. This also implies that when you switch library
 you can reuse your training code with no, or minimal, changes.
 
