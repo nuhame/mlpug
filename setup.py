@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="mlpug",
-    version="0.0.54",
+    version="0.0.55",
     author="Freddy Snijder",
     author_email="mlpug@visionscapers.com",
     description="A machine learning library agnostic framework for model training",
