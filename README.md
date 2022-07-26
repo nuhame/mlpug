@@ -394,6 +394,7 @@ Note the difference in epoch duration!
 | Callbacks and training life cycle             |      ✓      |      ✓      |      ✓      |             | |
 | Progress Logging                              |      ✓      |      ✓      |      ✓      |             | |
 | Distributed training                          |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF. TPU training with TF is untested |
+| Distributed evaluation                        |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF. evaluation on TPU with TF is untested |
 | Model and training checkpoint management      |      ✓      |      ✓      |      ✓      |             | |
 | Custom  metric evaluation                     |      ✓      |      ✓      |      ✓      |             | |
 | Conditional evaluation of metrics             |      ✓      |      ✓      |      ✓      |             | |
