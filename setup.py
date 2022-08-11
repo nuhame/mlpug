@@ -8,7 +8,7 @@ setuptools.setup(
     version="0.0.55",
     author="Freddy Snijder",
     author_email="mlpug@visionscapers.com",
-    description="A machine learning library agnostic framework for model training",
+    description="A machine learning library agnostic framework for model training and evaluation",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/nuhame/mlpug",
