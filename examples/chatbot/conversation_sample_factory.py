@@ -47,9 +47,12 @@ class ConversationSampleFactory(Base):
 
         token_label_ids:
         -100
-        -100.... (until end of personality sequences)
-        -100.... (until end of last history sequence)
+        -100... (until end of personality sequences)
+        -100... (until end of last history sequence)
+        # if is_real_reply:
         -100<candidate_reply>-100
+        # else:
+        -100... (until end of reply)
 
         :param personality: List with utterances describing bot personality
         :param chat_history: List with utterances describing the chat history, starting with chat of speaker1 (user)
@@ -91,7 +94,10 @@ class ConversationSampleFactory(Base):
 
         input_ids += reply_ids
         token_type_ids += [self._speaker2_id] * len(reply_ids)
-        token_label_ids += [self._ignore_label] + candidate_reply_ids + [self._ignore_label]
+        if is_real_reply:
+            token_label_ids += [self._ignore_label] + candidate_reply_ids + [self._ignore_label]
+        else:
+            token_label_ids += [self._ignore_label]*len(reply_ids)
 
         last_token_idx = len(input_ids)-1
 
