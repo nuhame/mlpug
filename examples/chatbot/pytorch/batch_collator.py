@@ -63,6 +63,8 @@ class BatchCollator(Base):
 
             reply_class_batch[s_idx] = [sample[4] for sample in sample_choices].index(1)
 
+        # Make this batch "chunkable" such that it can be sliced in to batch chunks, when
+        # gradient accumulation is enabled
         return ChunkableTupleBatchDim0(input_ids_batch,
                                        token_type_ids_batch,
                                        token_labels_ids_batch,
