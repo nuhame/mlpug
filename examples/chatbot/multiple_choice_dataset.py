@@ -5,6 +5,24 @@ import random
 from mlpug.base import Base
 
 
+def max_sequence_length_in(conversation_choices):
+    """
+
+    :param conversation_choices: List of Tuples:
+        (
+            input_ids,        # input_ids
+            token_type_ids,   # token_type_ids
+            token_label_ids,  # labels
+            last_token_idx,   # mc_token_ids
+            reply_class       # 0 = not real reply, 1 = real reply. ==> mc_labels
+        )
+
+    :return:
+    """
+    # First item in conversation_choice tuple are the input_ids
+    return max([len(conversation_choice[0]) for conversation_choice in conversation_choices])
+
+
 class MultipleConversationChoicesDataset(Base):
 
     def __init__(self,
