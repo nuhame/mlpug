@@ -7,16 +7,20 @@ import numpy as np
 import mlpug.abstract_interface as mlp_interface
 
 from mlpug.base import Base
-from mlpug.evaluation import CombineBatchTuples
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 from examples.chatbot.tokenizers import HFTokenizer
-from examples.chatbot.multiple_choice_dataset import MultipleConversationChoicesDataset
+from examples.chatbot.multiple_choice_dataset import max_sequence_length_in, MultipleConversationChoicesDataset
 from examples.chatbot.conversation_sample_factory import ConversationSampleFactory
 
 module_logger = get_logger(os.path.basename(__file__))
+
+try:
+    from tqdm import tqdm
+except Exception as e:
+    log_exception(module_logger, "Please `pip install tqdm`", e)
 
 try:
     from datasets import load_dataset
@@ -33,6 +37,11 @@ try:
 except Exception as e:
     log_exception(module_logger, "Please install the scikit-learn package, "
                                  "see https://scikit-learn.org/stable/install.html#installing-the-latest-release", e)
+
+
+def filter_out_too_long_sequences(multiple_choice_dataset, max_sequence_length):
+    return [conversation_choices for conversation_choices in multiple_choice_dataset
+            if max_sequence_length_in(conversation_choices) <= max_sequence_length]
 
 
 def calc_classification_quality(classification_data):
@@ -181,6 +190,31 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                                          name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
+        # Optionally filtering out too long conversation sequences
+        self._sample_training_set = self._filter_conversation_samples(self._sample_training_set, "Training")
+        self._sample_validation_set = self._filter_conversation_samples(self._sample_validation_set, "Validation")
+
+    def _filter_conversation_samples(self, dataset, dataset_name):
+        mxsl = self._args.max_sequence_length
+        if mxsl is None:
+            # No filtering
+            return dataset
+
+        def optional_tqdm(ds, **kwargs):
+            return tqdm(ds, **kwargs) if not self.logging_disabled else ds
+
+        self._log.info(f"[{dataset_name} set] Filtering out conversation sequences that are longer than {mxsl} tokens")
+        self._log.info(f"[{dataset_name} set] [BEFORE] Number of multiple choice conversations samples : "
+                       f"{len(dataset)}")
+
+        dataset = optional_tqdm(dataset, desc=f"Filtering {dataset_name} set")
+        dataset = filter_out_too_long_sequences(dataset, mxsl)
+
+        self._log.info(f"[{dataset_name} set] [AFTER ] Number of multiple choice conversations samples : "
+                       f"{len(dataset)}")
+
+        return dataset
+
     @abc.abstractmethod
     def _setup_batch_datasets(self):
         """
@@ -313,6 +347,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         #   These metric inputs are used to calculate the batch metrics of interest.
         #   In our case the loss and the output candidate classification quality.
         #   (using "metric_funcs" dict, with a function per metric)
+        #
+        # * Clean-up batch data that is not used any more after gathering the metric inputs.
+        #   This is useful to optimize memory usage.
         #
         # * Combine the gathered metric inputs per batch
         #   (using "combine_metric_inputs_funcs" dict, with a function per metric)
