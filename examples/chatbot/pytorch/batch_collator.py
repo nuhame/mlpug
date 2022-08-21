@@ -6,11 +6,12 @@ from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 class BatchCollator(Base):
 
-    def __init__(self, pad_token_idx, ignore_label_idx=-100, name=None):
+    def __init__(self, pad_token_idx, max_sequence_length=None, ignore_label_idx=-100, name=None):
         super().__init__(pybase_logger_name=name)
 
         self._pad_token_idx = pad_token_idx
         self._ignore_label_idx = ignore_label_idx
+        self._max_sequence_length = max_sequence_length
 
     def __call__(self, batch_samples):
         """
@@ -35,8 +36,10 @@ class BatchCollator(Base):
         if any([len(sample) != num_choices for sample in batch_samples]):
             raise ValueError("Number of choices should be the same for all samples in the batch")
 
-        max_seq_len = max([max([len(sample[choice_idx][0]) for choice_idx in range(num_choices)])
-                           for sample in batch_samples])
+        max_seq_len = self._max_sequence_length
+        if max_seq_len is None:
+            max_seq_len = max([max([len(sample[choice_idx][0]) for choice_idx in range(num_choices)])
+                               for sample in batch_samples])
 
         input_ids_batch = self._pad_token_idx*torch.ones(
             (batch_size, num_choices, max_seq_len),

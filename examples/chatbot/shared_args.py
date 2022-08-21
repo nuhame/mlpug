@@ -22,9 +22,9 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='Num. of reply choices')
 
     parser.add_argument(
-        '--max-sequence-length',
-        type=int, required=False, default=None,
-        help='If given, conversation sequences, longer than this sequence length will be filtered out.')
+        '--sequence-length-outlier-threshold',
+        type=float, required=False, default=0.05,
+        help='Fraction of samples to discard, in order to remove samples with very long (outlier) sequence length')
 
     parser.add_argument(
         '--batch-chunk-size',
@@ -66,6 +66,9 @@ def describe_args(args, logger):
 
     logger.info(f"Max. num. conversations to use (None = all): {args.max_conversations}")
     logger.info(f"Num. of reply choices : {args.num_choices}")
+
+    logger.info(f"Fraction of samples to discard to reduce max. sequence length: "
+                f"{args.sequence_length_outlier_threshold}")
 
     describe_base_args(args, logger)
 
