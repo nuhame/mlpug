@@ -173,7 +173,9 @@ class TrainingProcess(TrainingProcessBase):
             shuffle=False,  # Samples already shuffled
             sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
-            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id),
+            collate_fn=BatchCollator(
+                pad_token_idx=self._hf_tokenizer.pad_token_id,
+                max_sequence_length=self._opt_max_sequence_length),
             pin_memory=True)
 
         # Using the test set as a validation set, just for demonstration purposes
@@ -183,7 +185,9 @@ class TrainingProcess(TrainingProcessBase):
             shuffle=False,  # Samples already shuffled
             sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
-            collate_fn=BatchCollator(pad_token_idx=self._hf_tokenizer.pad_token_id),
+            collate_fn=BatchCollator(
+                pad_token_idx=self._hf_tokenizer.pad_token_id,
+                max_sequence_length=self._opt_max_sequence_length),
             pin_memory=True)
 
     def _build_model(self):

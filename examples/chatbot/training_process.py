@@ -39,8 +39,34 @@ except Exception as e:
                                  "see https://scikit-learn.org/stable/install.html#installing-the-latest-release", e)
 
 
+def generate_samples_from(multiple_choice_dataset):
+    return [conversation_choices for conversation_choices in multiple_choice_dataset]
+
+
+def find_optimal_max_sequence_length(multiple_choice_dataset, outlier_threshold=0.05):
+    """
+    Calculates multiple choice sample sequence lengths and discards the samples with the longest sequence lengths,
+    based on outlier_threshold, to find a max sequence length that still covers most samples but is not too long
+    (and hence uses too much memory)
+
+    :param multiple_choice_dataset:
+    :param outlier_threshold:
+
+    :return: opt_max_sequence_length, max_sequence_length
+    """
+    sample_sequence_lengths = np.array([max_sequence_length_in(conversation_choices)
+                                        for conversation_choices in multiple_choice_dataset])
+
+    sample_sequence_lengths = np.sort(sample_sequence_lengths)
+
+    num_samples = len(sample_sequence_lengths)
+    cutoff_idx = int(num_samples * (1-outlier_threshold))
+
+    return sample_sequence_lengths[cutoff_idx], sample_sequence_lengths[-1]
+
+
 def filter_out_too_long_sequences(multiple_choice_dataset, max_sequence_length):
-    return [conversation_choices for conversation_choices in multiple_choice_dataset
+    return [conversation_choices for conversation_choices in generate_samples_from(multiple_choice_dataset)
             if max_sequence_length_in(conversation_choices) <= max_sequence_length]
 
 
@@ -97,6 +123,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._sample_training_set = None
         self._sample_validation_set = None
+
+        self._opt_max_sequence_length = None
 
         self._batch_training_set = None
         self._batch_validation_set = None
@@ -186,28 +214,51 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._sample_validation_set = MultipleConversationChoicesDataset(dataset["validation"],
                                                                          sample_factory,
+                                                                         max_num_samples=self._args.max_conversations,
                                                                          num_choices=self._args.num_choices,
                                                                          name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
-        # Optionally filtering out too long conversation sequences
-        self._sample_training_set = self._filter_conversation_samples(self._sample_training_set, "Training")
-        self._sample_validation_set = self._filter_conversation_samples(self._sample_validation_set, "Validation")
+        # Filter out samples that have an outlier length.
+        self._sample_training_set = self._generate_multiple_choice_samples(self._sample_training_set, "training")
+        self._sample_validation_set = self._generate_multiple_choice_samples(self._sample_validation_set, "validation")
 
-    def _filter_conversation_samples(self, dataset, dataset_name):
-        mxsl = self._args.max_sequence_length
-        if mxsl is None:
-            # No filtering
-            return dataset
+        outlier_threshold = self._args.sequence_length_outlier_threshold
+        self._opt_max_sequence_length, max_sequence_length = find_optimal_max_sequence_length(
+            self._sample_training_set,
+            outlier_threshold=outlier_threshold)
+
+        self._log.info(f"Max. sequence length reduced from "
+                       f"{max_sequence_length} tokens to "
+                       f"{self._opt_max_sequence_length} tokens "
+                       f"by discarding {outlier_threshold*100}% of the samples.")
+
+        self._sample_training_set = self._filter_conversation_samples(
+            self._sample_training_set,
+            "Training",
+            self._opt_max_sequence_length)
+
+        self._sample_validation_set = self._filter_conversation_samples(
+            self._sample_validation_set,
+            "Validation",
+            self._opt_max_sequence_length)
+
+    def _generate_multiple_choice_samples(self, dataset, dataset_name):
 
         def optional_tqdm(ds, **kwargs):
             return tqdm(ds, **kwargs) if not self.logging_disabled else ds
+
+        dataset = optional_tqdm(dataset, desc=f"Generating {dataset_name} samples")
+
+        return generate_samples_from(dataset)
+
+    def _filter_conversation_samples(self, dataset, dataset_name, max_sequence_length):
+        mxsl = max_sequence_length
 
         self._log.info(f"[{dataset_name} set] Filtering out conversation sequences that are longer than {mxsl} tokens")
         self._log.info(f"[{dataset_name} set] [BEFORE] Number of multiple choice conversations samples : "
                        f"{len(dataset)}")
 
-        dataset = optional_tqdm(dataset, desc=f"Filtering {dataset_name} set")
         dataset = filter_out_too_long_sequences(dataset, mxsl)
 
         self._log.info(f"[{dataset_name} set] [AFTER ] Number of multiple choice conversations samples : "
