@@ -1,5 +1,7 @@
+torch
+visionscaper-pybase
+tensorboardX
 transformers
 datasets
 scikit-learn
 tqdm
-
