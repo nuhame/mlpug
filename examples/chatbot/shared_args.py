@@ -32,6 +32,18 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='Weight decay')
 
     parser.add_argument(
+        '--lr-warmup-schedule',
+        action='store_true',
+        help='When given, will apply a LR schedule, starting with a warmup period after which the LR '
+             'is cooled down again to 0 at the end of the last epoch.  This LR schedule works on the batch level.')
+
+    parser.add_argument(
+        '--lr-warmup-epochs',
+        type=int, required=False, default=1,
+        help='LR warmup period in epochs (will be converted to batch iterations). '
+             'Only relevant when --lr-warmup-schedule flag is given.')
+
+    parser.add_argument(
         '--weight-decay',
         type=float, required=False, default=0.0,
         help='Weight decay')

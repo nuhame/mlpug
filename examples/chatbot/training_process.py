@@ -133,6 +133,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._training_model = None
         self._optimizer = None
 
+        self._lr_scheduling_func = None
+
         self._trainer = None
         self._callbacks = None
         self._training_manager = None
@@ -164,6 +166,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._build_model()
         self._setup_training_model()
         self._build_optimizer()
+        self._setup_lr_scheduling_func()
 
         self._setup_trainer()
         self._setup_callbacks()
@@ -294,6 +297,22 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :return:
         """
         raise NotImplementedError("Please implement in your child class")
+
+    def _setup_lr_scheduling_func(self):
+        mlp = self.MLPUG_MODULE
+
+        if not self._args.lr_warmup_schedule:
+            return
+
+        num_iters_per_epoch = len(self._batch_training_set)
+        num_warmup_iters = self._args.lr_warmup_epochs*num_iters_per_epoch
+        total_iters = self._args.num_epochs*num_iters_per_epoch
+
+        self._log.info(f"Applying LR warmup schedule: \n"
+                       f"num_warmup_iters = {num_warmup_iters}\n"
+                       f"total_iters      = {total_iters}")
+
+        self._lr_scheduling_func = mlp.scheduler_funcs.LRWarmupSchedule(num_warmup_iters, total_iters)
 
     @abc.abstractmethod
     def _setup_training_model(self):
@@ -497,6 +516,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                             batch_level=False),
         ]
 
+        if self._lr_scheduling_func is not None:
+            self._log.debug("Adding LR scheduler callback ... ")
+            self._add_lr_scheduler_callback()
+
         # Only primary worker needs to log progress
         if self._rank == 0:
             tb_args = {'experiment_name': self._args.experiment_name}
@@ -518,7 +541,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                     # model_hyper_parameters stored with each checkpoint
                     model_hyper_parameters=model_hyper_parameters),
                 mlp.callbacks.LogProgress(log_condition_func=log_metrics,
-                                          set_names=['training', 'validation']),
+                                          set_names=['training', 'validation', 'training_params']),
                 # Track metrics for all datasets of interest
                 mlp.callbacks.AutoTensorboard(dataset_name='training', **tb_args),
                 mlp.callbacks.AutoTensorboard(dataset_name='validation', **tb_args),
@@ -527,6 +550,17 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         if self._args.describe_logs_object:
             self._callbacks += [mlp.callbacks.DescribeLogsObject(log_condition_func=log_metrics)]
+
+    @abc.abstractmethod
+    def _add_lr_scheduler_callback(self):
+        """
+        Adds an LR Scheduler callback to self._callbacks.
+        Only called when an LR scheduler func is defined.
+
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
 
     def _setup_training_manager(self):
         """
