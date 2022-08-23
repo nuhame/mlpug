@@ -9,6 +9,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from torch.optim import AdamW
 
+from torch.optim.lr_scheduler import LambdaLR
+
 from torch.nn.functional import softmax
 
 from basics.logging_utils import log_exception
@@ -265,7 +267,19 @@ class TrainingProcess(TrainingProcessBase):
                 mlp.callbacks.DistributedSamplerManager(
                     self._validation_sampler,
                     name="DistributedSamplerManager[validation]")
-            ] + self._callbacks  # + [mlp.callbacks.EmptyCudaCache()]
+            ] + self._callbacks
+
+    def _add_lr_scheduler_callback(self):
+        """
+        Returns function that can cleanup the batch data to optimize memory use
+
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        self._callbacks += [mlp.callbacks.LRSchedulerWrapper({
+                'warmup-scheduler': LambdaLR(self._optimizer, self._lr_scheduling_func)
+            }, batch_level=True)]
 
     @staticmethod
     def get_logger_info(rank, num_devices, name):
