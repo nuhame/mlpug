@@ -4,6 +4,8 @@ import random
 import math
 import numpy as np
 
+import multiprocessing as mp
+
 import mlpug.abstract_interface as mlp_interface
 
 from mlpug.base import Base
@@ -12,15 +14,13 @@ from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 from examples.chatbot.tokenizers import HFTokenizer
-from examples.chatbot.multiple_choice_dataset import max_sequence_length_in, MultipleConversationChoicesDataset
+from examples.chatbot.multiple_choice_dataset import \
+    max_sequence_length_in, \
+    MultipleConversationChoicesDataset, \
+    DistributedSampleGenerator
 from examples.chatbot.conversation_sample_factory import ConversationSampleFactory
 
 module_logger = get_logger(os.path.basename(__file__))
-
-try:
-    from tqdm import tqdm
-except Exception as e:
-    log_exception(module_logger, "Please `pip install tqdm`", e)
 
 try:
     from datasets import load_dataset
@@ -37,10 +37,6 @@ try:
 except Exception as e:
     log_exception(module_logger, "Please install the scikit-learn package, "
                                  "see https://scikit-learn.org/stable/install.html#installing-the-latest-release", e)
-
-
-def generate_samples_from(multiple_choice_dataset):
-    return [conversation_choices for conversation_choices in multiple_choice_dataset]
 
 
 def find_optimal_max_sequence_length(multiple_choice_dataset, outlier_threshold=0.05):
@@ -65,8 +61,8 @@ def find_optimal_max_sequence_length(multiple_choice_dataset, outlier_threshold=
     return sample_sequence_lengths[cutoff_idx], sample_sequence_lengths[-1]
 
 
-def filter_out_too_long_sequences(multiple_choice_dataset, max_sequence_length):
-    return [conversation_choices for conversation_choices in generate_samples_from(multiple_choice_dataset)
+def filter_out_too_long_sequences(conversation_choices_list, max_sequence_length):
+    return [conversation_choices for conversation_choices in conversation_choices_list
             if max_sequence_length_in(conversation_choices) <= max_sequence_length]
 
 
@@ -222,9 +218,13 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                                          name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
+        # Note: Dividing the num_workers over the number of used GPUs is only relevant to PyTorch, not TF
+        num_workers = max(int(mp.cpu_count()/self.num_devices), 1)
+        sample_generator = DistributedSampleGenerator(num_workers=num_workers, log_progress=not self.logging_disabled)
+
         # Filter out samples that have an outlier length.
-        self._sample_training_set = self._generate_multiple_choice_samples(self._sample_training_set, "training")
-        self._sample_validation_set = self._generate_multiple_choice_samples(self._sample_validation_set, "validation")
+        self._sample_training_set = sample_generator(self._sample_training_set, "training")
+        self._sample_validation_set = sample_generator(self._sample_validation_set, "validation")
 
         outlier_threshold = self._args.sequence_length_outlier_threshold
         self._opt_max_sequence_length, max_sequence_length = find_optimal_max_sequence_length(
@@ -245,15 +245,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             self._sample_validation_set,
             "Validation",
             self._opt_max_sequence_length)
-
-    def _generate_multiple_choice_samples(self, dataset, dataset_name):
-
-        def optional_tqdm(ds, **kwargs):
-            return tqdm(ds, **kwargs) if not self.logging_disabled else ds
-
-        dataset = optional_tqdm(dataset, desc=f"Generating {dataset_name} samples")
-
-        return generate_samples_from(dataset)
 
     def _filter_conversation_samples(self, dataset, dataset_name, max_sequence_length):
         mxsl = max_sequence_length

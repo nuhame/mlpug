@@ -1,8 +1,64 @@
 from typing import Optional, Callable, Tuple, List, Dict
-
+import os
 import random
 
+from functools import partial
+
+import multiprocessing as mp
+
+from basics.logging_utils import log_exception
+from basics.logging import get_logger
+
 from mlpug.base import Base
+
+
+module_logger = get_logger(os.path.basename(__file__))
+
+try:
+    from tqdm import tqdm
+except Exception as e:
+    log_exception(module_logger, "Please `pip install tqdm`", e)
+
+
+def generate_sample_for(multiple_choice_dataset, idx):
+    return multiple_choice_dataset[idx]
+
+
+class DistributedSampleGenerator(Base):
+
+    def __init__(self, num_workers=None, log_progress=True, name=None):
+        """
+
+        Speeding up pre-generation of all samples by distributing the work over the available CPU cores (-1)
+
+        :param num_workers:
+        :param log_progress:
+        :param name:
+        """
+        super().__init__(pybase_logger_name=name)
+
+        if num_workers is None:
+            num_workers = max(mp.cpu_count() - 1, 1)
+
+        self._num_workers = num_workers
+        self._log_progress = log_progress
+
+        self._log.info(f"Using {num_workers} workers to generate multiple choice conversation samples.")
+
+    def __call__(self, multiple_choice_dataset, dataset_name=None):
+        num_samples = len(multiple_choice_dataset)
+
+        chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
+
+        generate_sample = partial(generate_sample_for, multiple_choice_dataset)
+
+        with mp.Pool(self._num_workers) as p:
+            sample_iter = p.imap(generate_sample, range(num_samples), chunksize=chunksize)
+
+            if self._log_progress:
+                sample_iter = tqdm(sample_iter, desc=f"Generating {dataset_name} samples", total=num_samples)
+
+            return [sample for sample in sample_iter]
 
 
 def max_sequence_length_in(conversation_choices):
