@@ -1034,7 +1034,7 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
             (loss, ... auxiliary results ...)
         """
 
-        return self.training_model(batch_data, evaluate_settings, inference_mode)
+        return self.training_model(batch_data, evaluate_settings=evaluate_settings, inference_mode=inference_mode)
 
     def _validate_model(self):
         # TODO : this is framework dependent
