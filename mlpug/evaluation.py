@@ -839,7 +839,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
             try:
                 metric_inputs = gathered_inputs[metric_name]
-                metrics_output[metric_name] = metric_func(metric_inputs)
+                metrics_output[metric_name] = self._eval_metric_func(
+                    metric_func,
+                    metric_inputs,
+                    metric_name=metric_name)
             except Exception as e:
                 _.log_exception(self._log, f"Evaluating metric {metric_name} over batch failed", e)
                 success = False
@@ -879,7 +882,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 continue
 
             try:
-                metrics_output[metric_name] = metric_func(metric_inputs[metric_name])
+                metrics_output[metric_name] = self._eval_metric_func(
+                    metric_func,
+                    metric_inputs[metric_name],
+                    metric_name=metric_name)
             except Exception as e:
                 _.log_exception(self._log, f"Evaluating metric {metric_name} using given metric inputs failed", e)
                 success = False
@@ -985,6 +991,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         results["metrics"] = metrics_output
 
         return results, success
+
+    def _eval_metric_func(self, metric_func, metric_inputs, metric_name=None):
+        # By default no special behavior
+        return metric_func(metric_inputs)
 
     def _create_default_model_evaluate_func(self):
         """

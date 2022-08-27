@@ -38,7 +38,12 @@ class GatherLossDistributed(MultiProcessingMixin, Base):
             dist.reduce(loss_sum, 0)
             dist.reduce(tot_num_samples, 0)
 
-        return loss_sum.item(), tot_num_samples.item()
+            if self.is_primary:
+                return loss_sum.item(), tot_num_samples.item()
+            else:
+                return None, None
+        else:
+            return loss_sum.item(), tot_num_samples.item()
 
 
 # DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
@@ -145,6 +150,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
                  batch_dim=0,
+                 show_warning_distributed_metric_evaluation=True,
                  name="MetricEvaluator",
                  **kwargs):
         """
@@ -194,6 +200,21 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                          metric_funcs=metric_funcs,
                          name=name,
                          **kwargs)
+
+        self._did_show_warning_distributed_metric_evaluation = not show_warning_distributed_metric_evaluation
+
+    def _eval_metric_func(self, metric_func, metric_inputs, metric_name=None):
+        if self.is_distributed and not self.is_primary:
+            if not self._did_show_warning_distributed_metric_evaluation:
+                self._log.warning(
+                    f"Not evaluating metric functions on non-primary device. "
+                    f"It is assumed that all metric inputs are gathered on primary device. "
+                    f"This is default behaviour, override _eval_metric_func to change this behaviour.")
+                self._did_show_warning_distributed_metric_evaluation = True
+
+            return None
+
+        return metric_func(metric_inputs)
 
     def _create_default_model_evaluate_func(self):
         return DefaultLossEvaluator(self._trainer)
