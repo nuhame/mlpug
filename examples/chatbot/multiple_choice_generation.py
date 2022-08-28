@@ -1,7 +1,6 @@
 from typing import Optional, Callable, Collection, List, Dict
 import os
 from functools import partial
-from itertools import repeat
 
 import io
 import pickle
@@ -45,48 +44,18 @@ def max_sequence_length_in(conversation_choices):
     return max([len(conversation_choice[0]) for conversation_choice in conversation_choices])
 
 
-def generate_sample(task):
+def generate_sample_worker_func(idx, sample_generator):
     """
     Used by DistributedDatasetGenerator.
-    task is a tuple (idx, sample_generator)
 
     Calling sample_generator[idx] triggers the generator to build the requested multiple choice conversation sample.
 
-    :param task:
+    :param idx:
+    :param sample_generator:
+
     :return:
     """
-    idx, sample_generator = task
-
     return sample_generator[idx]
-
-
-def read_samples_from_cache(results_dict, cached_samples_path, dataset_name, logging_disabled=False):
-    """
-    Used by DistributedDatasetGenerator. This is a process worker function to read the samples
-    from cache. This is done in a separate process to ensure all memory related to unpickling is released afterwards.
-
-    Also see https://stackoverflow.com/a/35364248/889617
-
-    :param results_dict: In this dict the read samples are mapped to the 'samples' key
-
-    :param cached_samples_path:
-    :param dataset_name:
-
-    :return: Nothing is returned, see results_dict
-    """
-
-    with io.open(cached_samples_path, 'rb') as p:
-        unpickler = pickle.Unpickler(p)
-
-        def yield_samples():
-            while p.peek(1):
-                yield unpickler.load()
-
-        sample_reader = yield_samples()
-        if not logging_disabled:
-            sample_reader = tqdm(sample_reader, desc=f"Reading {dataset_name} samples")
-
-        results_dict['samples'] = [sample for sample in sample_reader]
 
 
 class DistributedDatasetGenerator(Base):
@@ -152,29 +121,30 @@ class DistributedDatasetGenerator(Base):
     def _read_samples_from_cache(self, cached_samples_path, dataset_name):
         self._log.info(f"Loading generated {dataset_name} multiple choice samples from:\n{cached_samples_path}\n")
 
-        manager = mp.Manager()
-        results_dict = manager.dict()
+        with io.open(cached_samples_path, 'rb') as p:
+            unpickler = pickle.Unpickler(p)
 
-        read_samples = partial(read_samples_from_cache,
-                               cached_samples_path=cached_samples_path,
-                               dataset_name=dataset_name,
-                               logging_disabled=self.logging_disabled)
+            def yield_samples():
+                while p.peek(1):
+                    yield unpickler.load()
 
-        p = mp.Process(target=read_samples, args=(results_dict,))
-        p.start()
-        p.join()
+            sample_reader = yield_samples()
+            if not self.logging_disabled:
+                sample_reader = tqdm(sample_reader, desc=f"Reading {dataset_name} samples")
 
-        return results_dict['samples']
+            samples = [sample for sample in sample_reader]
+
+        return samples
 
     def _generate_samples(self, sample_generator, dataset_name):
         num_samples = len(sample_generator)
 
         chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
 
-        # pool = mp.pool.ThreadPool(self._num_workers)
+        generate_sample = partial(generate_sample_worker_func, sample_generator=sample_generator)
 
         with mp.Pool(self._num_workers) as p:
-            sample_iter = p.imap(generate_sample, zip(range(num_samples), repeat(sample_generator, num_samples)), chunksize=chunksize)
+            sample_iter = p.imap(generate_sample, range(num_samples), chunksize=chunksize)
 
             if not self.logging_disabled:
                 sample_iter = tqdm(sample_iter, desc=f"Generating {dataset_name} samples", total=num_samples)
