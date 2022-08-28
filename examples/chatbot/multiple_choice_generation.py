@@ -1,14 +1,17 @@
-from typing import Optional, Callable, Tuple, List, Dict
+from typing import Optional, Callable, Collection, List, Dict
 import os
-import random
+from functools import partial
+from itertools import repeat
 
+import io
 import pickle
+
+import random
 
 from pathlib import Path
 
-from functools import partial
-
 import multiprocessing as mp
+
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
@@ -22,83 +25,6 @@ try:
     from tqdm import tqdm
 except Exception as e:
     log_exception(module_logger, "Please `pip install tqdm`", e)
-
-
-def generate_sample(idx, dataset):
-    """
-    Used by DistributedSampleGenerator.
-    Calling datatset[idx] triggers the dataset to build the multiple choice conversation sample.
-
-    :param idx:
-    :return:
-    """
-    return dataset[idx]
-
-
-class DistributedSampleGenerator(Base):
-
-    def __init__(self, num_workers=None, log_progress=True, name=None):
-        """
-
-        Speeding up pre-generation of all samples by distributing the work over the available CPU cores.
-        The generated samples will be cached. If cached samples are already available the generation will be skipped.
-
-        :param num_workers:
-        :param log_progress:
-        :param name:
-        """
-        super().__init__(pybase_logger_name=name)
-
-        if num_workers is None:
-            num_workers = max(mp.cpu_count()-1, 1)
-
-        self._num_workers = num_workers
-        self._log_progress = log_progress
-
-        self._log.info(f"Using {num_workers} workers to generate multiple choice conversation samples.")
-
-        self._cache_path = os.path.join(Path.home(), '.cache/mlpug/')
-
-        Path(self._cache_path).mkdir(exist_ok=True)
-
-        self._log.info(f"Using cache path: {self._cache_path}")
-
-    def __call__(self, multiple_choice_dataset, dataset_name=None, force_generate=False):
-        cached_samples_path = Path(os.path.join(
-            self._cache_path,
-            f"multiple_choice_samples-{dataset_name}.pickle"))
-
-        cached_samples_found = cached_samples_path.is_file()
-
-        if not cached_samples_found or force_generate:
-            multiple_choice_samples = self._generate_samples(multiple_choice_dataset, dataset_name)
-
-            self._log.info(f"Caching generated {dataset_name} multiple choice samples to:\n{cached_samples_path}\n")
-            with open(cached_samples_path, 'wb') as f:
-                pickle.dump(multiple_choice_samples, f)
-
-            return multiple_choice_samples
-
-        self._log.info(f"Loading generated {dataset_name} multiple choice samples from:\n{cached_samples_path}\n")
-        with open(cached_samples_path, 'rb') as f:
-            return pickle.load(f)
-
-    def _generate_samples(self, multiple_choice_dataset, dataset_name):
-        num_samples = len(multiple_choice_dataset)
-
-        chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
-
-        pool = mp.Pool(self._num_workers)
-
-        _generate_sample = partial(generate_sample, dataset=multiple_choice_dataset)
-
-        with pool as p:
-            sample_iter = p.imap(_generate_sample, range(num_samples), chunksize=chunksize)
-
-            if self._log_progress:
-                sample_iter = tqdm(sample_iter, desc=f"Generating {dataset_name} samples", total=num_samples)
-
-            return [sample for sample in sample_iter]
 
 
 def max_sequence_length_in(conversation_choices):
@@ -119,7 +45,146 @@ def max_sequence_length_in(conversation_choices):
     return max([len(conversation_choice[0]) for conversation_choice in conversation_choices])
 
 
-class MultipleConversationChoicesDataset(Base):
+def generate_sample(task):
+    """
+    Used by DistributedDatasetGenerator.
+    task is a tuple (idx, sample_generator)
+
+    Calling sample_generator[idx] triggers the generator to build the requested multiple choice conversation sample.
+
+    :param task:
+    :return:
+    """
+    idx, sample_generator = task
+
+    return sample_generator[idx]
+
+
+def read_samples_from_cache(results_dict, cached_samples_path, dataset_name, logging_disabled=False):
+    """
+    Used by DistributedDatasetGenerator. This is a process worker function to read the samples
+    from cache. This is done in a separate process to ensure all memory related to unpickling is released afterwards.
+
+    Also see https://stackoverflow.com/a/35364248/889617
+
+    :param results_dict: In this dict the read samples are mapped to the 'samples' key
+
+    :param cached_samples_path:
+    :param dataset_name:
+
+    :return: Nothing is returned, see results_dict
+    """
+
+    with io.open(cached_samples_path, 'rb') as p:
+        unpickler = pickle.Unpickler(p)
+
+        def yield_samples():
+            while p.peek(1):
+                yield unpickler.load()
+
+        sample_reader = yield_samples()
+        if not logging_disabled:
+            sample_reader = tqdm(sample_reader, desc=f"Reading {dataset_name} samples")
+
+        results_dict['samples'] = [sample for sample in sample_reader]
+
+
+class DistributedDatasetGenerator(Base):
+
+    def __init__(self, num_workers=None, name=None, disable_logging=False):
+        """
+        # TODO: refactor to a more generic tool
+
+        Generates dataset by distributing the sample generation over the available CPU core, speeding up the process.
+        The generated dataset will be cached. If a cached dataset is already available the generation will be skipped.
+
+        :param num_workers:
+        :param log_progress:
+        :param name:
+        :param disable_logging:
+
+        """
+        super().__init__(pybase_logger_name=name, disable_logging=disable_logging)
+
+        if num_workers is None:
+            num_workers = max(mp.cpu_count()-1, 1)
+
+        self._num_workers = num_workers
+        self._log.info(f"Using {num_workers} workers to generate multiple choice conversation samples.")
+
+        self._cache_path = os.path.join(Path.home(), '.cache/mlpug/')
+        Path(self._cache_path).mkdir(exist_ok=True)
+
+        self._log.info(f"Using cache path: {self._cache_path}")
+
+    def __call__(self, sample_generator: Collection, dataset_name=None, force_generate=False, no_caching=False):
+        cached_samples_path = Path(os.path.join(
+            self._cache_path,
+            f"multiple_choice_samples-{dataset_name}.pickle"))
+
+        cached_samples_found = cached_samples_path.is_file()
+        if not cached_samples_found or force_generate:
+            multiple_choice_samples = self._generate_samples(sample_generator, dataset_name)
+
+            if not no_caching:
+                self._write_samples_to_cache(multiple_choice_samples, cached_samples_path, dataset_name)
+
+            return multiple_choice_samples
+
+        return self._read_samples_from_cache(cached_samples_path, dataset_name)
+
+    def _write_samples_to_cache(self, multiple_choice_samples, cached_samples_path, dataset_name):
+        self._log.info(f"Caching generated {dataset_name} multiple choice samples to:\n{cached_samples_path}\n")
+        with io.open(cached_samples_path, 'wb') as f:
+            pickler = pickle.Pickler(f)
+
+            if not self.logging_disabled:
+                num_samples = len(multiple_choice_samples)
+
+                multiple_choice_samples = tqdm(
+                    multiple_choice_samples,
+                    desc=f"Writing {dataset_name} samples",
+                    total=num_samples)
+
+            for sample in multiple_choice_samples:
+                pickler.dump(sample)
+
+    def _read_samples_from_cache(self, cached_samples_path, dataset_name):
+        self._log.info(f"Loading generated {dataset_name} multiple choice samples from:\n{cached_samples_path}\n")
+
+        manager = mp.Manager()
+        results_dict = manager.dict()
+
+        read_samples = partial(read_samples_from_cache,
+                               cached_samples_path=cached_samples_path,
+                               dataset_name=dataset_name,
+                               logging_disabled=self.logging_disabled)
+
+        p = mp.Process(target=read_samples, args=(results_dict,))
+        p.start()
+        p.join()
+
+        return results_dict['samples']
+
+    def _generate_samples(self, sample_generator, dataset_name):
+        num_samples = len(sample_generator)
+
+        chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
+
+        # pool = mp.pool.ThreadPool(self._num_workers)
+
+        with mp.Pool(self._num_workers) as p:
+            sample_iter = p.imap(generate_sample, zip(range(num_samples), repeat(sample_generator, num_samples)), chunksize=chunksize)
+
+            if not self.logging_disabled:
+                sample_iter = tqdm(sample_iter, desc=f"Generating {dataset_name} samples", total=num_samples)
+
+            samples = [sample for sample in sample_iter]
+
+        return samples
+
+
+class MCSampleGenerator(Base):
 
     def __init__(self,
                  persona_chat_dataset: List[Dict],
@@ -129,11 +194,15 @@ class MultipleConversationChoicesDataset(Base):
                  shuffle: bool = True,
                  name: Optional[str] = None):
         """
+        Multiple Choice (MC) sample generator, acts as a collection where a sample for some sample_idx is
+        generated on the fly.
+
         Usage:
 
-        mc_dataset = MultipleConversationChoicesDataset(persona_chat_dataset, sample_factory)
+        mc_generator = MCSampleGenerator(persona_chat_dataset, sample_factory)
+        mc_generator.initialize()
 
-        multiple_conversation_choices = mc_dataset[10]
+        multiple_conversation_choices = mc_generator[10]
         # depending on the sample factory:
         # input_ids of third conversation choice
         input_ids = multiple_conversation_choices[0][2]
