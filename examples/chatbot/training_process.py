@@ -14,10 +14,10 @@ from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 from examples.chatbot.tokenizers import HFTokenizer
-from examples.chatbot.multiple_choice_dataset import \
+from examples.chatbot.multiple_choice_generation import \
     max_sequence_length_in, \
-    MultipleConversationChoicesDataset, \
-    DistributedSampleGenerator
+    MCSampleGenerator, \
+    DistributedDatasetGenerator
 from examples.chatbot.conversation_sample_factory import ConversationSampleFactory
 
 module_logger = get_logger(os.path.basename(__file__))
@@ -117,8 +117,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._orig_num_tokens = None
         self._num_special_tokens = None
 
-        self._sample_training_set = None
-        self._sample_validation_set = None
+        self._training_set = None
+        self._validation_set = None
 
         self._opt_max_sequence_length = None
 
@@ -184,11 +184,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     def _load_dataset(self):
         return load_dataset("bavard/personachat_truecased")
 
-    def _generate_multiple_choice_samples(self, multiple_choice_samples, sample_generator, dataset_name):
-        return sample_generator(
-            multiple_choice_samples,
+    def _generate_multiple_choice_dataset(self, dataset_generator, sample_generator, dataset_name):
+        return dataset_generator(
+            sample_generator,
             dataset_name=dataset_name,
-            force_generate=self._args.force_generate_samples)
+            force_generate=True, #self._args.force_generate_samples
+            no_caching=True)
 
     def _load_and_prepare_data(self):
         self._log.info("Loading Personachat dataset ...")
@@ -210,35 +211,35 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             speaker1=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
             speaker2=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
 
-        self._sample_training_set = MultipleConversationChoicesDataset(dataset["train"],
-                                                                       sample_factory,
-                                                                       max_num_samples=self._args.max_conversations,
-                                                                       num_choices=self._args.num_choices,
-                                                                       name="TrainingSampleGenerator")
-        self._sample_training_set.initialize()
+        sample_generator_train = MCSampleGenerator(dataset["train"],
+                                                   sample_factory,
+                                                   max_num_samples=self._args.max_conversations,
+                                                   num_choices=self._args.num_choices,
+                                                   name="TrainingSampleGenerator")
+        sample_generator_train.initialize()
 
-        self._sample_validation_set = MultipleConversationChoicesDataset(dataset["validation"],
-                                                                         sample_factory,
-                                                                         max_num_samples=self._args.max_conversations,
-                                                                         num_choices=self._args.num_choices,
-                                                                         name="ValidationSampleGenerator")
-        self._sample_validation_set.initialize()
+        sample_generator_val = MCSampleGenerator(dataset["validation"],
+                                                 sample_factory,
+                                                 max_num_samples=self._args.max_conversations,
+                                                 num_choices=self._args.num_choices,
+                                                 name="ValidationSampleGenerator")
+        sample_generator_val.initialize()
 
-        sample_generator = DistributedSampleGenerator(log_progress=not self.logging_disabled)
+        dataset_generator = DistributedDatasetGenerator(disable_logging=self.logging_disabled)
 
-        self._sample_training_set = self._generate_multiple_choice_samples(
-            self._sample_training_set,
-            sample_generator,
+        self._training_set = self._generate_multiple_choice_dataset(
+            dataset_generator,
+            sample_generator_train,
             dataset_name="training")
 
-        self._sample_validation_set = self._generate_multiple_choice_samples(
-            self._sample_validation_set,
-            sample_generator,
+        self._validation_set = self._generate_multiple_choice_dataset(
+            dataset_generator,
+            sample_generator_val,
             dataset_name="validation")
 
         outlier_threshold = self._args.sequence_length_outlier_threshold
         self._opt_max_sequence_length, max_sequence_length = find_optimal_max_sequence_length(
-            self._sample_training_set,
+            self._training_set,
             outlier_threshold=outlier_threshold)
 
         self._log.info(f"Max. sequence length reduced from "
@@ -246,17 +247,17 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                        f"{self._opt_max_sequence_length} tokens "
                        f"by discarding {outlier_threshold*100}% of the samples.")
 
-        self._sample_training_set = self._filter_conversation_samples(
-            self._sample_training_set,
-            "Training",
-            self._opt_max_sequence_length)
+        self._training_set = self._filter_conversation_samples(
+            self._training_set,
+            self._opt_max_sequence_length,
+            "Training")
 
-        self._sample_validation_set = self._filter_conversation_samples(
-            self._sample_validation_set,
-            "Validation",
-            self._opt_max_sequence_length)
+        self._validation_set = self._filter_conversation_samples(
+            self._validation_set,
+            self._opt_max_sequence_length,
+            "Validation")
 
-    def _filter_conversation_samples(self, dataset, dataset_name, max_sequence_length):
+    def _filter_conversation_samples(self, dataset, max_sequence_length, dataset_name):
         mxsl = max_sequence_length
 
         self._log.info(f"[{dataset_name} set] Filtering out conversation sequences that are longer than {mxsl} tokens")

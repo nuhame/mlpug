@@ -1,4 +1,4 @@
-torch
+streaming-pickle
 visionscaper-pybase
 tensorboardX
 transformers
