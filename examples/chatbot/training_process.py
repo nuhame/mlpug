@@ -188,8 +188,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         return dataset_generator(
             sample_generator,
             dataset_name=dataset_name,
-            force_generate=True, #self._args.force_generate_samples
-            no_caching=True)
+            force_generate=self._args.force_generate_samples)
 
     def _load_and_prepare_data(self):
         self._log.info("Loading Personachat dataset ...")

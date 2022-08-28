@@ -182,8 +182,8 @@ class TrainingProcess(TrainingProcessBase):
 
     def _setup_batch_datasets(self):
         if self.is_distributed:
-            self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_generator_train)
-            self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_generator_val)
+            self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._training_set)
+            self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._validation_set)
 
         self._batch_training_set = torch.utils.data.DataLoader(
             self._training_set,

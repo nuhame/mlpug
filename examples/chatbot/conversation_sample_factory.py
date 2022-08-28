@@ -1,5 +1,7 @@
 from typing import Optional, Callable, List
 
+import numpy as np
+
 from mlpug.base import Base
 
 
@@ -103,7 +105,8 @@ class ConversationSampleFactory(Base):
 
         reply_class = int(is_real_reply)
 
-        return input_ids, token_type_ids, token_label_ids, last_token_idx, reply_class
+        # Storing as numpy arrays really makes a huge difference when pickling and unpickling the data
+        return np.array(input_ids), np.array(token_type_ids), np.array(token_label_ids), last_token_idx, reply_class
 
     def _get_token_id_of(self, token):
         token_id = self._tokenizer_func(token)
