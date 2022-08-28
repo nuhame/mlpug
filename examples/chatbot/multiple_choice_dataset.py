@@ -2,6 +2,10 @@ from typing import Optional, Callable, Tuple, List, Dict
 import os
 import random
 
+import pickle
+
+from pathlib import Path
+
 from functools import partial
 
 import multiprocessing as mp
@@ -20,8 +24,33 @@ except Exception as e:
     log_exception(module_logger, "Please `pip install tqdm`", e)
 
 
-def generate_sample_for(multiple_choice_dataset, idx):
-    return multiple_choice_dataset[idx]
+global _MULTIPLE_CHOICE_DATASET
+
+
+def init_worker(dataset):
+    """
+    Used by DistributedSampleGenerator.
+
+    The dataset is assumed to be a MultipleConversationChoicesDataset instance.
+    Setting the dataset to the global _MULTIPLE_CHOICE_DATASET allows the dataset to be used
+    without copying it to a worker process every time a sample generation task is sent to it.
+
+    :param dataset:
+    :return:
+    """
+    global _MULTIPLE_CHOICE_DATASET
+    _MULTIPLE_CHOICE_DATASET = dataset
+
+
+def generate_sample(idx):
+    """
+    Used by DistributedSampleGenerator.
+    Calling _MULTIPLE_CHOICE_DATASET[idx] triggers the dataset to build the multiple choice conversation sample.
+
+    :param idx:
+    :return:
+    """
+    return _MULTIPLE_CHOICE_DATASET[idx]
 
 
 class DistributedSampleGenerator(Base):
@@ -29,7 +58,8 @@ class DistributedSampleGenerator(Base):
     def __init__(self, num_workers=None, log_progress=True, name=None):
         """
 
-        Speeding up pre-generation of all samples by distributing the work over the available CPU cores (-1)
+        Speeding up pre-generation of all samples by distributing the work over the available CPU cores.
+        The generated samples will be cached. If cached samples are already available the generation will be skipped.
 
         :param num_workers:
         :param log_progress:
@@ -38,21 +68,49 @@ class DistributedSampleGenerator(Base):
         super().__init__(pybase_logger_name=name)
 
         if num_workers is None:
-            num_workers = max(mp.cpu_count() - 1, 1)
+            num_workers = max(mp.cpu_count()-1, 1)
 
         self._num_workers = num_workers
         self._log_progress = log_progress
 
         self._log.info(f"Using {num_workers} workers to generate multiple choice conversation samples.")
 
-    def __call__(self, multiple_choice_dataset, dataset_name=None):
+        self._cache_path = os.path.join(Path.home(), '.cache/mlpug/')
+
+        Path(self._cache_path).mkdir(exist_ok=True)
+
+        self._log.info(f"Using cache path: {self._cache_path}")
+
+    def __call__(self, multiple_choice_dataset, dataset_name=None, force_generate=False):
+        cached_samples_path = Path(os.path.join(
+            self._cache_path,
+            f"multiple_choice_samples-{dataset_name}.pickle"))
+
+        cached_samples_found = cached_samples_path.is_file()
+
+        if not cached_samples_found or force_generate:
+            multiple_choice_samples = self._generate_samples(multiple_choice_dataset, dataset_name)
+
+            self._log.info(f"Caching generated {dataset_name} multiple choice samples to:\n{cached_samples_path}\n")
+            with open(cached_samples_path, 'wb') as f:
+                pickle.dump(multiple_choice_samples, f)
+
+            return multiple_choice_samples
+
+        self._log.info(f"Loading generated {dataset_name} multiple choice samples from:\n{cached_samples_path}\n")
+        with open(cached_samples_path, 'rb') as f:
+            return pickle.load(f)
+
+    def _generate_samples(self, multiple_choice_dataset, dataset_name):
         num_samples = len(multiple_choice_dataset)
 
-        chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
+        chunksize = max(int(num_samples / (self._num_workers * 40)), 1)
 
-        generate_sample = partial(generate_sample_for, multiple_choice_dataset)
+        pool = mp.Pool(self._num_workers,
+                       initializer=init_worker,
+                       initargs=(multiple_choice_dataset,))
 
-        with mp.Pool(self._num_workers) as p:
+        with pool as p:
             sample_iter = p.imap(generate_sample, range(num_samples), chunksize=chunksize)
 
             if self._log_progress:

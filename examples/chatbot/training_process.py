@@ -184,6 +184,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     def _load_dataset(self):
         return load_dataset("bavard/personachat_truecased")
 
+    def _generate_multiple_choice_samples(self, multiple_choice_samples, sample_generator, dataset_name):
+        return sample_generator(
+            multiple_choice_samples,
+            dataset_name=dataset_name,
+            force_generate=self._args.force_generate_samples)
+
     def _load_and_prepare_data(self):
         self._log.info("Loading Personachat dataset ...")
         dataset = self._load_dataset()
@@ -218,13 +224,17 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                                          name="ValidationSampleGenerator")
         self._sample_validation_set.initialize()
 
-        # Note: Dividing the num_workers over the number of used GPUs is only relevant to PyTorch, not TF
-        num_workers = max(int(mp.cpu_count()/self.num_devices), 1)
-        sample_generator = DistributedSampleGenerator(num_workers=num_workers, log_progress=not self.logging_disabled)
+        sample_generator = DistributedSampleGenerator(log_progress=not self.logging_disabled)
 
-        # Filter out samples that have an outlier length.
-        self._sample_training_set = sample_generator(self._sample_training_set, "training")
-        self._sample_validation_set = sample_generator(self._sample_validation_set, "validation")
+        self._sample_training_set = self._generate_multiple_choice_samples(
+            self._sample_training_set,
+            sample_generator,
+            dataset_name="training")
+
+        self._sample_validation_set = self._generate_multiple_choice_samples(
+            self._sample_validation_set,
+            sample_generator,
+            dataset_name="validation")
 
         outlier_threshold = self._args.sequence_length_outlier_threshold
         self._opt_max_sequence_length, max_sequence_length = find_optimal_max_sequence_length(
