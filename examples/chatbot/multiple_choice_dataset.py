@@ -24,33 +24,15 @@ except Exception as e:
     log_exception(module_logger, "Please `pip install tqdm`", e)
 
 
-global _MULTIPLE_CHOICE_DATASET
-
-
-def init_worker(dataset):
+def generate_sample(idx, dataset):
     """
     Used by DistributedSampleGenerator.
-
-    The dataset is assumed to be a MultipleConversationChoicesDataset instance.
-    Setting the dataset to the global _MULTIPLE_CHOICE_DATASET allows the dataset to be used
-    without copying it to a worker process every time a sample generation task is sent to it.
-
-    :param dataset:
-    :return:
-    """
-    global _MULTIPLE_CHOICE_DATASET
-    _MULTIPLE_CHOICE_DATASET = dataset
-
-
-def generate_sample(idx):
-    """
-    Used by DistributedSampleGenerator.
-    Calling _MULTIPLE_CHOICE_DATASET[idx] triggers the dataset to build the multiple choice conversation sample.
+    Calling datatset[idx] triggers the dataset to build the multiple choice conversation sample.
 
     :param idx:
     :return:
     """
-    return _MULTIPLE_CHOICE_DATASET[idx]
+    return dataset[idx]
 
 
 class DistributedSampleGenerator(Base):
@@ -104,14 +86,14 @@ class DistributedSampleGenerator(Base):
     def _generate_samples(self, multiple_choice_dataset, dataset_name):
         num_samples = len(multiple_choice_dataset)
 
-        chunksize = max(int(num_samples / (self._num_workers * 40)), 1)
+        chunksize = max(int(num_samples / (self._num_workers * 20)), 1)
 
-        pool = mp.Pool(self._num_workers,
-                       initializer=init_worker,
-                       initargs=(multiple_choice_dataset,))
+        pool = mp.Pool(self._num_workers)
+
+        _generate_sample = partial(generate_sample, dataset=multiple_choice_dataset)
 
         with pool as p:
-            sample_iter = p.imap(generate_sample, range(num_samples), chunksize=chunksize)
+            sample_iter = p.imap(_generate_sample, range(num_samples), chunksize=chunksize)
 
             if self._log_progress:
                 sample_iter = tqdm(sample_iter, desc=f"Generating {dataset_name} samples", total=num_samples)
