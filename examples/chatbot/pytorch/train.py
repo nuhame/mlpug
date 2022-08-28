@@ -164,6 +164,22 @@ class TrainingProcess(TrainingProcessBase):
 
         return dataset
 
+    def _generate_multiple_choice_samples(self, multiple_choice_samples, sample_generator, dataset_name):
+        # In distributed training mode, we allow the primary process to generate and cache the samples first.
+        # After that the secondary processes can load the data from cache.
+        if self.is_distributed and not self.is_primary:
+            dist.barrier()
+
+        samples = super()._generate_multiple_choice_samples(
+            multiple_choice_samples,
+            sample_generator,
+            dataset_name)
+
+        if self.is_distributed and self.is_primary:
+            dist.barrier()
+
+        return samples
+
     def _setup_batch_datasets(self):
         if self.is_distributed:
             self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._sample_training_set)

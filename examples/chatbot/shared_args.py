@@ -27,6 +27,11 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='Fraction of samples to discard, in order to remove samples with very long (outlier) sequence length')
 
     parser.add_argument(
+        '--force-generate-samples',
+        action='store_true',
+        help='When flag is set, will regenerate multiple choice conversation samples and re-cache the samples')
+
+    parser.add_argument(
         '--batch-chunk-size',
         type=int, required=False, default=None,
         help='Weight decay')
@@ -78,6 +83,8 @@ def describe_args(args, logger):
 
     logger.info(f"Max. num. conversations to use (None = all): {args.max_conversations}")
     logger.info(f"Num. of reply choices : {args.num_choices}")
+
+    logger.info(f"Force (re)generate multiple choice conversation samples: {args.force_generate_samples}")
 
     logger.info(f"Fraction of samples to discard to reduce max. sequence length: "
                 f"{args.sequence_length_outlier_threshold}")
