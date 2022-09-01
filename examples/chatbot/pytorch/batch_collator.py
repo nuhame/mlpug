@@ -55,16 +55,17 @@ class BatchCollator(Base):
         reply_class_batch = torch.zeros((batch_size,), dtype=torch.long)
 
         for s_idx, sample_choices in enumerate(batch_samples):
-            for c_idx, sample in enumerate(sample_choices):
-                input_ids, token_type_ids, token_label_ids, last_token_idx, _ = sample
+            for c_idx, choice in enumerate(sample_choices):
+                input_ids, token_type_ids, token_label_ids, last_token_idx, _ = choice
 
                 input_ids_batch[s_idx, c_idx, :len(input_ids)] = torch.LongTensor(input_ids)
+
                 token_type_ids_batch[s_idx, c_idx, :len(token_type_ids)] = torch.LongTensor(token_type_ids)
                 token_labels_ids_batch[s_idx, c_idx, :len(token_label_ids)] = torch.LongTensor(token_label_ids)
 
-                last_token_idx_batch[s_idx] = last_token_idx
+                last_token_idx_batch[s_idx, c_idx] = last_token_idx
 
-            reply_class_batch[s_idx] = [sample[4] for sample in sample_choices].index(1)
+            reply_class_batch[s_idx] = [choice[4] for choice in sample_choices].index(1)
 
         # Make this batch "chunkable" such that it can be sliced in to batch chunks, when
         # gradient accumulation is enabled
