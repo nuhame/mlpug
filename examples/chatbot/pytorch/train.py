@@ -151,34 +151,24 @@ class TrainingProcess(TrainingProcessBase):
 
         self._device = torch.device("cuda" if use_cuda else "cpu")
 
-    def _load_dataset(self):
-        # In distributed training mode, we allow the primary process to download the data first.
-        # After that the secondary processes can load the data from a cache.
+    def _execute_for_primary_device_first(self, func, *args, **kwargs):
+        # In distributed training mode, we allow the primary process to download or generate and cache any data first.
+        # After that the secondary processes can load the data.
         if self.is_distributed and not self.is_primary:
             dist.barrier()
 
-        dataset = super()._load_dataset()
+        results = func(*args, **kwargs)
 
         if self.is_distributed and self.is_primary:
             dist.barrier()
 
-        return dataset
+        return results
 
-    def _generate_multiple_choice_dataset(self, dataset_generator, sample_generator, dataset_name):
-        # In distributed training mode, we allow the primary process to generate and cache the samples first.
-        # After that the secondary processes can load the data from cache.
-        if self.is_distributed and not self.is_primary:
-            dist.barrier()
+    def _setup_tokenizer(self):
+        return self._execute_for_primary_device_first(super()._setup_tokenizer)
 
-        dataset = super()._generate_multiple_choice_dataset(
-            dataset_generator,
-            sample_generator,
-            dataset_name)
-
-        if self.is_distributed and self.is_primary:
-            dist.barrier()
-
-        return dataset
+    def _generate_dataset(self, manager, dataset_name):
+        return self._execute_for_primary_device_first(super()._generate_dataset, manager, dataset_name)
 
     def _setup_batch_datasets(self):
         if self.is_distributed:
