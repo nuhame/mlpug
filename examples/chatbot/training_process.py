@@ -4,28 +4,24 @@ import random
 import math
 import numpy as np
 
-import multiprocessing as mp
-
 import mlpug.abstract_interface as mlp_interface
+from examples.chatbot.datasets.manager import DatasetManager
 
 from mlpug.base import Base
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
-from examples.chatbot.tokenizers import HFTokenizer
-from examples.chatbot.multiple_choice_generation import \
+from examples.chatbot.datasets.multiple_choice import \
     max_sequence_length_in, \
-    MCSampleGenerator, \
-    DistributedDatasetGenerator
-from examples.chatbot.conversation_sample_factory import ConversationSampleFactory
+    MultipleChoiceGenerator
+
+from examples.chatbot.datasets.tokenizers import HFTokenizer
+from examples.chatbot.datasets.conversations import ConversationSampleFactory
+
 
 module_logger = get_logger(os.path.basename(__file__))
 
-try:
-    from datasets import load_dataset
-except Exception as e:
-    log_exception(module_logger, "Please `pip install datasets`", e)
 
 try:
     from transformers import GPT2Tokenizer, GPT2Config
@@ -113,10 +109,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._rank = rank
         self._num_devices = num_devices
 
-        self._hf_tokenizer = None
-        self._orig_num_tokens = None
-        self._num_special_tokens = None
-
         self._training_set = None
         self._validation_set = None
 
@@ -156,7 +148,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._setup_compute()
 
-        self._load_and_prepare_data()
+        self._setup_tokenizer()
+        self._prepare_datasets()
         self._setup_batch_datasets()
 
         self._build_model()
@@ -181,25 +174,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     def _setup_compute(self):
         raise NotImplementedError("Please implement in your child class")
 
-    def _load_dataset(self):
-        return load_dataset("bavard/personachat_truecased")
-
-    def _generate_multiple_choice_dataset(self, dataset_generator, sample_generator, dataset_name):
-        return dataset_generator(
-            sample_generator,
-            dataset_name=dataset_name,
-            force_generate=self._args.force_generate_samples)
-
-    def _load_and_prepare_data(self):
-        self._log.info("Loading Personachat dataset ...")
-        dataset = self._load_dataset()
-
-        self._log.info(f"Loading Tokenizer for {self._args.pretrained_model} model ...")
-        self._hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
-
-        self._orig_num_tokens = len(self._hf_tokenizer.encoder)
-        self._num_special_tokens = self._hf_tokenizer.add_special_tokens(self.SPECIAL_TOKENS_MAPPING)
-        self._log.debug(f"Number of special tokens added to tokenizer : {self._num_special_tokens }")
+    def _prepare_datasets(self):
+        self._setup_tokenizer()
 
         tokenizer_func = HFTokenizer(self._hf_tokenizer)
 
@@ -210,31 +186,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             speaker1=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
             speaker2=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
 
-        sample_generator_train = MCSampleGenerator(dataset["train"],
-                                                   sample_factory,
-                                                   max_num_samples=self._args.max_conversations,
-                                                   num_choices=self._args.num_choices,
-                                                   name="TrainingSampleGenerator")
-        sample_generator_train.initialize()
+        dataset_manager = DatasetManager(
+            sample_factory,
+            disable_logging=self.logging_disabled)
 
-        sample_generator_val = MCSampleGenerator(dataset["validation"],
-                                                 sample_factory,
-                                                 max_num_samples=self._args.max_conversations,
-                                                 num_choices=self._args.num_choices,
-                                                 name="ValidationSampleGenerator")
-        sample_generator_val.initialize()
-
-        dataset_generator = DistributedDatasetGenerator(disable_logging=self.logging_disabled)
-
-        self._training_set = self._generate_multiple_choice_dataset(
-            dataset_generator,
-            sample_generator_train,
-            dataset_name="training")
-
-        self._validation_set = self._generate_multiple_choice_dataset(
-            dataset_generator,
-            sample_generator_val,
-            dataset_name="validation")
+        self._training_set = self._generate_dataset(dataset_manager, "train")
+        self._validation_set = self._generate_dataset(dataset_manager, "validation")
 
         outlier_threshold = self._args.sequence_length_outlier_threshold
         self._opt_max_sequence_length, max_sequence_length = find_optimal_max_sequence_length(
@@ -249,12 +206,26 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._training_set = self._filter_conversation_samples(
             self._training_set,
             self._opt_max_sequence_length,
-            "Training")
+            "train")
 
         self._validation_set = self._filter_conversation_samples(
             self._validation_set,
             self._opt_max_sequence_length,
-            "Validation")
+            "validation")
+
+    def _setup_tokenizer(self):
+        self._log.info(f"Loading Tokenizer for {self._args.pretrained_model} model ...")
+        self._hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
+
+        self._orig_num_tokens = len(self._hf_tokenizer.encoder)
+        self._num_special_tokens = self._hf_tokenizer.add_special_tokens(self.SPECIAL_TOKENS_MAPPING)
+        self._log.debug(f"Number of special tokens added to tokenizer : {self._num_special_tokens}")
+
+    def _generate_dataset(self, manager, dataset_name):
+        return manager.get_dataset_for(
+            dataset_name,
+            max_num_samples=self._args.max_conversations,
+            num_choices_per_sample=self._args.num_choices)
 
     def _filter_conversation_samples(self, dataset, max_sequence_length, dataset_name):
         mxsl = max_sequence_length
