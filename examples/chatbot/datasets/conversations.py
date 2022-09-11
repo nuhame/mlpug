@@ -1,8 +1,11 @@
-from typing import Optional, Callable, List
+from typing import Optional, Callable, Tuple, List
 
 import numpy as np
 
 from mlpug.base import Base
+
+
+ConversationSample = Tuple[np.ndarray, np.ndarray, np.ndarray, int, int]
 
 
 class ConversationSampleFactory(Base):
@@ -32,7 +35,7 @@ class ConversationSampleFactory(Base):
                  personality: List[str],
                  chat_history: List[str],
                  candidate_reply: str,
-                 is_real_reply: bool):
+                 is_real_reply: bool) -> ConversationSample:
         """
 
         input_ids:
@@ -108,7 +111,7 @@ class ConversationSampleFactory(Base):
         # Storing as numpy arrays really makes a huge difference when pickling and unpickling the data
         return np.array(input_ids), np.array(token_type_ids), np.array(token_label_ids), last_token_idx, reply_class
 
-    def _get_token_id_of(self, token):
+    def _get_token_id_of(self, token) -> int:
         token_id = self._tokenizer_func(token)
 
         if len(token_id) != 1:
