@@ -393,7 +393,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         # * Clean-up batch data that is not used any more after gathering the metric inputs.
         #   This is useful to optimize memory usage.
         #
-        # * Combine the gathered metric inputs per batch
+        # * Combine the gathered metric inputs per batch.
+        #   This is relevant When calculating metrics over:
+        #   * a complete dataset, where the dataset was broken-up in batches
+        #   * a window of batches
+        #   * the batch chunks of a batch when gradient accumulation was applied.
+        #
         #   (using "combine_metric_inputs_funcs" dict, with a function per metric)
         #
         # * Use the combined metric inputs to calculate the metrics over a dataset and/or
@@ -410,11 +415,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             trainer=self._trainer,
             batch_chunk_size=self._args.batch_chunk_size,
             # The implementation depends on the Deep Learning library backend
-
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             name="LossOnlyEvaluator")
 
-        # Every epoch we will also calculated the loss and candidate output classification quality over the whole
+        # Every epoch we will also calculate the loss and candidate output classification quality over
+        # the whole dataset. Since classification quality is a custom metric, here we need to specify how
+        # MLPug should gather inputs for it and how to calculate it.
         all_metrics_evaluator = mlp.evaluation.MetricEvaluator(
             gather_metric_inputs_funcs={
                 # We will use the default function for loss, so we don't need to add it here
