@@ -1,6 +1,8 @@
 import math
 import torch
 
+import contextlib
+
 from torch.cuda.amp import autocast
 import torch.distributed as dist
 
@@ -71,6 +73,13 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
                 self._scaler = torch.cuda.amp.GradScaler()
 
             self._log.info(f"Using scaler instance for automatic mixed precision : {self._scaler}")
+
+        self.no_grad_sync_available = False
+
+    def set_training_model(self, model):
+        super().set_training_model(model)
+
+        self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
 
     def set_learning_rate_for(self, optimizer_name, lr):
         """
@@ -249,11 +258,12 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
         batch_size = len(batch_data)
         num_chunks = math.ceil(batch_size / self.batch_chunk_size)
-        for chunk_idx in range(num_chunks):
-            chunk_start = chunk_idx*self.batch_chunk_size
-            chunk_end = min((chunk_idx+1)*self.batch_chunk_size, batch_size)
 
-            chunk_len = chunk_end-chunk_start
+        def process_chunk(chunk_idx, chunk_results):
+            chunk_start = chunk_idx * self.batch_chunk_size
+            chunk_end = min((chunk_idx + 1) * self.batch_chunk_size, batch_size)
+
+            chunk_len = chunk_end - chunk_start
 
             chunk = batch_data[chunk_start:chunk_end]
 
@@ -266,13 +276,24 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             # loss is assumed to be the average over the sample loss for the chunk
             # Divide through batch size to factor in that this loss is part of a larger batch.
-            last_chunk = chunk_idx == (num_chunks-1)
-            self._back_propagate_from(chunk_len*loss/batch_size, last_chunk=last_chunk)
+            last_chunk = chunk_idx == (num_chunks - 1)
+            self._back_propagate_from(chunk_len * loss / batch_size, last_chunk=last_chunk)
 
             # Reduce memory usage
             loss.detach_()
 
-            model_outputs += [results]
+            chunk_results += [results]
+
+        # Speed up processing by disabling gradient syncing for all batch chunk backward operations
+        # except for the last
+        no_sync = self.training_model.no_sync() if self.no_grad_sync_available else contextlib.suppress()
+
+        with no_sync:
+            for c_idx in range(num_chunks-1):
+                process_chunk(c_idx, model_outputs)
+
+        # sync gradients
+        process_chunk(num_chunks-1, model_outputs)
 
         loss = reduce(lambda tot, mo: tot + (mo['num_samples'] * mo['loss']), model_outputs, 0)
         num_samples = reduce(lambda tot, mo: tot + mo['num_samples'], model_outputs, 0)
