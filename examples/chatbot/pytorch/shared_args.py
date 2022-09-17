@@ -10,11 +10,6 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using 
         type=int, required=False, default=2,
         help='Number of dataloader workers.')
 
-    parser.add_argument(
-        '--activation-checkpointing',
-        action='store_true',
-        help='Enable activation checkpointing')
-
     return parser
 
 
@@ -22,5 +17,3 @@ def describe_args(args, logger):
     logger.info(f"Num. dataloader workers: {args.num_dataloader_workers}")
 
     describe_base_args(args, logger)
-
-    logger.info(f"Activation checkpointing: {args.activation_checkpointing}")
