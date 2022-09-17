@@ -1,29 +1,34 @@
 import os
 
-import torch
-
-import torch.distributed as dist
-import torch.multiprocessing as mp
-
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-from torch.optim import AdamW
-
-from torch.optim.lr_scheduler import LambdaLR
-
-from torch.nn.functional import softmax
-
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.pytorch as mlp
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
-from examples.chatbot.pytorch.batch_collator import BatchCollator
+from examples.chatbot.pytorch.collation import BatchCollator
 
 from examples.chatbot.pytorch.shared_args import create_arg_parser, describe_args
 
 module_logger = get_logger(os.path.basename(__file__))
+
+
+try:
+    import torch
+
+    import torch.distributed as dist
+    import torch.multiprocessing as mp
+
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    from torch.optim import AdamW
+
+    from torch.optim.lr_scheduler import LambdaLR
+
+    from torch.nn.functional import softmax
+except Exception as e:
+    log_exception(module_logger, "Please install PyTorch, see https://pytorch.org/get-started/locally/", e)
+
 
 try:
     from transformers import GPT2Config, GPT2Tokenizer, GPT2DoubleHeadsModel
