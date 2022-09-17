@@ -304,13 +304,24 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         """
         raise NotImplementedError("Please implement in your child class")
 
+    def _get_custom_trainer_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {}
+
     def _setup_trainer(self):
         mlp = self.MLPUG_MODULE
+
+        custom_trainer_config = self._get_custom_trainer_config()
 
         self._trainer = mlp.trainers.DefaultTrainer(
             optimizers=self._optimizer,
             model_components=self._model,
-            batch_chunk_size=self._args.batch_chunk_size)
+            batch_chunk_size=self._args.batch_chunk_size,
+            **custom_trainer_config)
 
     @abc.abstractmethod
     def _create_gather_classification_data_function(self):
@@ -345,6 +356,14 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :return:
         """
         raise NotImplementedError("Please implement in your child class")
+
+    def _get_custom_evaluator_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {}
 
     def _setup_callbacks(self):
         """
@@ -408,6 +427,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         # Although you can define functions for all steps, in many cases suitable defaults are available.
         #
 
+        custom_evaluator_config = self._get_custom_evaluator_config()
+
         # Every batch we will calculate the training and validation loss
         # We are using all the default loss gathering functions here.
         loss_only_evaluator = mlp.evaluation.MetricEvaluator(
@@ -416,6 +437,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             batch_chunk_size=self._args.batch_chunk_size,
             # The implementation depends on the Deep Learning library backend
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
+            **custom_evaluator_config,
             name="LossOnlyEvaluator")
 
         # Every epoch we will also calculate the loss and candidate output classification quality over
@@ -454,6 +476,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # When batch_chunk_size is given, perform gradient accumulation in chunks with batch_chunk_size samples
             batch_chunk_size=self._args.batch_chunk_size,
             show_progress=True,
+            **custom_evaluator_config,
             name="AllMetricsEvaluator")
 
         def log_metrics(logs, dataset_batch):
