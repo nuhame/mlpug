@@ -284,16 +284,18 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
             chunk_results += [results]
 
+            return chunk_results
+
         # Speed up processing by disabling gradient syncing for all batch chunk backward operations
         # except for the last
         no_sync = self.training_model.no_sync() if self.no_grad_sync_available else contextlib.suppress()
 
         with no_sync:
             for c_idx in range(num_chunks-1):
-                process_chunk(c_idx, model_outputs)
+                model_outputs = process_chunk(c_idx, model_outputs)
 
         # sync gradients
-        process_chunk(num_chunks-1, model_outputs)
+        model_outputs = process_chunk(num_chunks-1, model_outputs)
 
         loss = reduce(lambda tot, mo: tot + (mo['num_samples'] * mo['loss']), model_outputs, 0)
         num_samples = reduce(lambda tot, mo: tot + mo['num_samples'], model_outputs, 0)
