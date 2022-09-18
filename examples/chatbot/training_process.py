@@ -1,6 +1,9 @@
 import abc
 import os
 import random
+
+from functools import cached_property
+
 import math
 import numpy as np
 
@@ -12,9 +15,7 @@ from mlpug.base import Base
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
-from examples.chatbot.datasets.multiple_choice import \
-    max_sequence_length_in, \
-    MultipleChoiceGenerator
+from examples.chatbot.datasets.multiple_choice import max_sequence_length_in
 
 from examples.chatbot.datasets.tokenizers import HFTokenizer
 from examples.chatbot.datasets.conversations import ConversationSampleFactory
@@ -143,6 +144,14 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     def is_distributed(self):
         return self.num_devices > 1
 
+    @cached_property
+    def num_batches_training_set(self):
+        return len(self._batch_training_set)
+
+    @cached_property
+    def num_batches_validation_set(self):
+        return len(self._batch_validation_set)
+
     def setup(self):
         self._set_random_seed()
 
@@ -175,8 +184,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         raise NotImplementedError("Please implement in your child class")
 
     def _prepare_datasets(self):
-        self._setup_tokenizer()
-
         tokenizer_func = HFTokenizer(self._hf_tokenizer)
 
         sample_factory = ConversationSampleFactory(
@@ -486,8 +493,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             return batch_step % self._args.progress_log_period == 0
 
         # Since the validation metrics will only calculated every self._args.progress_log_period batches
-        avg_window_train = math.ceil(0.5 * len(self._batch_training_set) / self._args.progress_log_period)
-        avg_window_validation = math.ceil(0.5 * len(self._batch_validation_set) / self._args.progress_log_period)
+
+        avg_window_train = math.ceil(0.5 * self.num_batches_training_set / self._args.progress_log_period)
+        avg_window_validation = math.ceil(0.5 * self.num_batches_validation_set / self._args.progress_log_period)
         self._callbacks = [
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
@@ -572,10 +580,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         mlp = self.MLPUG_MODULE
 
+        # TODO: revisit the behavior of MLPug when the total number of batches is not known before hand.
         self._training_manager = mlp.trainers.TrainingManager(self._trainer,
                                                               self._batch_training_set,
                                                               num_epochs=self._args.num_epochs,
                                                               callbacks=self._callbacks,
+                                                              num_batches_per_epoch=self.num_batches_training_set,
                                                               experiment_data={
                                                                   "args": self._args
                                                               })
