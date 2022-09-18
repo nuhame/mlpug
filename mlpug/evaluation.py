@@ -15,10 +15,6 @@ from mlpug.utils import *
 
 
 class GatherLoss(Base):
-    """
-    Warning: To calculate the average loss, this class assumes that all the batches have equal size.
-    """
-
     def __init__(self, requester=None, name="GatherLoss", **kwargs):
         if requester is not None:
             name += f'[{requester}]'
