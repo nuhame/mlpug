@@ -98,7 +98,11 @@ class TrainModel(torch.nn.Module):
         true_labels = true_labels.to(self.device)
 
         logits = self.classifier(images)
-        return self.loss_func(logits, true_labels)
+
+        avg_loss = self.loss_func(logits, true_labels)
+        num_samples = len(true_labels)
+
+        return avg_loss, num_samples
 
 
 def worker_fn(rank, args, world_size):

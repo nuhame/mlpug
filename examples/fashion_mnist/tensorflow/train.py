@@ -78,11 +78,10 @@ def build_model(hidden_size=128):
 
 # MLPug needs a TrainModel that outputs the loss
 class TrainModel(tf.keras.Model):
-    def __init__(self, classifier, global_batch_size):
+    def __init__(self, classifier):
         super(TrainModel, self).__init__()
 
         self.classifier = classifier
-        self.global_batch_size = global_batch_size
 
         self.loss_func = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True,
@@ -91,10 +90,12 @@ class TrainModel(tf.keras.Model):
     def call(self, batch_data, evaluate_settings, inference_mode=None):
         images, true_labels = batch_data
 
-        logits = self.classifier(images, training=not inference_mode)
-        loss = self.loss_func(true_labels, logits)/self.global_batch_size
+        batch_size = tf.shape(true_labels)[0]
 
-        return loss
+        logits = self.classifier(images, training=not inference_mode)
+        loss = self.loss_func(true_labels, logits)/tf.cast(batch_size, tf.float32)
+
+        return loss, batch_size
 
 
 def train_model(args, logger):
@@ -134,10 +135,14 @@ def train_model(args, logger):
 
     train_images, train_labels, test_images, test_labels = load_data()
 
-    training_dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).batch(global_batch_size)
+    training_dataset = tf.data.Dataset\
+        .from_tensor_slices((train_images, train_labels))\
+        .batch(global_batch_size)
 
     # Using the test set as a validation set, just for demonstration purposes
-    validation_dataset = tf.data.Dataset.from_tensor_slices((test_images, test_labels)).batch(global_batch_size)
+    validation_dataset = tf.data.Dataset\
+        .from_tensor_slices((test_images, test_labels))\
+        .batch(global_batch_size)
 
     num_batches_per_epoch = int(training_dataset.cardinality())
     if distributed:
@@ -153,7 +158,7 @@ def train_model(args, logger):
 
         classifier = build_model(args.hidden_size)
 
-        train_model = TrainModel(classifier, global_batch_size)
+        train_model = TrainModel(classifier)
         # ##########################################
 
         # ############ SETUP OPTIMIZER #############
