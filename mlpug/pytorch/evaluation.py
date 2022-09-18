@@ -1,5 +1,4 @@
 import abc
-import sys
 from typing import Collection, Tuple, Dict
 
 import torch
