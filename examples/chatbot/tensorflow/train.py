@@ -1,5 +1,7 @@
 import os
 
+from functools import cached_property
+
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
@@ -8,7 +10,6 @@ import mlpug.tensorflow as mlp
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
 
-# TODO: Is activation --activation-checkpointing available for Huggingface TF models?
 from examples.chatbot.shared_args import create_arg_parser, describe_args
 
 
@@ -83,7 +84,7 @@ class TrainModel(tf.keras.Model):
             input_ids=input_ids_batch,
             token_type_ids=token_type_ids_batch,
             mc_token_ids=last_token_idx_batch,
-            training=inference_mode is False)
+            training=not inference_mode)
 
         shift_logits = results.logits[..., :-1, :]
         shift_labels = token_labels_ids_batch[..., 1:]
@@ -125,6 +126,14 @@ class TrainingProcess(TrainingProcessBase):
 
         self._global_batch_size = self.num_devices * self._args.batch_size
 
+    @cached_property
+    def num_batches_training_set(self):
+        return self._calc_num_batches(self._training_set)
+
+    @cached_property
+    def num_batches_validation_set(self):
+        return self._calc_num_batches(self._validation_set)
+
     def _setup_compute(self):
         if self.is_distributed:
             devices = [f"/gpu:{i}" for i in range(self.num_devices)]
@@ -144,22 +153,19 @@ class TrainingProcess(TrainingProcessBase):
 
         sample_generator = CollatedSampleGenerator(multiple_choice_samples, choice_collator)
 
-        return tf.data.Dataset\
+        batch_dataset = tf.data.Dataset\
             .from_generator(
                 sample_generator,
-                output_types=(tf.int64, tf.int64, tf.int64, tf.int64, tf.int8))\
-            .shuffle(20, reshuffle_each_iteration=True) \
+                output_types=(tf.int64, tf.int64, tf.int64, tf.int64, tf.int8)
+            )\
+            .shuffle(20*self._global_batch_size, reshuffle_each_iteration=True) \
             .batch(self._global_batch_size)
+
+        return batch_dataset
 
     def _setup_batch_datasets(self):
         self._batch_training_set = self._create_tf_dataset(self._training_set)
         self._batch_validation_set = self._create_tf_dataset(self._validation_set)
-
-        # TODO: revisit the behavior of MLPUG when the total number of batches is not known before hand.
-        num_samples = len(self._training_set)
-        self._num_batches_per_epoch = int(num_samples/self._global_batch_size)
-        if num_samples % self._global_batch_size != 0:
-            self._num_batches_per_epoch += 1
 
         if self.is_distributed:
             strategy = self._distribution_strategy
@@ -167,6 +173,14 @@ class TrainingProcess(TrainingProcessBase):
             # Distribute training and validation set
             self._batch_training_set = strategy.experimental_distribute_dataset(self._batch_training_set)
             self._batch_validation_set = strategy.experimental_distribute_dataset(self._batch_validation_set)
+
+    def _calc_num_batches(self, multiple_choice_samples):
+        num_samples = len(multiple_choice_samples)
+        num_batches = int(num_samples/self._global_batch_size)
+        if num_samples % self._global_batch_size != 0:
+            num_batches += 1
+
+        return num_batches
 
     def _build_model(self):
         model_config = self._gather_model_config()
@@ -178,8 +192,12 @@ class TrainingProcess(TrainingProcessBase):
             self._model = TFGPT2DoubleHeadsModel(model_config)
             self._model.resize_token_embeddings(new_num_tokens=self._orig_num_tokens + self._num_special_tokens)
 
+            # TODO: Is activation --activation-checkpointing available for Huggingface TF models?
             if self._args.activation_checkpointing:
-                self._model.gradient_checkpointing_enable()
+                try:
+                    self._model.gradient_checkpointing_enable()
+                except Exception as e:
+                    raise Exception("Activation checkpointing not available for TF GPT2 model") from e
 
         self._log.info(f"Configuration of loaded model : \n{model_config}")
 
@@ -209,6 +227,8 @@ class TrainingProcess(TrainingProcessBase):
 
         # Tensorflow only needs batch_data_signature as additional argument, compared to PyTorch
         return {
+            # "eager_mode": True,
+            "distribution_strategy": self._distribution_strategy,
             "batch_data_signature": self._batch_training_set.element_spec
         }
 
@@ -216,8 +236,8 @@ class TrainingProcess(TrainingProcessBase):
         return gather_next_sentence_prediction_data
 
     def _create_gather_distributed_classification_data_function(self):
-        # Not required by Tensorflow
-        return None
+        # Use default implementation made available by MLPug
+        return mlp.evaluation.GatherTensorTuple(distribution_strategy=self._distribution_strategy)
 
     def _create_clean_up_batch_data_func(self):
         return clean_up_batch_data
