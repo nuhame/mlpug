@@ -6,6 +6,7 @@ from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.tensorflow as mlp
+from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
@@ -18,6 +19,7 @@ module_logger = get_logger(os.path.basename(__file__))
 
 try:
     import tensorflow as tf
+    import keras
 except Exception as e:
     log_exception(module_logger, "Please `pip install tensorflow`", e)
 
@@ -49,7 +51,6 @@ def gather_next_sentence_prediction_data(batch, auxiliary_results, **kwargs):
 def clean_up_batch_data(model_output, **kwargs):
     loss = model_output["loss"]
 
-    # Handy for debugging purposes to keep the scalar value
     model_output["loss"] = loss.numpy()
 
     # We don't need the auxiliary_results anymore
@@ -58,18 +59,20 @@ def clean_up_batch_data(model_output, **kwargs):
 
 # MLPug needs a TrainModel that outputs the loss
 class TrainModel(tf.keras.Model):
-    def __init__(self, model, lm_loss_weight, global_batch_size):
+    def __init__(self, model, lm_loss_weight):
         super(TrainModel, self).__init__()
 
         self.model = model
         self.lm_loss_weight = lm_loss_weight
-        self.global_batch_size = global_batch_size
 
-        self.lm_loss_func = tf.keras.losses.SparseCategoricalCrossentropy(
+        # TODO: tf.keras is behind keras, so using keras directly here
+        #       We need it because we miss the ignore_class feature
+        self.lm_loss_func = keras.losses.SparseCategoricalCrossentropy(
             from_logits=True,
+            ignore_class=-100,
             reduction=tf.keras.losses.Reduction.SUM)
 
-        self.mc_loss_func = tf.keras.losses.SparseCategoricalCrossentropy(
+        self.mc_loss_func = keras.losses.SparseCategoricalCrossentropy(
             from_logits=True,
             reduction=tf.keras.losses.Reduction.SUM)
 
@@ -86,19 +89,21 @@ class TrainModel(tf.keras.Model):
             mc_token_ids=last_token_idx_batch,
             training=not inference_mode)
 
-        shift_logits = results.logits[..., :-1, :]
-        shift_labels = token_labels_ids_batch[..., 1:]
+        shifted_logits = results.logits[..., :-1, :]
+        shifted_labels = token_labels_ids_batch[..., 1:]
 
         mc_logits = results.mc_logits
 
-        lm_loss = self.lm_loss_func(shift_labels, shift_logits) / self.global_batch_size
-        mc_loss = self.lm_loss_func(reply_class_batch, mc_logits) / self.global_batch_size
+        num_samples = input_ids_batch.shape[0]
+
+        lm_loss = self.lm_loss_func(shifted_labels, shifted_logits) / num_samples
+        mc_loss = self.mc_loss_func(reply_class_batch, mc_logits) / num_samples
 
         loss = (lm_loss*self.lm_loss_weight + mc_loss)/(self.lm_loss_weight+1.0)
 
         return {
             "loss": loss,
-            "num_samples": input_ids_batch.shape[0],
+            "num_samples": num_samples,
             "auxiliary_results": {
                 # required to calculate next sentence prediction (classification) quality
                 "nsp_logits": mc_logits
@@ -205,8 +210,7 @@ class TrainingProcess(TrainingProcessBase):
         with self._distribution_strategy.scope():
             self._training_model = TrainModel(
                 self._model,
-                self._args.lm_loss_weight,
-                self._global_batch_size)
+                self._args.lm_loss_weight)
 
     def _build_optimizer(self):
         with self._distribution_strategy.scope():
@@ -284,6 +288,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    # import pydevd_pycharm
+    # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     # ############## TRAIN MODEL ##############
     if args.distributed:
