@@ -137,6 +137,7 @@ class MultipleChoiceGenerator(Base, Sequence):
             self._conversation_metadata += [{
                 'chat_idx': chat_idx,
                 'num_choices': num_choices,
+                # Use the last `num_choices` choices
                 'candidate_offset': num_candidates - num_choices
             }]
 
