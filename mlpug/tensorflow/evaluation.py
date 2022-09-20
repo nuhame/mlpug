@@ -13,8 +13,6 @@ from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.batch_chunking import is_chunkable
-
 from mlpug.base import Base
 from basics.logging import get_logger
 
@@ -64,8 +62,11 @@ class GatherLossDistributed(Base):
                 tot_num_samples,
                 axis=None)
 
-        loss_sum = loss_sum.numpy()
-        tot_num_samples = tot_num_samples.numpy()
+        if has_method(loss_sum, "numpy"):
+            loss_sum = loss_sum.numpy()
+
+        if has_method(tot_num_samples, "numpy"):
+            tot_num_samples = tot_num_samples.numpy()
 
         return loss_sum, tot_num_samples
 

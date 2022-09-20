@@ -23,7 +23,7 @@ from mlpug.mlpug_exceptions import TrainerInvalidException, \
     LossNotAvailableException
 
 from mlpug.utils import get_value_at
-from mlpug.batch_chunking import BatchChunkingResults
+from mlpug.batch_chunking import ChunkableTupleBatchDim0, BatchChunkingResults
 
 
 class TFTrainerMixin:
@@ -245,9 +245,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        loss, auxiliary_results = self._train_step_tf_func(batch_data, training_settings)
+        loss, model_outputs = self._train_step_tf_func(batch_data, training_settings)
 
-        return loss, auxiliary_results
+        return loss.numpy(), model_outputs
 
     def _create_train_step_signature(self):
         return [
@@ -276,6 +276,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         return training_step_func
 
     def _train_on(self, batch_data, training_settings):
+        # TODO: provide a way to inject the method to make batches chunkable
+        # batch_data = ChunkableTupleBatchDim0(*batch_data)
         loss, model_outputs, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
 
         self._update_model_parameters(self._prepare_update_model_parameters(gradients))
@@ -469,14 +471,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         # Will be filled when we have the trainable variables
         accumulated_grads = {}
 
-        batch_size = batch_data.batch_size()
-        num_dims = batch_data.num_dims()
-        num_chunks = tf.math.ceil(batch_size / self.batch_chunk_size)
+        batch_size = len(batch_data)
+        num_chunks = math.ceil(batch_size / self.batch_chunk_size)
 
         def process_chunk(chunk_idx, chunk_results, acc_grads):
             chunk_start = chunk_idx*self.batch_chunk_size
-            chunk_end = tf.math.minimum((chunk_idx+1)*self.batch_chunk_size,
-                                        tf.cast(batch_size, tf.float64))
+            chunk_end = min((chunk_idx+1)*self.batch_chunk_size, batch_size)
 
             chunk_len = chunk_end-chunk_start
 
@@ -487,8 +487,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                                              inference_mode=False,
                                              evaluate_settings=training_settings)
 
-            if 'loss' not in results:
-                raise LossNotAvailableException()
+                if 'loss' not in results:
+                    raise LossNotAvailableException()
+
+                # loss is assumed to be the average over the sample loss for the chunk
+                # Divide through batch size to factor in that this loss is part of a larger batch.
+                chunk_loss = chunk_len * results['loss'] / batch_size
 
             if self.trainable_variables is None:
                 # We now have evaluated the model and the trainable variables should be available
@@ -498,15 +502,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 if self.trainable_variables is None or len(self.trainable_variables) == 0:
                     raise MLPugException("Unexpected state :  trainable variables not found. Please file an issue.")
 
-                for optimizer_name, tvs in self.trainable_variables.item():
+                for optimizer_name, tvs in self.trainable_variables.items():
                     acc_grads[optimizer_name] = [tf.zeros_like(tv) for tv in tvs]
 
-            loss = results['loss']
-
-            # loss is assumed to be the average over the sample loss for the chunk
-            # Divide through batch size to factor in that this loss is part of a larger batch.
             last_chunk = chunk_idx == (num_chunks-1)
-            chunk_gradients = self._back_propagate_from(chunk_len * loss / batch_size, tape, last_chunk=last_chunk)
+            chunk_gradients = self._back_propagate_from(chunk_loss, tape, last_chunk=last_chunk)
 
             for optimizer_name, chunk_grads in chunk_gradients.items():
                 accu_grads_opt = acc_grads[optimizer_name]
