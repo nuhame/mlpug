@@ -70,7 +70,6 @@ def gather_next_sentence_prediction_data(batch, auxiliary_results, **kwargs):
 def clean_up_batch_data(model_output, **kwargs):
     loss = model_output["loss"]
 
-    # Handy for debugging purposes to keep the scalar value
     model_output["loss"] = loss.cpu().item()
 
     # We don't need the auxiliary_results anymore
