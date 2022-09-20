@@ -232,7 +232,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         return manager.get_dataset_for(
             dataset_name,
             max_num_samples=self._args.max_conversations,
-            num_choices_per_sample=self._args.num_choices)
+            num_choices_per_sample=self._args.num_choices,
+            force_generate=self._args.force_generate_samples)
 
     def _filter_conversation_samples(self, dataset, max_sequence_length, dataset_name):
         mxsl = max_sequence_length
