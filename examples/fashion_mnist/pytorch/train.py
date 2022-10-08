@@ -41,11 +41,18 @@ def create_callbacks_for(trainer,
                          experiment_name,
                          model_hyper_parameters,
                          is_primary,
+                         batch_chunk_size,
                          validation_dataset,
                          progress_log_period):
+
     # At minimum you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
-    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
+    loss_evaluator = mlp.evaluation.MetricEvaluator(
+        trainer=trainer,
+        # evaluate the model in batch chunks of batch_chunk_size, when given.
+        batch_chunk_size=batch_chunk_size
+    )
+
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -192,7 +199,10 @@ def worker_fn(rank, args, world_size):
     # ##########################################
 
     # ############# SETUP TRAINING ##############
-    trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
+    trainer = mlp.trainers.DefaultTrainer(
+        optimizers=optimizer,
+        model_components=classifier,
+        batch_chunk_size=args.batch_chunk_size)
 
     model_hyper_parameters = {
         "hidden_size": args.hidden_size
@@ -202,6 +212,7 @@ def worker_fn(rank, args, world_size):
                                      args.experiment_name,
                                      model_hyper_parameters,
                                      is_primary,
+                                     args.batch_chunk_size,
                                      validation_dataset,
                                      args.progress_log_period)
 

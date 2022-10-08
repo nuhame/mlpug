@@ -27,6 +27,11 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         help='Batch size (per process/replica)')
 
     parser.add_argument(
+        '--batch-chunk-size',
+        type=int, required=False, default=None,
+        help='Batch chunk size for gradient accumulation')
+
+    parser.add_argument(
         '--learning-rate',
         type=float, required=False, default=1e-3,
         help='Learning rate')
@@ -52,6 +57,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
 def describe_args(args, logger):
     logger.info(f"Experiment name: {args.experiment_name}")
     logger.info(f"Batch size: {args.batch_size}")
+    logger.info(f"Batch chunk size (for gradient accumulation): {args.batch_chunk_size}")
     logger.info(f"Learning rate: {args.learning_rate}")
     logger.info(f"Progress log period: {args.progress_log_period}")
     logger.info(f"Num. training epochs: {args.num_epochs}")
