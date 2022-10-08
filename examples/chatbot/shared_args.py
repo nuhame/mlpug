@@ -32,11 +32,6 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='When flag is set, will regenerate multiple choice conversation samples and re-cache the samples')
 
     parser.add_argument(
-        '--batch-chunk-size',
-        type=int, required=False, default=None,
-        help='Weight decay')
-
-    parser.add_argument(
         '--lr-warmup-schedule',
         action='store_true',
         help='When given, will apply a LR schedule, starting with a warmup period after which the LR '
@@ -96,7 +91,6 @@ def describe_args(args, logger):
 
     describe_base_args(args, logger)
 
-    logger.info(f"Batch chunk size (for gradient accumulation): {args.batch_chunk_size}")
     logger.info(f"Weight decay: {args.weight_decay}")
     logger.info(f"Dropout rate: {args.dropout_rate}")
     logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")

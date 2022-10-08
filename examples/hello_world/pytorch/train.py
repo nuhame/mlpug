@@ -70,7 +70,9 @@ if __name__ == '__main__':
     # ##########################################
 
     # ############# SETUP TRAINING ##############
-    trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
+    trainer = mlp.trainers.DefaultTrainer(
+        optimizers=optimizer,
+        model_components=classifier)
 
     # At minimum you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
