@@ -80,3 +80,11 @@ class LossNotAvailableException(MLPugException):
 
         super().__init__(err_msg)
 
+
+class InvalidChunkableBatch(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Chunkable batch is invalid"
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
