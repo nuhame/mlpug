@@ -8,7 +8,7 @@ from mlpug.base import Base
 
 import basics.base_utils as _
 
-from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidParametersException
+from mlpug.mlpug_exceptions import BatchNotChunkableException, InvalidChunkableBatch, InvalidParametersException
 from mlpug.utils import *
 
 
@@ -28,34 +28,56 @@ def default_metric_reducer_func(batch_metrics_list):
     return metric, metric_sum, num_samples
 
 
-class ChunkableTupleBatchDim0(Base):
+class ChunkableTupleBatchBase(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, *batch):
+    def __init__(self, *batch, dim=0):
         super().__init__()
 
         self._batch = batch
+        self._dim = dim
 
     def __len__(self):
         # get batch size
-        return self._batch[0].shape[0]
+        for v in self._batch:
+            if not hasattr(v, 'shape'):
+                continue
 
+            if self._dim < len(v.shape):
+                return v.shape[self._dim]
+            else:
+                raise InvalidChunkableBatch(
+                    f"Unable to assess length of chunkable batch. "
+                    f"The tensors in the batch should at least have {self._dim+1} dimension(s)."
+                )
+
+        raise InvalidChunkableBatch(
+            "Unable to assess length of chunkable batch. "
+            "A chunkable batch should contain at least one tensors that has a shape attribute."
+        )
+
+    @abc.abstractmethod
     def __getitem__(self, sample_slice):
-        return tuple(v[sample_slice, ...] for v in self._batch)
+        raise NotImplementedError("Please implement this in your child class")
 
 
-class ChunkableTupleBatchDim1(Base):
+class ChunkableTupleBatchDim0(ChunkableTupleBatchBase):
 
     def __init__(self, *batch):
-        super().__init__()
-
-        self._batch = batch
-
-    def __len__(self):
-        # get batch size
-        return self._batch[0].shape[1]
+        super().__init__(*batch, dim=0)
 
     def __getitem__(self, sample_slice):
-        return tuple(v[:, sample_slice, ...] for v in self._batch)
+        return tuple(v[sample_slice, ...] if v is not None else None
+                     for v in self._batch)
+
+
+class ChunkableTupleBatchDim1(ChunkableTupleBatchBase):
+
+    def __init__(self, *batch):
+        super().__init__(*batch, dim=1)
+
+    def __getitem__(self, sample_slice):
+        return tuple(v[:, sample_slice, ...] if v is not None else None
+                     for v in self._batch)
 
 
 class ChunkableBatchDataset(Base):
