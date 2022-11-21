@@ -72,7 +72,7 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
                 self._log.debug("Creating default scaler instance for automatic mixed precision ...")
                 self._scaler = torch.cuda.amp.GradScaler()
 
-            self._log.info(f"Using scaler instance for automatic mixed precision : {self._scaler}")
+            self._log.info(f"Using scalar instance for automatic mixed precision : {self._scaler}")
 
         self.no_grad_sync_available = False
 
