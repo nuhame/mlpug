@@ -45,8 +45,8 @@ class TrainerStateInvalidException(MLPugException):
 
 class BatchNotChunkableException(MLPugException):
     def __init__(self, message=None):
-        err_msg = "Given batch is not chunkable, ensure that the batch object implements the " \
-                  "`__len__` and `__getitem__` methods, and that the `__getitem__` method can handle slices"
+        err_msg = "Given batch is not chunkable, provide a `chunkable_batch_wrapper` to make your match chunkable, or" \
+                  "ensure that the batch object is derived from the `ChunkableBatch` class"
         if message:
             err_msg += f" : {message}"
 

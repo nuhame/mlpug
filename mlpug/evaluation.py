@@ -8,9 +8,10 @@ import numpy as np
 from mlpug.base import Base
 import basics.base_utils as _
 
-from mlpug.batch_chunking import ChunkableBatch, BatchChunkingResults, ChunkableBatchDataset
+from mlpug.batch_chunking import ChunkableBatch, BatchChunkingResults, ChunkableBatchDataset, ChunkableBatchWrapper, \
+    apply_chunkable_batch_wrapper, is_chunkable
 
-from mlpug.mlpug_exceptions import InvalidParametersException
+from mlpug.mlpug_exceptions import InvalidParametersException, BatchNotChunkableException
 from mlpug.utils import *
 
 
@@ -198,6 +199,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
                  batch_chunk_size=None,
+                 chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  show_progress=False,
                  name="MetricEvaluator",
                  **kwargs):
@@ -413,6 +415,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  Reduce all batch metric results of the chunks using batch_chunk_metric_reducer_funcs
         :type batch_chunk_size: int
 
+        :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
+            This is required when a batch_chunk_size is given and batches are not already chunkable when
+            provided for evaluation
+
         :param show_progress If True, the progress of dataset evaluation will be logged
         :type show_progress
         """
@@ -501,7 +507,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         self._metric_funcs = metric_funcs
 
         self._batch_chunk_size = batch_chunk_size
-
+        self._chunkable_batch_wrapper = chunkable_batch_wrapper
         self._show_progress = show_progress
 
         self._name = name
@@ -522,7 +528,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                                    batch_data=None,
                                    model_output: Optional[Dict] = None,
                                    evaluate_settings=None,
-                                   skip_metrics=None):
+                                   skip_metrics=None,
+                                   no_chunking=False):
         """
 
         :param batch_data:
@@ -532,15 +539,20 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param evaluate_settings:
         :param skip_metrics: Optional List of metric names to skip calculating the metrics for
-        :param model_output: Optional, externally calculated model output for given batch_data
+        :param no_chunking:
 
         :return: (gathered inputs, success boolean)
                   gathered inputs is a Dict or None
         """
 
-        is_chunkable_batch = isinstance(batch_data, ChunkableBatch)
+        is_chunkable_batch = is_chunkable(batch_data)
 
-        if is_chunkable_batch and self._batch_chunk_size is not None and model_output is None:
+        if not no_chunking and model_output is None and self._batch_chunk_size is not None:
+            if not is_chunkable_batch:
+                batch_data = apply_chunkable_batch_wrapper(
+                    batch_data,
+                    self._chunkable_batch_wrapper)
+
             chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
 
             gathered_inputs, success = self.gather_dataset_metric_inputs(
@@ -548,6 +560,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 evaluate_settings=evaluate_settings,
                 skip_metrics=skip_metrics,
                 show_progress=False,
+                no_chunking=True,
                 dataset_name="batch chunks")
 
             if not success:
@@ -565,8 +578,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             return gathered_inputs, success
 
         if is_chunkable_batch:
-            # The batch is chunkable but, we will are not using the chunks: get the full batch.
-            batch_data = batch_data.source()
+            # The batch is chunkable but, we are not using the chunks: get the full batch.
+            batch_data = batch_data[:]
 
         if skip_metrics is None:
             skip_metrics = []
@@ -616,6 +629,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                                      model_outputs: Optional[Iterable[Dict]] = None,
                                      evaluate_settings=None,
                                      skip_metrics=None,
+                                     no_chunking=False,
                                      dataset_name=None,
                                      show_progress=None):
         """
@@ -629,6 +643,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param evaluate_settings:
         :param skip_metrics: Optional List of metric names to skip calculating the metrics for
+        :param no_chunking:
         :param dataset_name:
         :param show_progress:
 
@@ -667,10 +682,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             self._write_to_stdout('\n')
 
         def gather_metrics_for(batch=None, model_output=None):
-            all_batch_metric_inputs, success = self.gather_batch_metric_inputs(batch_data=batch,
-                                                                               model_output=model_output,
-                                                                               evaluate_settings=evaluate_settings,
-                                                                               skip_metrics=skip_metrics)
+            all_batch_metric_inputs, success = self.gather_batch_metric_inputs(
+                batch_data=batch,
+                model_output=model_output,
+                evaluate_settings=evaluate_settings,
+                skip_metrics=skip_metrics,
+                no_chunking=no_chunking)
+
             if not success:
                 self._log.error(f"Gathering of batch metric inputs failed, will stop gathering "
                                 f"metric inputs over the {dataset_desc}")

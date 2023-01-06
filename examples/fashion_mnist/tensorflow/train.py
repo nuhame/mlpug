@@ -40,12 +40,15 @@ def create_callbacks_for(trainer,
                          experiment_name,
                          model_hyper_parameters,
                          distribution_strategy,
+                         batch_chunk_size,
                          validation_dataset,
                          progress_log_period):
     # At minimum you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
-    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer,
-                                                    distribution_strategy=distribution_strategy)
+    loss_evaluator = mlp.evaluation.MetricEvaluator(
+        trainer=trainer,
+        distribution_strategy=distribution_strategy,
+        batch_chunk_size=batch_chunk_size)
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -181,6 +184,7 @@ def train_model(args, logger):
                                      args.experiment_name,
                                      model_hyper_parameters,
                                      strategy,
+                                     args.batch_chunk_size,
                                      validation_dataset,
                                      args.progress_log_period)
 
@@ -226,6 +230,10 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 
 if __name__ == '__main__':
+    import pydevd_pycharm
+
+    pydevd_pycharm.settrace('localhost', port=54491, stdoutToServer=True, stderrToServer=True)
+
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
 

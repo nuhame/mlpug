@@ -1,6 +1,8 @@
 import os
 import sys
 import abc
+from typing import Optional
+
 import math
 import time
 
@@ -10,7 +12,7 @@ from mlpug.base import Base
 import basics.base_utils as _
 from basics.logging import get_logger
 
-from mlpug.batch_chunking import ChunkableBatch
+from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchWrapper, is_chunkable
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
@@ -108,26 +110,6 @@ class NormalizeEvaluationResults(Base):
                 "num_samples": 1,
                 "auxiliary_results": None
             }
-
-
-# TODO: remove, this method is obsolete
-def extend_auxiliary_results(aux, value, key=None):
-    type_aux = type(aux)
-    if type_aux is dict:
-        if key is None:
-            raise ValueError('Auxiliary results is a dict but no key given to store given value.')
-
-        if key in aux:
-            logger.warning(f"Setting new value for existing key {key} in auxiliary results : {value}")
-
-        aux[key] = value
-    elif type_aux is tuple:
-        aux += (value,)
-    else:
-        raise ValueError(f'Don\'t know how to add value to auxiliary results of type {type(aux)}, '
-                         f'auxiliary results should be of type dict or tuple')
-
-    return aux
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
@@ -1064,6 +1046,7 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
                  optimizers,
                  model_components=None,
                  batch_chunk_size=None,
+                 chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  use_mixed_precision=False,
                  name="DefaultTrainer",
                  **kwargs):
@@ -1079,13 +1062,21 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
             there is not an exact multiple that is equal to the `batch_data` size
 
             Note 1.
-            Chunked processing of a batch only works when the `batch_data` object, received
-            by the `train_on` method, implements the `__len__` and `__getitem__` methods.
-            Here the `__getitem__` method must be able to deal with slices.
+            In order to enable chunked processing of a batch only works when:
+                A) the `batch_data` object, received by the `train_on` method, implements the
+                   `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal with slices.
+
+                OR
+
+                B) A `chunkable_batch_wrapper` is given, see parameter description
 
             Note 2.
             When using chunked batch processing, the default implementation assumes that the
             loss, calculated over a chunk, is the average of the sample losses
+
+        :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
+            This is required when a batch_chunk_size is given and batches are not already chunkable when
+            provided for training
 
         :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
         """
@@ -1096,12 +1087,14 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         super().__init__(model_components, optimizers, name=name, **kwargs)
 
         self.batch_chunk_size = batch_chunk_size
+        self.chunkable_batch_wrapper = chunkable_batch_wrapper
+
         if self.batch_chunk_size is not None:
             self._log.info(f"Will train on batches by slicing the batch is chunks of {batch_chunk_size} samples.")
 
         self.use_mixed_precision = use_mixed_precision
         if self.use_mixed_precision:
-            self._log.info(f"Will train with mixed precision : {self.use_mixed_precision}")
+            self._log.info(f"Will train using mixed precision.")
 
         self.training_model = None
 
@@ -1148,9 +1141,9 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
             (loss, num_samples, ... auxiliary results ...)
         """
 
-        if isinstance(batch_data, ChunkableBatch):
+        if is_chunkable(batch_data):
             # This allows the use of chunkable batches, even if we are not chunking batches
-            batch_data = batch_data.source()
+            batch_data = batch_data[:]
 
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 

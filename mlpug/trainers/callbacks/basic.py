@@ -4,7 +4,7 @@ import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at, describe_data
-from mlpug.batch_chunking import is_chunkable
+from mlpug.batch_chunking import is_chunkable, ChunkableBatch
 
 import basics.base_utils as _
 from basics.logging_utils import log_exception
@@ -288,7 +288,9 @@ class BatchSizeLogger(Callback):
         current = self._get_logs_base(logs)
 
         # TODO : doesn't work for Tensorflow
-        current['training_params']['batch']['batch_size'] = len(training_batch) if is_chunkable(training_batch) else \
+        # TODO : This is not safe
+        current['training_params']['batch']['batch_size'] = len(training_batch) \
+            if isinstance(training_batch, ChunkableBatch) else \
             training_batch[0].size(self._batch_dimension)
 
         return True
