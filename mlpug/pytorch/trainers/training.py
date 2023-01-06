@@ -16,7 +16,7 @@ from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
 from mlpug.pytorch.utils import SlidingWindow
-from mlpug.batch_chunking import is_chunkable
+from mlpug.batch_chunking import is_chunkable, apply_chunkable_batch_wrapper, ChunkableBatch
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 from mlpug.batch_chunking import BatchChunkingResults
@@ -252,7 +252,9 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
         """
 
         if not is_chunkable(batch_data):
-            raise BatchNotChunkableException()
+            batch_data = apply_chunkable_batch_wrapper(
+                batch_data,
+                self.chunkable_batch_wrapper)
 
         model_outputs = BatchChunkingResults()
 

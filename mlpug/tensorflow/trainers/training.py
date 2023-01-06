@@ -7,7 +7,7 @@ from functools import reduce
 import tensorflow as tf
 from tensorflow.python.keras.saving import hdf5_format
 
-from mlpug.batch_chunking import is_chunkable
+from mlpug.batch_chunking import is_chunkable, apply_chunkable_batch_wrapper
 
 import basics.base_utils as _
 
@@ -217,9 +217,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         loss, calculated over a chunk, is the average of the sample losses.
 
         :param batch_data: batch_data object to train on (e.g. dict, list, tuple)
-                           When `batch_chunk_size` is given, `batch_data` must be an object that implements the
-                           `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal
-                           with slices.
+
         :param training_settings: optional training_settings object (usually dict)
 
         :return: loss, auxiliary_results
@@ -276,8 +274,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         return training_step_func
 
     def _train_on(self, batch_data, training_settings):
-        # TODO: provide a way to inject the method to make batches chunkable
-        # batch_data = ChunkableTupleBatchDim0(*batch_data)
         loss, model_outputs, gradients = self._calc_gradients(batch_data, training_settings=training_settings)
 
         self._update_model_parameters(self._prepare_update_model_parameters(gradients))
@@ -464,7 +460,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         """
 
         if not is_chunkable(batch_data):
-            raise BatchNotChunkableException()
+            batch_data = apply_chunkable_batch_wrapper(
+                batch_data,
+                self.chunkable_batch_wrapper)
 
         model_outputs = BatchChunkingResults()
 

@@ -1,29 +1,41 @@
-import math
+from typing import Protocol, Any, Callable
 
 import abc
+
+import math
 
 from mlpug.base import Base
 from mlpug.mlpug_exceptions import BatchNotChunkableException
 
 
-def is_chunkable(batch):
-    return batch is not None and \
-           not isinstance(batch, (tuple, list)) and \
-           hasattr(batch, "__len__") and callable(batch.__len__) and \
-           hasattr(batch, "__getitem__") and callable(batch.__getitem__)
+class ChunkableBatchProtocol(Protocol):
+
+    def __len__(self):
+        ...
+
+    def __getitem__(self, sample_slice):
+        ...
 
 
-def has_batch_chunking_results(batch_metrics_list):
-    return type(batch_metrics_list) is list and \
-           len(batch_metrics_list) > 0 and \
-           type(batch_metrics_list[0]) is BatchChunkingResults
+ChunkableBatchWrapper = Callable[[Any], ChunkableBatchProtocol]
+
+
+def apply_chunkable_batch_wrapper(batch_data, wrapper: ChunkableBatchWrapper):
+    if callable(wrapper):
+        try:
+            return wrapper(batch_data)
+        except Exception as e:
+            raise BatchNotChunkableException(
+                f"Failed to wrap the given batch as a chunkable batch using the "
+                f"given `chunkable_batch_wrapper`: {wrapper}"
+            ) from e
+    else:
+        raise BatchNotChunkableException(
+            "Given batch is not chunkable and no callable `chunkable_batch_wrapper` provided"
+        )
 
 
 class ChunkableBatch(Base, metaclass=abc.ABCMeta):
-
-    @abc.abstractmethod
-    def source(self):
-        raise NotImplementedError("Please implement in your child class")
 
     @abc.abstractmethod
     def __len__(self):
@@ -39,9 +51,6 @@ class ChunkableTupleBatch(ChunkableBatch, metaclass=abc.ABCMeta):
         super().__init__()
 
         self._batch = batch
-
-    def source(self):
-        return self._batch
 
 
 class ChunkableTupleBatchDim0(ChunkableTupleBatch):
@@ -62,6 +71,18 @@ class ChunkableTupleBatchDim1(ChunkableTupleBatch):
 
     def __getitem__(self, sample_slice):
         return tuple((v[:, sample_slice, ...] for v in self._batch))
+
+
+def is_chunkable(batch):
+    return batch is not None and \
+           hasattr(batch, "__len__") and callable(batch.__len__) and \
+           hasattr(batch, "__getitem__") and callable(batch.__getitem__)
+
+
+def has_batch_chunking_results(batch_metrics_list):
+    return type(batch_metrics_list) is list and \
+           len(batch_metrics_list) > 0 and \
+           type(batch_metrics_list[0]) is BatchChunkingResults
 
 
 class ChunkableBatchDataset(Base):
