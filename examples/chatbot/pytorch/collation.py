@@ -1,7 +1,6 @@
 import torch
 
 from mlpug.base import Base
-from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 
 class BatchCollator(Base):
@@ -67,10 +66,10 @@ class BatchCollator(Base):
 
             reply_class_batch[s_idx] = [choice[4] for choice in sample_choices].index(1)
 
-        # Make this batch "chunkable" such that it can be sliced in to batch chunks, when
-        # gradient accumulation is enabled
-        return ChunkableTupleBatchDim0(input_ids_batch,
-                                       token_type_ids_batch,
-                                       token_labels_ids_batch,
-                                       last_token_idx_batch,
-                                       reply_class_batch)
+        return (
+            input_ids_batch,
+            token_type_ids_batch,
+            token_labels_ids_batch,
+            last_token_idx_batch,
+            reply_class_batch
+        )
