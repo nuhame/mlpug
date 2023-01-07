@@ -1045,7 +1045,7 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
-                 batch_chunk_size=None,
+                 batch_chunk_size: Optional[int] = None,
                  chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  use_mixed_precision=False,
                  name="DefaultTrainer",
@@ -1090,7 +1090,7 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         self.chunkable_batch_wrapper = chunkable_batch_wrapper
 
         if self.batch_chunk_size is not None:
-            self._log.info(f"Will train on batches by slicing the batch is chunks of {batch_chunk_size} samples.")
+            self._log.info(f"Will train on batches by slicing the batch in chunks of {batch_chunk_size} samples.")
 
         self.use_mixed_precision = use_mixed_precision
         if self.use_mixed_precision:
