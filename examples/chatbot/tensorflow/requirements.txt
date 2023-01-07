@@ -1,4 +1,6 @@
-sklearn
+scikit-learn
 datasets
 tensorflow
 transformers
+tensorboardX
+
