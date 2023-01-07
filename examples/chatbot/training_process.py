@@ -7,14 +7,14 @@ from functools import cached_property
 import math
 import numpy as np
 
-import mlpug.abstract_interface as mlp_interface
-from examples.chatbot.datasets.manager import DatasetManager
-
-from mlpug.base import Base
-
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
+import mlpug.abstract_interface as mlp_interface
+from mlpug.base import Base
+from mlpug.batch_chunking import ChunkableTupleBatchDim0
+
+from examples.chatbot.datasets.manager import DatasetManager
 from examples.chatbot.datasets.multiple_choice import max_sequence_length_in
 
 from examples.chatbot.datasets.tokenizers import HFTokenizer
@@ -328,7 +328,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._trainer = mlp.trainers.DefaultTrainer(
             optimizers=self._optimizer,
             model_components=self._model,
+            # In case of gradient accumulation batch_chunk_size > 0 and a wrapper function is given
+            # to make the batches sliceable such that we can chunk them into smaller pieces.
             batch_chunk_size=self._args.batch_chunk_size,
+            chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper,
             **custom_trainer_config)
 
     @abc.abstractmethod
@@ -441,8 +444,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         # We are using all the default loss gathering functions here.
         loss_only_evaluator = mlp.evaluation.MetricEvaluator(
             # The trainer knows how to evaluate the model
+            # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
+            # metrics in smaller chunks, if these values were set for the trainer
             trainer=self._trainer,
-            batch_chunk_size=self._args.batch_chunk_size,
             # The implementation depends on the Deep Learning library backend
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             **custom_evaluator_config,
@@ -480,9 +484,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             },
             #
             # The trainer knows how to evaluate the model
+            # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
+            # metrics in smaller chunks, if these values were set for the trainer
             trainer=self._trainer,
-            # When batch_chunk_size is given, perform gradient accumulation in chunks with batch_chunk_size samples
-            batch_chunk_size=self._args.batch_chunk_size,
             show_progress=True,
             **custom_evaluator_config,
             name="AllMetricsEvaluator")
@@ -494,7 +498,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             return batch_step % self._args.progress_log_period == 0
 
         # Since the validation metrics will only calculated every self._args.progress_log_period batches
-
         avg_window_train = math.ceil(0.5 * self.num_batches_training_set / self._args.progress_log_period)
         avg_window_validation = math.ceil(0.5 * self.num_batches_validation_set / self._args.progress_log_period)
         self._callbacks = [
