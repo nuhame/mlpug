@@ -273,6 +273,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param trainer: An optional trainer instance to evaluate a model.
             You can provide this instead of a custom model_evaluate_func
+            If no batch_chunk_size and chunkable_batch_wrapper are given in the constructor (see description below)
+            we will get this values from the trainer, if set.
 
         :param gather_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
@@ -413,11 +415,16 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                     use eval result to calculate batch metrics with batch_metric_funcs
 
                  Reduce all batch metric results of the chunks using batch_chunk_metric_reducer_funcs
+
+                 If not given, but a trainer is given, the batch_chunk_size of the trainer is used
+
         :type batch_chunk_size: int
 
         :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
             This is required when a batch_chunk_size is given and batches are not already chunkable when
             provided for evaluation
+
+            If not given, but a trainer is given, the chunkable_batch_wrapper of the trainer is used
 
         :param show_progress If True, the progress of dataset evaluation will be logged
         :type show_progress
@@ -425,6 +432,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         super().__init__(pybase_logger_name=name, **kwargs)
 
+        self._trainer = None
         if trainer is not None:
             if model_evaluate_func is not None:
                 raise InvalidParametersException("Either provide a trainer instance or a model_evaluate_func, not both")
@@ -506,8 +514,21 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         self._combine_metric_inputs_funcs = combine_metric_inputs_funcs
         self._metric_funcs = metric_funcs
 
+        if batch_chunk_size is None and self._trainer is not None:
+            batch_chunk_size = self._trainer.batch_chunk_size
+
+            if batch_chunk_size is not None:
+                self._log.info(f"Using batch_chunk_size of the given trainer: {batch_chunk_size}")
+
+        if chunkable_batch_wrapper is None and self._trainer is not None:
+            chunkable_batch_wrapper = self._trainer.chunkable_batch_wrapper
+
+            if chunkable_batch_wrapper is not None:
+                self._log.info(f"Using chunkable_batch_wrapper of the given trainer: {chunkable_batch_wrapper}")
+
         self._batch_chunk_size = batch_chunk_size
         self._chunkable_batch_wrapper = chunkable_batch_wrapper
+
         self._show_progress = show_progress
 
         self._name = name
