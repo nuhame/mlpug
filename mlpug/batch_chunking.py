@@ -52,6 +52,10 @@ class ChunkableTupleBatch(ChunkableBatch, metaclass=abc.ABCMeta):
 
         self._batch = batch
 
+    @classmethod
+    def wrapper(cls, batch):
+        return cls(*batch)
+
 
 class ChunkableTupleBatchDim0(ChunkableTupleBatch):
 
@@ -75,6 +79,7 @@ class ChunkableTupleBatchDim1(ChunkableTupleBatch):
 
 def is_chunkable(batch):
     return batch is not None and \
+           not isinstance(batch, (tuple, list, dict)) and \
            hasattr(batch, "__len__") and callable(batch.__len__) and \
            hasattr(batch, "__getitem__") and callable(batch.__getitem__)
 
