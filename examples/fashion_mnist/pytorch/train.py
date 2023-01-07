@@ -41,16 +41,16 @@ def create_callbacks_for(trainer,
                          experiment_name,
                          model_hyper_parameters,
                          is_primary,
-                         batch_chunk_size,
                          validation_dataset,
                          progress_log_period):
 
     # At minimum you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
+        # The trainer knows how to evaluate the model
+        # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
+        # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
-        # evaluate the model in batch chunks of batch_chunk_size, when given.
-        batch_chunk_size=batch_chunk_size
     )
 
     callbacks = [
@@ -202,6 +202,7 @@ def worker_fn(rank, args, world_size):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
+        # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size)
 
     model_hyper_parameters = {
@@ -212,7 +213,6 @@ def worker_fn(rank, args, world_size):
                                      args.experiment_name,
                                      model_hyper_parameters,
                                      is_primary,
-                                     args.batch_chunk_size,
                                      validation_dataset,
                                      args.progress_log_period)
 
