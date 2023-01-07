@@ -40,15 +40,16 @@ def create_callbacks_for(trainer,
                          experiment_name,
                          model_hyper_parameters,
                          distribution_strategy,
-                         batch_chunk_size,
                          validation_dataset,
                          progress_log_period):
     # At minimum you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
+        # The trainer knows how to evaluate the model
+        # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
+        # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
-        distribution_strategy=distribution_strategy,
-        batch_chunk_size=batch_chunk_size)
+        distribution_strategy=distribution_strategy,)
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -169,12 +170,16 @@ def train_model(args, logger):
         # ##########################################
 
     # ############# SETUP TRAINING ##############
-    print(f"Element spec : \n{training_dataset.element_spec}")
-    trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
-                                          model_components=classifier,
-                                          distribution_strategy=strategy,
-                                          # See issue https://github.com/tensorflow/tensorflow/issues/29911
-                                          batch_data_signature=training_dataset.element_spec)
+    logger.debug(f"Training dataset element_spec : \n{training_dataset.element_spec}")
+    trainer = mlp.trainers.DefaultTrainer(
+        optimizers=optimizer,
+        model_components=classifier,
+        distribution_strategy=strategy,
+        # See issue https://github.com/tensorflow/tensorflow/issues/29911
+        batch_data_signature=training_dataset.element_spec,
+        # In case of gradient accumulation batch_chunk_size > 0 is given
+        batch_chunk_size=args.batch_chunk_size
+    )
 
     model_hyper_parameters = {
         "hidden_size": args.hidden_size
@@ -184,7 +189,6 @@ def train_model(args, logger):
                                      args.experiment_name,
                                      model_hyper_parameters,
                                      strategy,
-                                     args.batch_chunk_size,
                                      validation_dataset,
                                      args.progress_log_period)
 
@@ -230,9 +234,9 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 
 if __name__ == '__main__':
-    import pydevd_pycharm
-
-    pydevd_pycharm.settrace('localhost', port=54491, stdoutToServer=True, stderrToServer=True)
+    # import pydevd_pycharm
+    #
+    # pydevd_pycharm.settrace('localhost', port=54491, stdoutToServer=True, stderrToServer=True)
 
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
