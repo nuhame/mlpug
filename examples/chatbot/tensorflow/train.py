@@ -6,7 +6,6 @@ from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.tensorflow as mlp
-from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
