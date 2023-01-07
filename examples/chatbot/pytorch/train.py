@@ -5,6 +5,8 @@ from basics.logging import get_logger
 
 import mlpug.pytorch as mlp
 
+from mlpug.debugging import enable_pycharm_remote_debugging
+
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.chatbot.pytorch.collation import BatchCollator
 
@@ -38,9 +40,8 @@ except Exception as e:
 
 
 def worker_fn(rank, args, world_size):
-    # if rank == 0:
-    #     import pydevd_pycharm
-    #     pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
+    if args.remote_debug_ip and rank == 0:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     mlp.logging.use_fancy_colors()
 
@@ -309,6 +310,7 @@ class TrainingProcess(TrainingProcessBase):
 
 
 if __name__ == '__main__':
+
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
     logger = get_logger(os.path.basename(__file__))
