@@ -18,12 +18,11 @@ from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
 from mlpug.mlpug_exceptions import TrainerInvalidException, \
     TrainerStateInvalidException, \
-    BatchNotChunkableException, \
     MLPugException, \
     LossNotAvailableException
 
 from mlpug.utils import get_value_at
-from mlpug.batch_chunking import ChunkableTupleBatchDim0, BatchChunkingResults
+from mlpug.batch_chunking import BatchChunkingResults
 
 
 class TFTrainerMixin:
@@ -518,10 +517,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         for c_idx in range(num_chunks):
             model_outputs, accumulated_grads = process_chunk(c_idx, model_outputs, accumulated_grads)
 
-        loss = reduce(lambda tot, mo: tot + (mo['num_samples'] * mo['loss']), model_outputs, 0)
+        loss = reduce(lambda tot, mo: tot + (float(mo['num_samples']) * mo['loss']), model_outputs, 0)
         num_samples = reduce(lambda tot, mo: tot + mo['num_samples'], model_outputs, 0)
 
-        loss /= num_samples
+        loss /= float(num_samples)
 
         # loss, and model outputs for each chunk
         return loss, model_outputs, accumulated_grads
