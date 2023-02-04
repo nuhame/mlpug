@@ -132,7 +132,7 @@ def worker_fn(rank, args, world_size):
 
     # ############## DEVICE SETUP ##############
     use_cuda = torch.cuda.is_available()
-    if use_cuda:
+    if use_cuda and not args.force_on_cpu:
         torch.cuda.set_device(rank)
 
         if distributed:
@@ -144,6 +144,8 @@ def worker_fn(rank, args, world_size):
             logger.info(f"Training using multiple GPUs: Using GPU {rank}/{world_size}")
         else:
             logger.info(f"Single device mode : Using GPU {rank} ")
+
+        device = torch.device("cuda")
     else:
         if distributed:
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
@@ -151,7 +153,8 @@ def worker_fn(rank, args, world_size):
 
         logger.info(f"Single device mode : Using CPU")
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+        device = torch.device("cpu")
+
     # ########################################
 
     # ########## SETUP BATCH DATASETS ##########
@@ -278,6 +281,10 @@ if __name__ == '__main__':
 
     # ############## TRAIN MODEL ##############
     if args.distributed:
+
+        if args.force_on_cpu:
+            raise ValueError("Can't train in distributed mode and force training on CPU at the same time")
+
         num_gpus_available = torch.cuda.device_count()
         world_size = args.num_devices if args.num_devices > 0 else num_gpus_available
         if world_size > num_gpus_available:
