@@ -1,5 +1,2 @@
-scikit-learn
 datasets
 torch
-transformers
-tensorboardX
