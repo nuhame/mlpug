@@ -1057,9 +1057,10 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         :param model_components: dict or list with model components(s), or a single model instance
 
         :param batch_chunk_size: optional batch chunk size (int)
-            If given, batches are processed in chunks of size `batch_chunk_size` samples to
-            calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
-            there is not an exact multiple that is equal to the `batch_data` size
+            Enables gradient accumulation. If given, batches are processed in
+            chunks of size `batch_chunk_size` samples to calculate the gradients.
+            The last chunk can be smaller than `batch_chunk_size` if there is not an exact multiple that is
+            equal to the `batch_data` size.
 
             Note 1.
             In order to enable chunked processing of a batch only works when:
@@ -1073,6 +1074,10 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
             Note 2.
             When using chunked batch processing, the default implementation assumes that the
             loss, calculated over a chunk, is the average of the sample losses
+
+            Note 3.
+            When the `batch_chunk_size` is not an exact multiple of the `batch_data` size, this
+            could trigger retracing of the computation graphs in libraries such as Tensorflow.
 
         :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
             This is required when a batch_chunk_size is given and batches are not already chunkable when
