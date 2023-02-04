@@ -13,7 +13,7 @@ module_logger = get_logger(os.path.basename(__file__))
 try:
     from tensorboardX import SummaryWriter
 except Exception as e:
-    log_exception(module_logger, "Please `pip install transformers`", e)
+    log_exception(module_logger, "Please `pip install tensorboardX`", e)
 
 
 # Tensorboard writer types
