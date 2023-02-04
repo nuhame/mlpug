@@ -241,7 +241,7 @@ def test_model(model_checkpoint_filename, logger, device=None):
 if __name__ == '__main__':
     # import pydevd_pycharm
     #
-    # pydevd_pycharm.settrace('localhost', port=54491, stdoutToServer=True, stderrToServer=True)
+    # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
 
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
