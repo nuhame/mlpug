@@ -14,6 +14,7 @@ from basics.logging import get_logger
 
 # Import mlpug for Tensorflow backend
 import mlpug.tensorflow as mlp
+from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 
@@ -49,7 +50,7 @@ def create_callbacks_for(trainer,
         # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
         # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
-        distribution_strategy=distribution_strategy,)
+        distribution_strategy=distribution_strategy)
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -112,6 +113,9 @@ def train_model(args, logger):
     num_gpus_available = len(tf.config.list_physical_devices('GPU'))
 
     if distributed:
+        if args.force_on_cpu:
+            raise ValueError("Can't train in distributed mode and force training on CPU at the same time")
+
         if num_gpus_available < 1:
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
             return
@@ -127,7 +131,7 @@ def train_model(args, logger):
 
         global_batch_size = args.batch_size * strategy.num_replicas_in_sync
     else:
-        device = "/device:GPU:0" if num_gpus_available > 0 else "/CPU:0"
+        device = "/device:GPU:0" if num_gpus_available > 0 and not args.force_on_cpu else "/CPU:0"
 
         strategy = tf.distribute.OneDeviceStrategy(device=device)
         global_batch_size = args.batch_size
@@ -178,7 +182,8 @@ def train_model(args, logger):
         # See issue https://github.com/tensorflow/tensorflow/issues/29911
         batch_data_signature=training_dataset.element_spec,
         # In case of gradient accumulation batch_chunk_size > 0 is given
-        batch_chunk_size=args.batch_chunk_size
+        batch_chunk_size=args.batch_chunk_size,
+        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper
     )
 
     model_hyper_parameters = {
