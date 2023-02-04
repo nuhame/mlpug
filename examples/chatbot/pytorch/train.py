@@ -211,7 +211,7 @@ class TrainingProcess(TrainingProcessBase):
 
         self._log.info(f"Loading pre-trained GPT-2 model : {self._args.pretrained_model}")
         # Load pre-trained GPT-2 model
-        self._model = GPT2DoubleHeadsModel(model_config)
+        self._model = GPT2DoubleHeadsModel.from_pretrained(self._args.pretrained_model, config=model_config)
 
         self._model.resize_token_embeddings(new_num_tokens=self._orig_num_tokens + self._num_special_tokens)
 
