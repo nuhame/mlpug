@@ -69,7 +69,7 @@ class NestedTensorsAccumulatorTests(unittest.TestCase):
         for nested_tensor in nested_tensors_list_original:
             acc.zip_in(nested_tensor)
         b = time.time()
-        print(f"Accumulation time: {b-a} seconds")
+        print(f"Accumulation time: {b - a} seconds")
 
         a = time.time()
         nested_tensors_list_rebuild = acc.unzip()
