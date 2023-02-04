@@ -102,3 +102,5 @@ def describe_args(args, logger):
     logger.info(f"Activation checkpointing: {args.activation_checkpointing}")
     logger.info(f"Log a description of logs object: {args.describe_logs_object}")
     logger.info(f"Inspect sliding metric windows: {args.inspect_sliding_windows}")
+
+    logger.info(f"Remote debug with PyCharm at: {args.remote_debug_ip}")
