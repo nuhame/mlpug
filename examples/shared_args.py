@@ -22,6 +22,11 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
              'Default is all available devices')
 
     parser.add_argument(
+        '--force-on-cpu',
+        action='store_true',
+        help='When flag is set, the training process will run on CPU only')
+
+    parser.add_argument(
         '--batch-size',
         type=int, required=False, default=16,
         help='Batch size (per process/replica)')
@@ -66,3 +71,4 @@ def describe_args(args, logger):
 
     num_devices_str = args.num_devices if args.num_devices > 0 else "Use all available"
     logger.info(f"Number of computing devices: {num_devices_str}")
+    logger.info(f"Force on CPU: {args.force_on_cpu}")
