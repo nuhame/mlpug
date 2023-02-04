@@ -75,6 +75,9 @@ def worker_fn(rank, flags):
     # ########################################
 
     # ############## DEVICE SETUP ##############
+    if args.force_on_cpu:
+        raise ValueError("Force on CPU selected: Run the examples/fashion_mnist/pytorch/train.py example instead")
+
     xla_available = len(xm.get_xla_supported_devices()) > 0
     if not xla_available:
         logger.error("No XLA devices available, unable to train")
