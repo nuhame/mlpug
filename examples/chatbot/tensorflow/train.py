@@ -1,11 +1,15 @@
 import os
 
+import contextlib
+
 from functools import cached_property
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.tensorflow as mlp
+
+from mlpug.debugging import enable_pycharm_remote_debugging
 
 from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
@@ -149,6 +153,8 @@ class TrainingProcess(TrainingProcessBase):
             self._log.debug(f"Training on device : {device}")
 
             self._distribution_strategy = tf.distribute.OneDeviceStrategy(device=device)
+            # TODO: Debugging without single device strategy
+            # self._distribution_strategy = None
 
     def _create_tf_dataset(self, multiple_choice_samples):
         choice_collator = MultipleChoiceCollator(
@@ -191,9 +197,13 @@ class TrainingProcess(TrainingProcessBase):
 
         self._log.info(f"Loading pre-trained GPT-2 model : {self._args.pretrained_model}")
 
+        # TODO: temp disabling of one device strategy
+        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
+        strategy = self._distribution_strategy.scope()
+
         # Building pre-trained GPT-2 model
-        with self._distribution_strategy.scope():
-            self._model = TFGPT2DoubleHeadsModel(model_config)
+        with strategy:
+            self._model = TFGPT2DoubleHeadsModel.from_pretrained(self._args.pretrained_model, config=model_config)
             self._model.resize_token_embeddings(new_num_tokens=self._orig_num_tokens + self._num_special_tokens)
 
             # TODO: Is activation --activation-checkpointing available for Huggingface TF models?
@@ -206,20 +216,43 @@ class TrainingProcess(TrainingProcessBase):
         self._log.info(f"Configuration of loaded model : \n{model_config}")
 
     def _setup_training_model(self):
-        with self._distribution_strategy.scope():
+        # TODO: temp disabling of one device strategy
+        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
+        strategy = self._distribution_strategy.scope()
+
+        with strategy:
             self._training_model = TrainModel(
                 self._model,
                 self._args.lm_loss_weight)
 
     def _build_optimizer(self):
-        with self._distribution_strategy.scope():
-            self._optimizer = AdamWeightDecay(
+        # TODO: temp disabling of one device strategy
+        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
+        strategy = self._distribution_strategy.scope()
+
+        with strategy:
+            # TODO: AdamWeightDecay fails at:
+            # ERROR   : TrainingManager::log_exception :
+            #   Exception type : <class 'tensorflow.python.framework.errors_impl.UnimplementedError'>
+            # ERROR   : TrainingManager::log_exception :
+            #   {{function_node __wrapped__Cast_device_/job:localhost/replica:0/task:0/device:CPU:0}}
+            #       Cast string to float is not supported [Op:Cast]
+            #   File "site-packages/keras/optimizers/optimizer_experimental/optimizer.py", line 1151, in weight_decay_fn
+            #     wd = tf.cast(self.weight_decay, variable.dtype)
+
+            # self._optimizer = AdamWeightDecay(
+            #     learning_rate=self._args.learning_rate,
+            #     weight_decay_rate=self._args.weight_decay,
+            #     beta_1=0.9,
+            #     beta_2=0.999,
+            #     epsilon=1e-08,
+            #     exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
+
+            self._optimizer = tf.keras.optimizers.Adam(
                 learning_rate=self._args.learning_rate,
-                weight_decay_rate=self._args.weight_decay,
                 beta_1=0.9,
                 beta_2=0.999,
-                epsilon=1e-08,
-                exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
+                epsilon=1e-08)
 
     def _get_custom_trainer_config(self):
         """
@@ -230,7 +263,7 @@ class TrainingProcess(TrainingProcessBase):
 
         # Tensorflow only needs batch_data_signature as additional argument, compared to PyTorch
         return {
-            # "eager_mode": True,
+            "eager_mode": False,
             "distribution_strategy": self._distribution_strategy,
             "batch_data_signature": self._batch_training_set.element_spec
         }
@@ -274,6 +307,8 @@ class TrainingProcess(TrainingProcessBase):
 
 
 if __name__ == '__main__':
+    tf.config.run_functions_eagerly(True)
+
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
     logger = get_logger(os.path.basename(__file__))
@@ -287,6 +322,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    if args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # import pydevd_pycharm
     # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
