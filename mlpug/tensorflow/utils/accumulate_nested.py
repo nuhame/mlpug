@@ -164,7 +164,10 @@ class NestedTensorsAccumulator:
             raise ValueError(f"Values in nested structure can only be float, int or tf.Tensor, "
                              f"value type is : {type(value)}")
 
-        return tf.TensorArray(dtype, size=self._array_size)
+        array_size = self._array_size if self._array_size is not None else 0
+        dynamic_size = self._array_size is None
+
+        return tf.TensorArray(dtype, size=array_size, dynamic_size=dynamic_size)
 
     def _create_new_nested_tensor_arrays_value(
             self,
