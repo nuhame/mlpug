@@ -222,9 +222,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
     def _setup_tokenizer(self):
         self._log.info(f"Loading Tokenizer for {self._args.pretrained_model} model ...")
-        self._hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
 
+        self._hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
         self._orig_num_tokens = len(self._hf_tokenizer.encoder)
+
         self._num_special_tokens = self._hf_tokenizer.add_special_tokens(self.SPECIAL_TOKENS_MAPPING)
         self._log.debug(f"Number of special tokens added to tokenizer : {self._num_special_tokens}")
 
