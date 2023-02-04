@@ -348,17 +348,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             batch_size = len(batch_data)
             num_chunks = len(chunks_dataset)
 
-            generate_chunk_func = create_chunks_generator(chunks_dataset)
-
-            # TODO: debug
-            # print(f"self._batch_data_signature : {self._batch_data_signature}")
-            chunks_tf_dataset = tf.data.Dataset.from_generator(
-                generate_chunk_func,
-                output_signature=self._batch_data_signature
-            )
-
             results = self._train_step_tf_func(
-                chunks_tf_dataset,
+                chunks_dataset,
                 training_settings,
                 batch_size,
                 num_chunks
@@ -572,7 +563,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def _calc_gradients_chunked(
             self,
-            chunks_tf_dataset,
+            chunked_dataset,
             training_settings,
             batch_size,
             num_chunks
@@ -585,7 +576,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         `chunks_tf_dataset` contains batch chunks which are slices of the batch data to use during this training step.
         The slices (chunks) have size `self.batch_chunk_size`.
 
-        :param chunks_tf_dataset:
+        :param chunked_dataset:
         :param training_settings:
 
         :param batch_size: Total batch size over all chunks
@@ -630,7 +621,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         model_outputs = BatchChunkingResults()
         accumulated_grads = {}
-        for chunk_idx, batch_chunk in enumerate(chunks_tf_dataset):
+        for chunk_idx, batch_chunk in enumerate(chunked_dataset):
             chunk_model_outputs, chunk_gradients = process_chunk(
                 batch_chunk,
                 chunk_idx == (num_chunks-1))
