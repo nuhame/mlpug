@@ -10,6 +10,8 @@ module_logger = get_logger(os.path.basename(__file__))
 def enable_pycharm_remote_debugging(remote_debug_ip: str, logger=None):
     """
 
+    This function will not suspend execution on its own: set a breakpoint in your code after using this function.
+
     :param remote_debug_ip: "<ip>:<port>" for remote debugging using PyCharm
     :param logger
 
@@ -32,6 +34,6 @@ def enable_pycharm_remote_debugging(remote_debug_ip: str, logger=None):
 
         logger.debug(f"Enabling remote debugging on {ip}:{port} ...")
 
-        pydevd_pycharm.settrace(ip, port=port, stdoutToServer=True, stderrToServer=True)
+        pydevd_pycharm.settrace(ip, port=port, stdoutToServer=True, stderrToServer=True, suspend=False)
     except Exception as e:
         raise MLPugException("Enabling of PyCharm remote debugging failed.") from e
