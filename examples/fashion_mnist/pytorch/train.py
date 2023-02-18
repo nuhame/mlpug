@@ -8,12 +8,14 @@ import torch.multiprocessing as mp
 
 import torchvision as tv
 
-from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
-
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp
 
+from mlpug.debugging import enable_pycharm_remote_debugging
+
 from basics.logging import get_logger
+
+from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 
 
 def load_data():
@@ -278,6 +280,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    if args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # ############## TRAIN MODEL ##############
     if args.distributed:
