@@ -257,7 +257,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         loss, model_outputs = self._train_on(batch_data, training_settings)
 
-        return loss.numpy(), model_outputs
+        return loss, model_outputs
 
     def _create_train_step_signature(self):
         # The batch_data_signature is assumes to be the element spec

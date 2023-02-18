@@ -185,7 +185,14 @@ class MetricEvaluator(MetricEvaluatorBase):
             gather_metric_inputs_funcs = {}
 
         if "loss" not in gather_metric_inputs_funcs:
-            gather_metric_inputs_funcs["loss"] = GatherLoss(requester=name)
+            gather_loss_base_func = GatherLoss(requester=name)
+            if distribution_strategy is None:
+                gather_loss_func = gather_loss_base_func
+            else:
+                def gather_loss_func(*args, **kwargs):
+                    return distribution_strategy.run(gather_loss_base_func, args=args, kwargs=kwargs)
+
+            gather_metric_inputs_funcs["loss"] = gather_loss_func
 
         metric_names = gather_metric_inputs_funcs.keys()
 
