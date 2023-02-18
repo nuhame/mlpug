@@ -16,6 +16,8 @@ from basics.logging import get_logger
 import mlpug.tensorflow as mlp
 from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
+from mlpug.debugging import enable_pycharm_remote_debugging
+
 from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 
 
@@ -239,10 +241,6 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 
 if __name__ == '__main__':
-    # import pydevd_pycharm
-    #
-    # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
-
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
 
@@ -258,6 +256,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    if args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # ############## TRAIN MODEL ##############
     train_model(args, logger)

@@ -75,11 +75,6 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='When flag is set, will log info related to the sliding metric windows used for '
              'demonstration or debugging purposes')
 
-    parser.add_argument(
-        '--remote-debug-ip',
-        type=str, required=False, default=None,
-        help='Allows to provide <ip>:<port> for remote debugging using PyCharm')
-
     return parser
 
 
@@ -102,5 +97,3 @@ def describe_args(args, logger):
     logger.info(f"Activation checkpointing: {args.activation_checkpointing}")
     logger.info(f"Log a description of logs object: {args.describe_logs_object}")
     logger.info(f"Inspect sliding metric windows: {args.inspect_sliding_windows}")
-
-    logger.info(f"Remote debug with PyCharm at: {args.remote_debug_ip}")

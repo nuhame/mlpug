@@ -56,6 +56,11 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         type=int, required=False, default=0,
         help='Random seed to use to ensure same random split at each restart')
 
+    parser.add_argument(
+        '--remote-debug-ip',
+        type=str, required=False, default=None,
+        help='Allows to provide <ip>:<port> for remote debugging using PyCharm')
+
     return parser
 
 
@@ -72,3 +77,6 @@ def describe_args(args, logger):
     num_devices_str = args.num_devices if args.num_devices > 0 else "Use all available"
     logger.info(f"Number of computing devices: {num_devices_str}")
     logger.info(f"Force on CPU: {args.force_on_cpu}")
+
+    logger.info(f"Remote debug with PyCharm at: {args.remote_debug_ip}")
+

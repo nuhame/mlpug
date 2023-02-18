@@ -325,6 +325,9 @@ if __name__ == '__main__':
 
     describe_args(args, logger)
 
+    if args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
+
     # ############## TRAIN MODEL ##############
     if args.distributed:
         num_gpus_available = torch.cuda.device_count()

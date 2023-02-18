@@ -10,7 +10,9 @@ from basics.logging import get_logger
 # Import mlpug for Pytorch/XLA backend
 import mlpug.pytorch.xla as mlp
 
-from examples.fashion_mnist.shared_args import base_argument_set, describe_args
+from mlpug.debugging import enable_pycharm_remote_debugging
+
+from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
 from examples.fashion_mnist.pytorch.train import \
     load_data, \
     build_model, \
@@ -178,13 +180,16 @@ if __name__ == '__main__':
     # ########################################
 
     # ############## PARSE ARGS ##############
-    parser = base_argument_set()
+    parser = create_arg_parser()
 
     parser.parse_args()
 
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    if args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # ############## TRAIN MODEL ##############
     flags = {
