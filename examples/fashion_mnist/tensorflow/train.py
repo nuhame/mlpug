@@ -185,7 +185,8 @@ def train_model(args, logger):
         batch_data_signature=training_dataset.element_spec,
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
-        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper
+        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper,
+        eager_mode=args.no_graph_compilation
     )
 
     model_hyper_parameters = {
