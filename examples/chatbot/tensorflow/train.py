@@ -326,9 +326,6 @@ if __name__ == '__main__':
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
 
-    # import pydevd_pycharm
-    # pydevd_pycharm.settrace('192.168.178.85', port=57491, stdoutToServer=True, stderrToServer=True)
-
     # ############## TRAIN MODEL ##############
     if args.distributed:
         num_gpus_available = len(tf.config.list_physical_devices('GPU'))
