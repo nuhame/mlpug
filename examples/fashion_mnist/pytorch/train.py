@@ -10,6 +10,7 @@ import torchvision as tv
 
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp
+from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
@@ -208,7 +209,9 @@ def worker_fn(rank, args, world_size):
         optimizers=optimizer,
         model_components=classifier,
         # In case of gradient accumulation batch_chunk_size > 0 is given
-        batch_chunk_size=args.batch_chunk_size)
+        batch_chunk_size=args.batch_chunk_size,
+        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper
+    )
 
     model_hyper_parameters = {
         "hidden_size": args.hidden_size
@@ -280,6 +283,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     describe_args(args, logger)
+
+    logger.warning("Graph compilation is not available for MLPug with PyTorch yet.")
 
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
