@@ -1,4 +1,5 @@
 import io
+from collections import Callable
 
 import h5py
 
@@ -9,8 +10,7 @@ import basics.base_utils as _
 import tensorflow as tf
 from tensorflow.python.keras.saving import hdf5_format
 
-from mlpug.batch_chunking import apply_chunkable_batch_wrapper, ChunkableBatchDataset, \
-    create_chunks_generator, BatchChunkingResults
+from mlpug.batch_chunking import apply_chunkable_batch_wrapper, ChunkableBatchDataset, BatchChunkingResults
 
 from mlpug.trainers.training import *
 from mlpug.trainers.training import Trainer as TrainerBase
@@ -108,6 +108,31 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self._trainable_variables = trainable_variables
 
+        # TODO: There are a few issues here:
+        #       1) In non-eager mode, it is very hard to get batch chunking right, because it involves
+        #          slicing of batches in the graph.
+        #       2) When using a distribution strategy, such as MirroredStrategy in eager mode training gets stuck
+        if self._distribution_strategy is not None and self._eager_mode:
+            raise ValueError(f"Distributed training in eager mode is not available.")
+
+        if self.batch_chunk_size is not None and not self._eager_mode:
+            raise ValueError(f"Gradient accumulation only available eager mode.")
+
+        self._call_model_func = (
+            self._create_distributed_call_model_func(self._call_model) if self._distribution_strategy is not None
+            else self._call_model
+        )
+
+        # TODO: experimental differentiation to enable gradient accumulation in eager mode in the future
+        self._train_step_func = (
+            self._train_step_atomic_batch if self.batch_chunk_size is None else self._train_step_chunked_batch
+        )
+
+        self._train_on_func = (
+            self._create_distributed_training_func(self._train_on) if self._distribution_strategy is not None
+            else self._train_on
+        )
+
         if not eager_mode:
             self._log.info(f"Training in graph mode.")
             # TODO: Providing the batch_data_signature is likely not required anymore; check this.
@@ -120,22 +145,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                                "implying that training settings won't be used.")
                 self._training_settings_signature = {}
 
-            self._call_model_tf_func = self._create_call_model_tf_func() if self._distribution_strategy is None \
-                else self._create_distributed_call_model_tf_func()
+            self._call_model_func = self._wrap_as_call_model_tf_func(self._call_model_func)
 
-            if self.batch_chunk_size is None:
-                self._train_step_tf_func = self._create_training_step_tf_func() if self._distribution_strategy is None \
-                    else self._create_distributed_training_step_tf_func()
-            else:
-                self._train_step_tf_func = self._train_step if self._distribution_strategy is None \
-                    else self._create_distributed_training_step_eager()
+            # Wrap the whole training function in a tf.function
+            self._train_on_func = self._wrap_as_train_tf_func(self._train_on_func)
         else:
             self._log.warn("Training in eager mode.")
-            self._train_step_tf_func = self._train_step if self._distribution_strategy is None \
-                else self._create_distributed_training_step_eager()
-
-            self._call_model_tf_func = self._call_model if self._distribution_strategy is None \
-                else self._create_distributed_call_model_eager()
 
         if self._trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -255,120 +270,15 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        loss, model_outputs = self._train_on(batch_data, training_settings)
+        loss, model_outputs = self._train_on_func(batch_data, training_settings)
 
         return loss, model_outputs
 
-    def _create_train_step_signature(self):
-        # The batch_data_signature is assumes to be the element spec
-        # In case of gradient accumulation the train step function gets a chunks dataset as input
-        if self.batch_chunk_size is not None:
-            input_signature = [
-                tf.data.DatasetSpec(self._batch_data_signature),
-                self._training_settings_signature,
-                tf.TensorSpec(shape=(), dtype=tf.int64),  # batch_size
-                tf.TensorSpec(shape=(), dtype=tf.int64)   # num_chunks
-            ]
-
-        else:
-            input_signature = [
-                self._batch_data_signature,
-                self._training_settings_signature
-            ]
-
-        return input_signature
-
-    def _create_distributed_training_step_tf_func(self):
-        @tf.function(input_signature=self._create_train_step_signature())
-        def training_step_func(
-                batch_data,
-                training_settings,
-                batch_size=None,
-                num_chunks=None):
-            return self._distribution_strategy.run(
-                self._train_step,
-                args=(
-                    batch_data,
-                    training_settings,
-                    batch_size,
-                    num_chunks
-                ))
-
-        return training_step_func
-
-    def _create_training_step_tf_func(self):
-        @tf.function(input_signature=self._create_train_step_signature())
-        # @tf.function
-        def training_step_func(
-                batch_data,
-                training_settings,
-                batch_size=None,
-                num_chunks=None):
-            return self._train_step(
-                batch_data,
-                training_settings,
-                batch_size=batch_size,
-                num_chunks=num_chunks
-            )
-
-        return training_step_func
-
-    def _create_distributed_training_step_eager(self):
-        def training_step_func(
-                batch_data,
-                training_settings,
-                batch_size=None,
-                num_chunks=None):
-            return self._distribution_strategy.run(
-                self._train_step,
-                args=(
-                    batch_data,
-                    training_settings,
-                    batch_size,
-                    num_chunks
-                ))
-
-        return training_step_func
-
-    def _train_on(self, batch_data, training_settings):
-        if not self.batch_chunk_size:
-            return self._train_step_tf_func(
-                batch_data,
-                training_settings)
-        else:
-            if not is_chunkable(batch_data):
-                batch_data = apply_chunkable_batch_wrapper(
-                    batch_data,
-                    self.chunkable_batch_wrapper)
-
-            chunks_dataset = ChunkableBatchDataset(
-                batch_data,
-                batch_chunk_size=self.batch_chunk_size)
-
-            batch_size = len(batch_data)
-            num_chunks = len(chunks_dataset)
-
-            results = self._train_step_tf_func(
-                chunks_dataset,
-                training_settings,
-                batch_size,
-                num_chunks
-            )
-
-            return results
-
-    def _train_step(self, batch_data, training_settings, batch_size=None, num_chunks=None):
-        loss, model_outputs, gradients = self._calc_gradients(
-            batch_data,
-            training_settings,
-            batch_size=batch_size,
-            num_chunks=num_chunks)
-
-        self._update_model_parameters(self._prepare_update_model_parameters(gradients))
-
-        self._after_update_model_parameters(gradients)
-
-        return loss, model_outputs
+    def _create_train_signature(self):
+        return [
+            self._batch_data_signature,
+            self._training_settings_signature
+        ]
 
     def _create_call_model_signature(self):
         return [
@@ -377,27 +287,80 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             tf.TensorSpec(shape=(), dtype=tf.bool)  # inference_mode
         ]
 
-    def _create_distributed_call_model_tf_func(self):
-        @tf.function(input_signature=self._create_call_model_signature())
-        def call_model_func(batch_data, evaluate_settings, inference_mode):
-            return self._distribution_strategy.run(self._call_model,
-                                                   args=(batch_data, evaluate_settings, inference_mode))
+    def _wrap_as_call_model_tf_func(self, f: Callable):
+        return tf.function(f, input_signature=self._create_call_model_signature())
 
-        return call_model_func
+    def _wrap_as_train_tf_func(self, f: Callable):
+        return tf.function(f, input_signature=self._create_train_signature())
 
-    def _create_call_model_tf_func(self):
-        @tf.function(input_signature=self._create_call_model_signature())
-        def call_model_func(batch_data, evaluate_settings, inference_mode):
-            return self._call_model(batch_data, evaluate_settings, inference_mode)
+    def _create_distributed_call_model_func(self, call_model_func: callable):
 
-        return call_model_func
+        def distributed_call_model_func(batch_data, evaluate_settings, inference_mode):
+            return self._distribution_strategy.run(
+                call_model_func,
+                args=(batch_data, evaluate_settings, inference_mode)
+            )
 
-    def _create_distributed_call_model_eager(self):
-        def call_model_func(batch_data, evaluate_settings, inference_mode):
-            return self._distribution_strategy.run(self._call_model,
-                                                   args=(batch_data, evaluate_settings, inference_mode))
+        return distributed_call_model_func
 
-        return call_model_func
+    def _create_distributed_training_func(self, train_func):
+
+        def distributed_training_func(
+                batch_data,
+                training_settings
+        ):
+            return self._distribution_strategy.run(
+                train_func,
+                args=(
+                    batch_data,
+                    training_settings
+                ))
+
+        return distributed_training_func
+
+    def _train_on(self, batch_data, training_settings):
+        if self.batch_chunk_size is not None:
+            if not is_chunkable(batch_data):
+                batch_data = apply_chunkable_batch_wrapper(
+                    batch_data,
+                    self.chunkable_batch_wrapper)
+
+            batch_data = ChunkableBatchDataset(
+                batch_data,
+                batch_chunk_size=self.batch_chunk_size)
+
+        results = self._train_step_func(
+            batch_data,
+            training_settings
+        )
+
+        return results
+
+    def _train_step_atomic_batch(self, batch_data, training_settings):
+        loss, model_outputs, gradients = self._calc_gradients_atomic_batch(
+            batch_data,
+            training_settings)
+
+        self._update_model_parameters(self._prepare_update_model_parameters(gradients))
+
+        self._after_update_model_parameters(gradients)
+
+        return loss, model_outputs
+
+    def _train_step_chunked_batch(
+            self,
+            chunkable_batch_dataset: ChunkableBatchDataset,
+            training_settings
+    ):
+        loss, model_outputs, gradients = self._calc_gradients_chunked_batch(
+            chunkable_batch_dataset,
+            training_settings)
+
+        self._update_model_parameters(self._prepare_update_model_parameters(gradients))
+
+        self._after_update_model_parameters(gradients)
+
+        return loss, model_outputs
 
     def _retrieve_trainable_variables(self):
         if len(self.optimizers) > 1:
@@ -492,53 +455,13 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             raise TrainerStateInvalidException("Inference mode is not set")
 
         if not inference_mode:
-            # @tf.function on the train step level
+            # @tf.function will be available on a higher level
             return self._call_model(batch_data, evaluate_settings, inference_mode)
         else:
-            return self._call_model_tf_func(batch_data, evaluate_settings, tf.constant(inference_mode, dtype=tf.bool))
+            return self._call_model_func(batch_data, evaluate_settings, tf.constant(inference_mode, dtype=tf.bool))
 
     def _call_model(self, batch_data, evaluate_settings, inference_mode):
         return self.training_model(batch_data, evaluate_settings, inference_mode)
-
-    def _calc_gradients(
-            self,
-            batch_data,
-            training_settings,
-            batch_size=None,
-            num_chunks=None
-    ):
-        """
-
-        :param batch_data:
-        :param training_settings:
-
-        Required when using gradient accumulation:
-        :param batch_size:
-        :param num_chunks:
-
-        :return:
-
-        :raises LossNotAvailableException
-        """
-
-        if self.batch_chunk_size is None:
-            return self._calc_gradients_atomic_batch(
-                batch_data,
-                training_settings
-            )
-        else:
-            if batch_size is None or num_chunks is None:
-                raise InvalidParametersException(
-                    f"batch_size ({batch_size}) and num_chunks ({num_chunks}) must be given to perform "
-                    f"gradient accumulation."
-                )
-
-            return self._calc_gradients_chunked(
-                batch_data,
-                training_settings,
-                batch_size,
-                num_chunks
-            )
 
     def _calc_gradients_atomic_batch(self, batch_data, training_settings):
 
@@ -561,12 +484,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         return loss, model_outputs, gradients
 
-    def _calc_gradients_chunked(
+    def _calc_gradients_chunked_batch(
             self,
             chunked_dataset,
-            training_settings,
-            batch_size,
-            num_chunks
+            training_settings
     ):
         """
 
@@ -579,9 +500,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         :param chunked_dataset:
         :param training_settings:
 
-        :param batch_size: Total batch size over all chunks
-        :param num_chunks: Number of batch chunks in the chunks_tf_dataset
-
         :return: loss, model_outputs
                 model_outputs: BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
                     [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
@@ -590,6 +508,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :rtype: Tuple[Tensor, BatchChunkingResults[Dict]]
         """
+
+        total_batch_size = chunked_dataset.total_batch_size
+        num_chunks = len(chunked_dataset)
 
         def process_chunk(chunk, last_chunk):
             with tf.GradientTape() as tape:
@@ -609,7 +530,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 # Divide through batch size to factor in that this loss is part of a larger batch.
                 chunk_loss = chunk_mos['loss']
                 num_chunk_samples = chunk_mos['num_samples']
-                chunk_loss = float(num_chunk_samples) * chunk_loss / float(batch_size)
+                chunk_loss = float(num_chunk_samples) * chunk_loss / float(total_batch_size)
 
             if self._trainable_variables is None:
                 # We now have evaluated the model and the trainable variables should be available
