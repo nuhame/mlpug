@@ -61,10 +61,6 @@ class ChunkableTupleBatch(ChunkableBatch, metaclass=abc.ABCMeta):
 
         self._batch = batch
 
-        # TODO: debugging
-        # for v in batch:
-        #     print(f"t.shape = {v.shape}")
-
     @classmethod
     def wrapper(cls, batch):
         return cls(*batch)
@@ -77,20 +73,7 @@ class ChunkableTupleBatchDim0(ChunkableTupleBatch):
         return self._batch[0].shape[0]
 
     def __getitem__(self, sample_slice):
-        # TODO: debugging
-        # print(f"#####################################")
-        t = tuple()
-        for v in self._batch:
-            # print(f"v.shape = {v.shape}")
-            # print(f"sample_slice = {sample_slice}")
-            v_sliced = v[sample_slice, ...]
-            # print(f"v_sliced.shape = {v_sliced.shape}")
-            t += (v_sliced,)
-
-        return t
-
-        # TODO: why doesn't this work in Tensorflow!?!?
-        # return tuple((v[sample_slice, ...] for v in self._batch))
+        return tuple((v[sample_slice, ...] for v in self._batch))
 
 
 class ChunkableTupleBatchDim1(ChunkableTupleBatch):
@@ -140,6 +123,10 @@ class ChunkableBatchDataset(Base):
         self._batch_size = len(batch)
         self._num_chunks = math.ceil(self._batch_size / self._batch_chunk_size)
         self._chunk_idx = -1
+
+    @property
+    def total_batch_size(self):
+        return self._batch_size
 
     def __len__(self):
         return self._num_chunks
