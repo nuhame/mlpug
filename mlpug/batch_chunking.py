@@ -99,6 +99,22 @@ def has_batch_chunking_results(batch_metrics_list):
            type(batch_metrics_list[0]) is BatchChunkingResults
 
 
+class ChunkableBatchDatasetInterface(Protocol):
+
+    @property
+    def total_batch_size(self):
+        ...
+
+    def __len__(self):
+        ...
+
+    def __iter__(self):
+        ...
+
+    def __next__(self):
+        ...
+
+
 class ChunkableBatchDataset(Base):
 
     def __init__(self, batch, batch_chunk_size):
@@ -149,3 +165,23 @@ class ChunkableBatchDataset(Base):
 
 class BatchChunkingResults(list):
     pass
+
+
+def convert_to_chunkable_dataset(batch_data, chunkable_batch_wrapper, batch_chunk_size):
+    if not is_chunkable(batch_data):
+        batch_data = apply_chunkable_batch_wrapper(
+            batch_data,
+            chunkable_batch_wrapper)
+
+    return ChunkableBatchDataset(
+        batch_data,
+        batch_chunk_size=batch_chunk_size)
+
+
+def get_total_batch_size(chunkable_batch_dataset):
+    return chunkable_batch_dataset.total_batch_size
+
+
+def get_num_chunks(chunkable_batch_dataset):
+    return len(chunkable_batch_dataset)
+

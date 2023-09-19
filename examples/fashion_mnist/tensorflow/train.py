@@ -242,6 +242,8 @@ def test_model(model_checkpoint_filename, logger, device=None):
 
 
 if __name__ == '__main__':
+    # To debug compiled TF code
+    # tf.config.run_functions_eagerly(True)
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
 

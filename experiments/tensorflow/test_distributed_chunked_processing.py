@@ -13,7 +13,7 @@ class Processor:
     def __init__(self, model):
         self._model = model
 
-    @tf.function
+    @tf.function()
     def process_chunk(self, chunk):
         tf.print(tf.shape(chunk[0]))
         tf.print(tf.shape(chunk[1]))
@@ -21,7 +21,8 @@ class Processor:
         return self._model(chunk[0])
 
 
-def test_processing(batch, processor):
+def test_processing(batch, tv,  processor):
+    print(tv)
     tf.print(f"[{batch[0].device}] GPU Input batch size = {tf.shape(batch[0])}")
 
     batch = ChunkableTupleBatchDim0.wrapper(batch)
@@ -38,7 +39,7 @@ def test_processing(batch, processor):
 
 
 if __name__ == '__main__':
-    enable_pycharm_remote_debugging("192.168.178.15:54491")
+    # enable_pycharm_remote_debugging("192.168.178.15:54491")
     batch_size = 128
 
     num_gpus_available = len(tf.config.list_physical_devices('GPU'))
@@ -62,10 +63,11 @@ if __name__ == '__main__':
     # For some reason there is an uncaught StopIteration exception at the end of the sequence
     # The final partial batch is handled perfectly, not sure what the issue is
     # Seems like a TF bug to me.
+    test_val = 342
     for batch in training_dataset:
         results = strategy.run(
             process_batch,
-            args=(batch,)
+            args=(batch, test_val)
         )
 
         results = strategy.unwrap(results)
