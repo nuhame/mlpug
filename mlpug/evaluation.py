@@ -8,10 +8,17 @@ import numpy as np
 from mlpug.base import Base
 import basics.base_utils as _
 
-from mlpug.batch_chunking import ChunkableBatch, BatchChunkingResults, ChunkableBatchDataset, ChunkableBatchWrapper, \
-    apply_chunkable_batch_wrapper, is_chunkable
+from mlpug.batch_chunking import (
+    ChunkableBatch,
+    BatchChunkingResults,
+    ChunkableBatchDataset,
+    ChunkableBatchWrapper,
+    is_chunkable,
+    convert_to_chunkable_dataset,
+    ChunkableBatchDatasetInterface
+)
 
-from mlpug.mlpug_exceptions import InvalidParametersException, BatchNotChunkableException
+from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
 
 
@@ -566,15 +573,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                   gathered inputs is a Dict or None
         """
 
-        is_chunkable_batch = is_chunkable(batch_data)
-
         if not no_chunking and model_output is None and self._batch_chunk_size is not None:
-            if not is_chunkable_batch:
-                batch_data = apply_chunkable_batch_wrapper(
-                    batch_data,
-                    self._chunkable_batch_wrapper)
-
-            chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
+            chunk_dataset = self._create_chunkable_batch_dataset(batch_data)
 
             gathered_inputs, success = self.gather_dataset_metric_inputs(
                 dataset=chunk_dataset,
@@ -598,7 +598,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
             return gathered_inputs, success
 
-        if is_chunkable_batch:
+        if is_chunkable(batch_data):
             # The batch is chunkable but, we are not using the chunks: get the full batch.
             batch_data = batch_data[:]
 
@@ -1026,6 +1026,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         results["metrics"] = metrics_output
 
         return results, success
+
+    def _create_chunkable_batch_dataset(self, batch_data) -> ChunkableBatchDatasetInterface:
+        return convert_to_chunkable_dataset(
+            batch_data,
+            self._chunkable_batch_wrapper,
+            self._batch_chunk_size
+        )
 
     def _eval_metric_func(self, metric_func, metric_inputs, metric_name=None):
         # By default no special behavior

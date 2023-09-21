@@ -5,7 +5,13 @@ import os
 
 import tensorflow as tf
 
+from basics.logging import get_logger
+
+from mlpug.base import Base
+
 from mlpug.utils.utils import has_method
+
+from mlpug.batch_chunking import ChunkableBatchDatasetInterface
 
 from mlpug.evaluation import GatherLoss as GatherLossBase
 from mlpug.evaluation import CombineBatchTuples as CombineBatchTuplesBase
@@ -13,8 +19,8 @@ from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.base import Base
-from basics.logging import get_logger
+from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
+
 
 logger = get_logger(os.path.basename(__file__))
 
@@ -232,3 +238,14 @@ class MetricEvaluator(MetricEvaluatorBase):
 
     def _create_default_model_evaluate_func(self):
         return DefaultLossEvaluator(self._trainer)
+
+    def _create_chunkable_batch_dataset(self, batch_data) -> ChunkableBatchDatasetInterface:
+        if self.distribution_strategy is None:
+            return super()._create_chunkable_batch_dataset(batch_data)
+        else:
+            return DistributedChunkableBatchDataset(
+                batch_data,
+                self._chunkable_batch_wrapper,
+                self._batch_chunk_size,
+                self.distribution_strategy
+            )
