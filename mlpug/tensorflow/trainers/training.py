@@ -3,7 +3,7 @@ from typing import Dict, Callable, List
 
 import h5py
 
-from functools import reduce
+from functools import reduce, partial
 
 import basics.base_utils as _
 
@@ -13,8 +13,7 @@ from tensorflow.python.keras.saving import hdf5_format
 from mlpug.batch_chunking import (
     BatchChunkingResults,
     convert_to_chunkable_dataset,
-    get_total_batch_size,
-    get_num_chunks, ChunkableBatchDatasetInterface
+    ChunkableBatchDatasetInterface
 )
 
 from mlpug.trainers.training import *
@@ -34,12 +33,20 @@ from mlpug.utils import get_value_at
 from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
 
-def create_distributed_func(func: Callable, distribution_strategy):
+module_logger = get_logger(os.path.basename(__file__))
+
+
+def create_distributed_func(func: Callable, distribution_strategy, logger=None):
+    if logger is None:
+        logger = module_logger
+
     def distributed_func(*args):
         return distribution_strategy.run(
             func,
             args=args
         )
+
+    logger.debug(f"Wrapped function {func.__name__} as distributed function with ID\t: {hex(id(distributed_func))}")
 
     return distributed_func
 
@@ -139,16 +146,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self._trainable_variables = trainable_variables
 
-        # TODO: There are a few issues here:
-        #       1) In non-eager mode, it is very hard to get batch chunking right, because it involves
-        #          slicing of batches in the graph.
-        #       2) When using a distribution strategy, such as MirroredStrategy in eager mode training gets stuck
-        # if self._distribution_strategy is not None and self._eager_mode:
-        #     raise ValueError(f"Distributed training in eager mode is not available.")
-        #
-        # if self.batch_chunk_size is not None and not self._eager_mode:
-        #     raise ValueError(f"Gradient accumulation only available eager mode.")
-
         # Tensorflow likes wrapping as follows:
         # 1) strategy.run
         # 2) tf.function
@@ -165,37 +162,41 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self._num_replicas = 1
         if distribution_strategy is not None:
+            distributed_func_factory = partial(create_distributed_func, logger=self._log)
 
             self._num_replicas = distribution_strategy.num_replicas_in_sync
 
-            self._call_model_wrapped = create_distributed_func(
+            self._call_model_wrapped = distributed_func_factory(
                 self._call_model_wrapped,
                 distribution_strategy
             )
 
             if self.batch_chunk_size is None:
-                self._train_step_wrapped = create_distributed_func(
+                self._train_step_wrapped = distributed_func_factory(
                     self._train_step_wrapped,
                     distribution_strategy
                 )
             else:
-                self._process_chunk_wrapped = create_distributed_func(
+                self._process_chunk_wrapped = distributed_func_factory(
                     self._process_chunk_wrapped,
                     distribution_strategy
                 )
-                self._accumulate_chunk_process_results_wrapped = create_distributed_func(
+
+                # TODO: only parts of this function should be wrapped.
+                #       Specifically parts that can be modelled as pure functions (i.e. gradient summation)
+                self._accumulate_chunk_process_results_wrapped = distributed_func_factory(
                     self._accumulate_chunk_process_results_wrapped,
                     distribution_strategy
                 )
-                self._reduce_chunk_num_samples_wrapped = create_distributed_func(
+                self._reduce_chunk_num_samples_wrapped = distributed_func_factory(
                     self._reduce_chunk_num_samples_wrapped,
                     distribution_strategy
                 )
-                self._reduce_chunk_loss_wrapped = create_distributed_func(
+                self._reduce_chunk_loss_wrapped = distributed_func_factory(
                     self._reduce_chunk_loss_wrapped,
                     distribution_strategy
                 )
-                self._apply_gradients_wrapped = create_distributed_func(
+                self._apply_gradients_wrapped = distributed_func_factory(
                     self._apply_gradients_wrapped,
                     distribution_strategy
                 )
@@ -227,6 +228,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                     input_signature=self._create_process_chunk_signature()
                 )
 
+                # TODO: only parts of this function should be wrapped.
+                #       Specifically parts that can be modelled as pure functions (i.e. gradient summation)
                 self._accumulate_chunk_process_results_wrapped = tf.function(
                     self._accumulate_chunk_process_results_wrapped
                 )
