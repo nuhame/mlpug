@@ -19,6 +19,8 @@ from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
+from mlpug.tensorflow.distributed_utils import contains_per_replica_data
+
 from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
 
@@ -191,7 +193,7 @@ class MetricEvaluator(MetricEvaluatorBase):
             gather_metric_inputs_funcs = {}
 
         if "loss" not in gather_metric_inputs_funcs:
-            gather_metric_inputs_funcs["loss"] = tf.function(func=GatherLoss(requester=name))
+            gather_metric_inputs_funcs["loss"] = tf.function(GatherLoss(requester=name))
 
         if distribution_strategy is not None:
             gather_loss_base_func = gather_metric_inputs_funcs["loss"]
@@ -240,7 +242,7 @@ class MetricEvaluator(MetricEvaluatorBase):
         return DefaultLossEvaluator(self._trainer)
 
     def _create_chunkable_batch_dataset(self, batch_data) -> ChunkableBatchDatasetInterface:
-        if self.distribution_strategy is None:
+        if self.distribution_strategy is None or not contains_per_replica_data(batch_data):
             return super()._create_chunkable_batch_dataset(batch_data)
         else:
             return DistributedChunkableBatchDataset(
