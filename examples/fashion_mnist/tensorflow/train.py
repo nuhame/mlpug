@@ -186,7 +186,9 @@ def train_model(args, logger):
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
         chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper,
-        eager_mode=args.no_graph_compilation
+        eager_mode=args.no_graph_compilation,
+        # For tf.function debugging purposes
+        monitor_tracing=not args.no_graph_compilation
     )
 
     model_hyper_parameters = {
