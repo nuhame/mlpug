@@ -1,5 +1,4 @@
-from functools import cached_property
-from typing import List
+from functools import cached_property, partial
 
 from mlpug.base import Base
 from mlpug.batch_chunking import (
@@ -9,7 +8,7 @@ from mlpug.batch_chunking import (
     ChunkableBatchWrapper
 )
 
-from tensorflow.python.distribute import values
+from mlpug.tensorflow.distributed_utils import unpack_per_replica_and_map, pack_per_replica
 
 
 class DistributedChunkableBatchDataset(Base):
@@ -20,7 +19,9 @@ class DistributedChunkableBatchDataset(Base):
             chunkable_batch_wrapper: ChunkableBatchWrapper,
             batch_chunk_size: int,
             # TODO: unable to import Strategy from tensorflow.distribute
-            distribution_strategy):
+            distribution_strategy,
+            name=None
+    ):
         """
 
         :param batch: batch with PerReplica objects containing batch per replica (device)
@@ -28,17 +29,24 @@ class DistributedChunkableBatchDataset(Base):
         :param batch_chunk_size:
         :param distribution_strategy:
         """
-        super().__init__()
+        super().__init__(pybase_logger_name=name)
 
-        per_replica_batch = distribution_strategy.experimental_local_results(per_replica_batch)
-        first_batch_replica = per_replica_batch[0]
+        unpacked_replica_data = distribution_strategy.experimental_local_results(per_replica_batch)
+        first_batch_replica = unpacked_replica_data[0]
 
         if not isinstance(first_batch_replica, (list, tuple)):
             raise ValueError(f"The per replica batch must be a list or tuple of tensors. "
                              f"Type of first batch replica is: {type(first_batch_replica)}")
 
-        self._per_replica_dataset = [convert_to_chunkable_dataset(b, chunkable_batch_wrapper, batch_chunk_size)
-                                     for b in per_replica_batch]
+        self._per_replica_dataset = unpack_per_replica_and_map(
+            map_func=partial(
+                convert_to_chunkable_dataset,
+                chunkable_batch_wrapper=chunkable_batch_wrapper,
+                batch_chunk_size=batch_chunk_size
+            ),
+            distribution_strategy=distribution_strategy,
+            unpacked_replica_data=unpacked_replica_data
+        )
 
         self._distribution_strategy = distribution_strategy
 
@@ -67,6 +75,4 @@ class DistributedChunkableBatchDataset(Base):
         if self._chunk_idx >= self._num_chunks:
             raise StopIteration()
 
-        # IMPORTANT This assumes that the batch is a tuple or list of tensors
-        per_replica_batch = tuple(values.PerReplica(t) for t in zip(*[next(it) for it in self._per_replica_iter]))
-        return per_replica_batch
+        return pack_per_replica([next(it) for it in self._per_replica_iter])
