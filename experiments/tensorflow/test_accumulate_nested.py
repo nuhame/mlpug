@@ -9,7 +9,7 @@ import tensorflow as tf
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
-from mlpug.tensorflow.utils.accumulate_nested import NestedTensorsAccumulator
+from experiments.tensorflow.accumulate_nested import NestedTensorsAccumulator
 
 
 module_logger = get_logger(os.path.basename(__file__))
