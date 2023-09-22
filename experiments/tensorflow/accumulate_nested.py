@@ -3,6 +3,7 @@ import tensorflow as tf
 
 class NestedTensorsAccumulator:
     """
+    TODO: Experimental
     Allows appending of tensors in a nested structure to be appended to TensorArrays structured in the same way
     """
 
