@@ -2,7 +2,7 @@ from functools import partial
 
 import tensorflow as tf
 
-from mlpug.batch_chunking import ChunkableTupleBatchDim0, ChunkableBatchDataset
+from mlpug.tensorflow.batch_chunking import ChunkableTupleBatchDim0, ChunkableBatchDataset
 from mlpug.debugging import enable_pycharm_remote_debugging
 
 from examples.fashion_mnist.tensorflow.train import load_data, build_model
