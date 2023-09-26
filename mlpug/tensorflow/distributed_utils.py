@@ -14,7 +14,30 @@ from tensorflow.python.types.distribute import DistributedValues
 module_logger = get_logger(os.path.basename(__file__))
 
 
-def create_distributed_func(func: Callable, distribution_strategy, logger=None, monitor_tracing=False):
+def wrap_in_tf_func(func, *tf_func_args, monitor_tracing=False,  logger=None, **tf_func_kwargs):
+
+    if not is_callable(func):
+        raise ValueError(f"No valid function given (not callable), "
+                         f"unable to wrap in tf.function: {func}")
+
+    func_name = func.__name__ if hasattr(func, "__name__") else str(func)
+
+    def monitored_func(*args, **kwargs):
+        if monitor_tracing:
+            replica_context = tf.distribute.get_replica_context()
+            replica_id = replica_context.replica_id_in_sync_group if replica_context is not None \
+                else "[OUTSIDE REPLICA CONTEXT]"
+
+            logger.debug(f"Function {func_name}: tracing for replica\t: {replica_id}")
+
+        return func(*args, **kwargs)
+
+    logger.debug(f"Wrapped function {func_name} in tf.function")
+
+    return tf.function(monitored_func, *tf_func_args, **tf_func_kwargs)
+
+
+def create_distributed_func(func: Callable, distribution_strategy, logger=None):
     if logger is None:
         logger = module_logger
 
@@ -24,23 +47,15 @@ def create_distributed_func(func: Callable, distribution_strategy, logger=None, 
 
     func_name = func.__name__ if hasattr(func, "__name__") else str(func)
 
-    def monitored_func(*args, **kwargs):
-        if monitor_tracing:
-            logger.debug(f"Function {func_name}: tracing for "
-                         f"replica\t: {tf.distribute.get_replica_context().replica_id_in_sync_group}")
-
-        return func(*args, **kwargs)
-
     def distributed_func(*args, **kwargs):
         return distribution_strategy.run(
-            monitored_func,
+            func,
             args=args,
             kwargs=kwargs
         )
 
-    if monitor_tracing:
-        logger.debug(f"Wrapped function {func_name} as distributed function with "
-                     f"ID\t: {hex(id(distributed_func))}")
+    logger.debug(f"Wrapped function {func_name} as distributed function with "
+                 f"ID\t: {hex(id(distributed_func))}")
 
     return distributed_func
 
