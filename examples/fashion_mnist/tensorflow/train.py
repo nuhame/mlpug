@@ -14,7 +14,6 @@ from basics.logging import get_logger
 
 # Import mlpug for Tensorflow backend
 import mlpug.tensorflow as mlp
-from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
@@ -185,7 +184,7 @@ def train_model(args, logger):
         batch_data_signature=training_dataset.element_spec,
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
-        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper,
+        chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper,
         eager_mode=args.no_graph_compilation,
         # For tf.function debugging purposes
         monitor_tracing=not args.no_graph_compilation

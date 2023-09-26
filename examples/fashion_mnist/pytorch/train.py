@@ -10,7 +10,6 @@ import torchvision as tv
 
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp
-from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
@@ -210,7 +209,7 @@ def worker_fn(rank, args, world_size):
         model_components=classifier,
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
-        chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper
+        chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper
     )
 
     model_hyper_parameters = {
