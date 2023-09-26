@@ -16,7 +16,7 @@ from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, Collat
 
 from examples.chatbot.shared_args import create_arg_parser, describe_args
 
-
+mlp.logging.use_fancy_colors()
 module_logger = get_logger(os.path.basename(__file__))
 
 
@@ -106,7 +106,7 @@ class TrainModel(tf.keras.Model):
 
         return {
             "loss": loss,
-            "num_samples": num_samples,
+            "num_samples": tf.convert_to_tensor(num_samples, dtype=tf.int64),
             "auxiliary_results": {
                 # required to calculate next sentence prediction (classification) quality
                 "nsp_logits": mc_logits
@@ -166,7 +166,9 @@ class TrainingProcess(TrainingProcessBase):
         batch_dataset = tf.data.Dataset\
             .from_generator(
                 sample_generator,
-                output_types=(tf.int64, tf.int64, tf.int64, tf.int64, tf.int8)
+                # Note: reply_class must be tf.int32, because tf.int8 is not allowed when
+                #       using distributed_strategy.gather
+                output_types=(tf.int64, tf.int64, tf.int64, tf.int64, tf.int32)
             )\
             .shuffle(20*self._global_batch_size, reshuffle_each_iteration=True) \
             .batch(self._global_batch_size)
@@ -197,9 +199,8 @@ class TrainingProcess(TrainingProcessBase):
 
         self._log.info(f"Loading pre-trained GPT-2 model : {self._args.pretrained_model}")
 
-        # TODO: temp disabling of one device strategy
-        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
-        strategy = self._distribution_strategy.scope()
+        strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None \
+            else contextlib.suppress()
 
         # Building pre-trained GPT-2 model
         with strategy:
@@ -207,6 +208,7 @@ class TrainingProcess(TrainingProcessBase):
             self._model.resize_token_embeddings(new_num_tokens=self._orig_num_tokens + self._num_special_tokens)
 
             # TODO: Is activation --activation-checkpointing available for Huggingface TF models?
+            #       No it isn't: https://github.com/huggingface/transformers/issues/19095
             if self._args.activation_checkpointing:
                 try:
                     self._model.gradient_checkpointing_enable()
@@ -216,9 +218,8 @@ class TrainingProcess(TrainingProcessBase):
         self._log.info(f"Configuration of loaded model : \n{model_config}")
 
     def _setup_training_model(self):
-        # TODO: temp disabling of one device strategy
-        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
-        strategy = self._distribution_strategy.scope()
+        strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None \
+            else contextlib.suppress()
 
         with strategy:
             self._training_model = TrainModel(
@@ -226,9 +227,8 @@ class TrainingProcess(TrainingProcessBase):
                 self._args.lm_loss_weight)
 
     def _build_optimizer(self):
-        # TODO: temp disabling of one device strategy
-        # strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None else contextlib.suppress()
-        strategy = self._distribution_strategy.scope()
+        strategy = self._distribution_strategy.scope() if self._distribution_strategy is not None \
+            else contextlib.suppress()
 
         with strategy:
             # TODO: AdamWeightDecay fails at:
@@ -265,7 +265,8 @@ class TrainingProcess(TrainingProcessBase):
         return {
             "eager_mode": False,
             "distribution_strategy": self._distribution_strategy,
-            "batch_data_signature": self._batch_training_set.element_spec
+            "batch_data_signature": self._batch_training_set.element_spec,
+            "monitor_tracing": True
         }
 
     def _create_gather_classification_data_function(self):
@@ -273,7 +274,7 @@ class TrainingProcess(TrainingProcessBase):
 
     def _create_gather_distributed_classification_data_function(self):
         # Use default implementation made available by MLPug
-        return mlp.evaluation.GatherTensorTuple(distribution_strategy=self._distribution_strategy)
+        return mlp.evaluation.GatherDistributedTensorTuple(distribution_strategy=self._distribution_strategy)
 
     def _create_clean_up_batch_data_func(self):
         return clean_up_batch_data
@@ -287,7 +288,8 @@ class TrainingProcess(TrainingProcessBase):
 
         # Tensorflow only needs distribution_strategy as additional argument, compared to PyTorch
         return {
-            "distribution_strategy": self._distribution_strategy
+            "distribution_strategy": self._distribution_strategy,
+            "monitor_tracing": True
         }
 
     def _add_lr_scheduler_callback(self):
@@ -307,7 +309,7 @@ class TrainingProcess(TrainingProcessBase):
 
 
 if __name__ == '__main__':
-    tf.config.run_functions_eagerly(True)
+    # tf.config.run_functions_eagerly(True)
 
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
