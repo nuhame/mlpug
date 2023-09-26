@@ -260,7 +260,7 @@ class TrainingProcess(TrainingProcessBase):
 
     def _create_gather_distributed_classification_data_function(self):
         # Use default implementation made available by MLPug
-        return mlp.evaluation.GatherTensorTuple(self._device)
+        return mlp.evaluation.GatherDistributedTensorTuple(self._device)
 
     def _create_clean_up_batch_data_func(self):
         return clean_up_batch_data
