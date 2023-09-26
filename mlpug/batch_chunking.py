@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import Protocol, Any, Callable
 
 import abc
@@ -17,7 +18,10 @@ def create_chunks_generator(chunks_dataset):
     return generate_chunk
 
 
-class ChunkableBatchProtocol(Protocol):
+class ChunkableBatchInterface(Protocol):
+
+    def device(self):
+        ...
 
     def __len__(self):
         ...
@@ -26,7 +30,7 @@ class ChunkableBatchProtocol(Protocol):
         ...
 
 
-ChunkableBatchWrapper = Callable[[Any], ChunkableBatchProtocol]
+ChunkableBatchWrapper = Callable[[Any], ChunkableBatchInterface]
 
 
 def apply_chunkable_batch_wrapper(batch_data, wrapper: ChunkableBatchWrapper):
@@ -45,6 +49,10 @@ def apply_chunkable_batch_wrapper(batch_data, wrapper: ChunkableBatchWrapper):
 
 
 class ChunkableBatch(Base, metaclass=abc.ABCMeta):
+
+    @abc.abstractmethod
+    def device(self):
+        raise NotImplementedError("Please implement in your child class")
 
     @abc.abstractmethod
     def __len__(self):
@@ -68,6 +76,10 @@ class ChunkableTupleBatch(ChunkableBatch, metaclass=abc.ABCMeta):
 
 class ChunkableTupleBatchDim0(ChunkableTupleBatch):
 
+    @cached_property
+    def device(self):
+        return self._batch[0].device
+
     def __len__(self):
         # get batch size
         return self._batch[0].shape[0]
@@ -77,6 +89,10 @@ class ChunkableTupleBatchDim0(ChunkableTupleBatch):
 
 
 class ChunkableTupleBatchDim1(ChunkableTupleBatch):
+
+    @cached_property
+    def device(self):
+        return self._batch[1].device
 
     def __len__(self):
         # get batch size
