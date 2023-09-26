@@ -1,10 +1,48 @@
-from collections import Callable
-from typing import Optional, Tuple, Union, List
+import os
+
+from typing import Optional, Tuple, Union, List, Callable
+
+from basics.logging import get_logger
+from basics.validation_utils import is_callable
 
 import tensorflow as tf
 
 from tensorflow.python.distribute import values
 from tensorflow.python.types.distribute import DistributedValues
+
+
+module_logger = get_logger(os.path.basename(__file__))
+
+
+def create_distributed_func(func: Callable, distribution_strategy, logger=None, monitor_tracing=False):
+    if logger is None:
+        logger = module_logger
+
+    if not is_callable(func):
+        raise ValueError(f"No valid function given (not callable), "
+                         f"unable to create distributed function for: {func}")
+
+    func_name = func.__name__ if hasattr(func, "__name__") else str(func)
+
+    def monitored_func(*args, **kwargs):
+        if monitor_tracing:
+            logger.debug(f"Function {func_name}: tracing for "
+                         f"replica\t: {tf.distribute.get_replica_context().replica_id_in_sync_group}")
+
+        return func(*args, **kwargs)
+
+    def distributed_func(*args, **kwargs):
+        return distribution_strategy.run(
+            monitored_func,
+            args=args,
+            kwargs=kwargs
+        )
+
+    if monitor_tracing:
+        logger.debug(f"Wrapped function {func_name} as distributed function with "
+                     f"ID\t: {hex(id(distributed_func))}")
+
+    return distributed_func
 
 
 def contains_per_replica_data(data):
