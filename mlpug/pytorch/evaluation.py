@@ -46,7 +46,7 @@ class GatherLossDistributed(MultiProcessingMixin, Base):
 
 
 # DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
-class GatherTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
+class GatherDistributedTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
     def __init__(self,
                  device,
                  batch_dim=0,
@@ -94,13 +94,13 @@ class GatherTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
         return gathered_tensors
 
 
-class GatherTensorTuple(GatherTensorData):
+class GatherDistributedTensorTuple(GatherDistributedTensorData):
 
     def __call__(self, gathered_input_data: Tuple) -> Collection:
         return tuple(self._gather(tensor.to(self.device)) for tensor in gathered_input_data)
 
 
-class GatherTensorDict(GatherTensorData):
+class GatherDistributedTensorDict(GatherDistributedTensorData):
 
     def __call__(self, gathered_input_data: Dict) -> Collection:
         return {metric_name: self._gather(tensor.to(self.device))
