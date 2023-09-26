@@ -1,5 +1,6 @@
 import io
-from typing import Dict, Callable, List, Union, Tuple
+import sys
+from typing import Dict, List, Union, Tuple
 
 import h5py
 
@@ -28,36 +29,10 @@ from mlpug.mlpug_exceptions import (
     NumSamplesNotAvailableException
 )
 
-from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
-from mlpug.tensorflow.distributed_utils import contains_per_replica_data
-
 from mlpug.utils import get_value_at
 
-module_logger = get_logger(os.path.basename(__file__))
-
-
-def create_distributed_func(func: Callable, distribution_strategy, logger=None, monitor_tracing=False):
-    if logger is None:
-        logger = module_logger
-
-    def monitored_func(*args, **kwargs):
-        if monitor_tracing:
-            logger.debug(f"Function {func.__name__}: tracing for "
-                         f"replica\t: {tf.distribute.get_replica_context().replica_id_in_sync_group}")
-
-        return func(*args, **kwargs)
-
-    def distributed_func(*args):
-        return distribution_strategy.run(
-            monitored_func,
-            args=args
-        )
-
-    if monitor_tracing:
-        logger.debug(f"Wrapped function {func.__name__} as distributed function with "
-                     f"ID\t: {hex(id(distributed_func))}")
-
-    return distributed_func
+from mlpug.tensorflow.distributed_utils import create_distributed_func, contains_per_replica_data
+from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
 
 def reduce_chunk_num_samples(accumulated_model_outputs):
@@ -168,47 +143,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         self._reduce_chunk_num_samples_wrapped = reduce_chunk_num_samples
         self._reduce_chunk_loss_wrapped = reduce_chunk_loss
 
-        self._apply_gradients_wrapped = self._apply_gradients
-
-        if distribution_strategy is not None:
-            distributed_func_factory = partial(
-                create_distributed_func,
-                logger=self._log,
-                monitor_tracing=monitor_tracing
-            )
-
-            self._call_model_wrapped = distributed_func_factory(
-                self._call_model_wrapped,
-                distribution_strategy
-            )
-
-            if self.batch_chunk_size is None:
-                self._train_step_wrapped = distributed_func_factory(
-                    self._train_step_wrapped,
-                    distribution_strategy
-                )
-            else:
-                self._process_chunk_wrapped = distributed_func_factory(
-                    self._process_chunk_wrapped,
-                    distribution_strategy
-                )
-
-                self._accumulate_gradients_wrapped = distributed_func_factory(
-                    self._accumulate_gradients_wrapped,
-                    distribution_strategy
-                )
-                self._reduce_chunk_num_samples_wrapped = distributed_func_factory(
-                    self._reduce_chunk_num_samples_wrapped,
-                    distribution_strategy
-                )
-                self._reduce_chunk_loss_wrapped = distributed_func_factory(
-                    self._reduce_chunk_loss_wrapped,
-                    distribution_strategy
-                )
-                self._apply_gradients_wrapped = distributed_func_factory(
-                    self._apply_gradients_wrapped,
-                    distribution_strategy
-                )
+        self._all_reduce_replica_wrapped = self._all_reduce_replica
+        self._update_model_parameters_wrapped = self._update_model_parameters
 
         if not eager_mode:
             self._log.info(f"Training in graph mode.")
@@ -226,12 +162,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 input_signature=self._create_call_model_signature()
             )
 
-            if self.batch_chunk_size is None:
-                self._train_step_wrapped = tf.function(
-                    self._train_step_wrapped,
-                    input_signature=self._create_train_step_signature()
-                )
-            else:
+            if self.batch_chunk_size is not None:
                 self._process_chunk_wrapped = tf.function(
                     self._process_chunk_wrapped,
                     input_signature=self._create_process_chunk_signature()
@@ -249,13 +180,68 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                     self._reduce_chunk_loss_wrapped
                 )
 
-                # In case of batch chunking, the parent function is not wrapped in a tf.function.
-                # Hence, wrapping it here.
-                self._apply_gradients_wrapped = tf.function(
-                    self._apply_gradients_wrapped
-                )
         else:
             self._log.warn("Training in eager mode.")
+
+        if distribution_strategy is not None:
+            distributed_func_factory = partial(
+                create_distributed_func,
+                logger=self._log,
+                monitor_tracing=monitor_tracing
+            )
+
+            self._call_model_wrapped = distributed_func_factory(
+                self._call_model_wrapped,
+                distribution_strategy
+            )
+
+            if self.batch_chunk_size is None:
+                # Only when function contains synchronization point (like in optimizer.apply_gradients)
+                # We wrap the whole distributed function in a tf.function
+                self._train_step_wrapped = distributed_func_factory(
+                    self._train_step_wrapped,
+                    distribution_strategy
+                )
+
+                self._train_step_wrapped = tf.function(
+                    self._train_step_wrapped,
+                    input_signature=self._create_train_step_signature()
+                )
+            else:
+                self._process_chunk_wrapped = distributed_func_factory(
+                    self._process_chunk_wrapped,
+                    distribution_strategy
+                )
+
+                self._accumulate_gradients_wrapped = distributed_func_factory(
+                    self._accumulate_gradients_wrapped,
+                    distribution_strategy
+                )
+
+                self._reduce_chunk_num_samples_wrapped = distributed_func_factory(
+                    self._reduce_chunk_num_samples_wrapped,
+                    distribution_strategy
+                )
+                self._reduce_chunk_loss_wrapped = distributed_func_factory(
+                    self._reduce_chunk_loss_wrapped,
+                    distribution_strategy
+                )
+
+                self._all_reduce_replica_wrapped = distributed_func_factory(
+                    self._all_reduce_replica_wrapped,
+                    distribution_strategy
+                )
+                # self._all_reduce_replica_wrapped = tf.function(
+                #     self._all_reduce_replica_wrapped
+                # )
+
+                self._update_model_parameters_wrapped = distributed_func_factory(
+                    self._update_model_parameters_wrapped,
+                    distribution_strategy
+                )
+                self._update_model_parameters_wrapped = tf.function(
+                    self._update_model_parameters_wrapped
+                )
 
         if self._trainable_variables is None:
             if len(self.optimizers) > 1:
@@ -444,7 +430,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             batch_data,
             training_settings)
 
-        # Don't need to wrap this in tf.function, since that's already done at the caller level
         self._apply_gradients(gradients)
 
         return loss, model_outputs
@@ -458,8 +443,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             chunkable_batch_dataset,
             training_settings)
 
-        # Wrapped in tf.function when not eager_mode
-        self._apply_gradients_wrapped(gradients)
+        self._apply_gradients(gradients)
+
+        self._log.info(f"READY!!!")
 
         return loss, model_outputs
 
@@ -627,6 +613,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         accumulated_model_outputs = None
         accumulated_gradients = None
         for chunk_idx, batch_chunk in enumerate(chunkable_batch_dataset):
+
+            tf.print("batch_chunk[0] : ",
+                     self._distribution_strategy.experimental_local_results(batch_chunk[0])[-1].device,
+                     output_stream=sys.stdout)
+
             # When distributed, process chunk results are per replica
             chunk_model_outputs, chunk_gradients = self._process_chunk_wrapped(
                 batch_chunk,
@@ -635,11 +626,16 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 training_settings
             )
 
+            tf.print("chunk_model_outputs['loss'] : ",
+                     self._distribution_strategy.experimental_local_results(chunk_model_outputs['loss'])[-1].device,
+                     output_stream=sys.stdout)
+
             # ### ACCUMULATE CHUNK MODEL OUTPUTS ###
             if accumulated_model_outputs is None:
-                accumulated_model_outputs = []
+                # Tag as chunk processing results
+                accumulated_model_outputs = BatchChunkingResults()
 
-            accumulated_model_outputs += [chunk_model_outputs]
+            accumulated_model_outputs.append(chunk_model_outputs)
 
             # ### ACCUMULATE GRADIENTS ###
             if accumulated_gradients is None:
@@ -655,11 +651,14 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 chunk_gradients
             )
 
+            tf.print("accumulated_gradients['optimizer'][0] : ",
+                     self._distribution_strategy.experimental_local_results(
+                         accumulated_gradients['optimizer'][0]
+                     )[-1].device,
+                     output_stream=sys.stdout)
+
         num_samples = self._reduce_chunk_num_samples_wrapped(accumulated_model_outputs)
         loss = self._reduce_chunk_loss_wrapped(accumulated_model_outputs, num_samples)
-
-        # Tag as chunk processing results
-        accumulated_model_outputs = BatchChunkingResults(accumulated_model_outputs)
 
         # When distributed, loss, and accumulated_gradients are per replica.
         # accumulated_model_outputs is per replica, per chunk
@@ -721,7 +720,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         return gradients
 
     def _apply_gradients(self, gradients):
-        self._update_model_parameters(self._prepare_update_model_parameters(gradients))
+        self._update_model_parameters_wrapped(*self._prepare_update_model_parameters(gradients))
 
         self._after_update_model_parameters(gradients)
 
@@ -729,16 +728,36 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         """
 
         :param gradients: dict with gradients per provided optimizer
-                          The simple situation, when only one optimizer is given, the structure would be:
-                          {
-                              'optimizer': <gradients>
-                          }
-        :return: processed gradients with the same dict structure
+            The simple situation, when only one optimizer is given, the structure would be:
+            {
+              'optimizer': <gradients>
+            }
+        :return: Tuple:
+            (
+                processed gradients with the same dict structure,
+                skip_aggregate_gradients (True|False), used by optimizer.apply_gradients in _update_model_parameters
+            )
         """
-        return gradients
 
-    def _update_model_parameters(self, gradients):
         manual_reduction_required = self._distribution_strategy is not None and self.batch_chunk_size is not None
+        if manual_reduction_required:
+            gradients = self._all_reduce_replica_wrapped(gradients)
+
+        return gradients, manual_reduction_required
+
+    def _all_reduce_replica(self, gradients):
+        reduced_grads = {}
+        for optimizer_name, optimizer in self.get_optimizers().items():
+            opt_gradients = gradients[optimizer_name]
+            tf.print("_all_reduce_replica: opt_gradients[0].device: ", opt_gradients[0].device)
+            # When distributing training over multiple devices, and using gradient accumulation,
+            # manually reduce the gradients to all devices first
+            ctx = tf.distribute.get_replica_context()
+            reduced_grads[optimizer_name] = ctx.all_reduce(tf.distribute.ReduceOp.MEAN, opt_gradients)
+
+        return reduced_grads
+
+    def _update_model_parameters(self, gradients, skip_aggregate_gradients=False):
 
         for optimizer_name, optimizer in self.get_optimizers().items():
             trainable_variables = get_value_at(optimizer_name, self._trainable_variables)
@@ -746,14 +765,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 raise MLPugException("Unexpected state :  trainable variables not found. Please file an issue.")
 
             opt_gradients = gradients[optimizer_name]
-            if manual_reduction_required:
-                # When distributing training over multiple devices, and using gradient accumulation,
-                # manually reduce the gradients to all devices first
-                ctx = tf.distribute.get_replica_context()
-                opt_gradients = ctx.all_reduce(tf.distribute.ReduceOp.MEAN, opt_gradients)
+            tf.print("_update_model_parameters: opt_gradients[0].device: ", opt_gradients[0].device)
 
             optimizer.apply_gradients(zip(opt_gradients, trainable_variables),
-                                      skip_aggregate_gradients=manual_reduction_required)
+                                      skip_aggregate_gradients=True)
 
     def _after_update_model_parameters(self, gradients):
         pass
