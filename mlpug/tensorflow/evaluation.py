@@ -1,4 +1,5 @@
 import abc
+from functools import partial
 from typing import Collection, Tuple, Dict
 
 import os
@@ -19,7 +20,7 @@ from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.tensorflow.distributed_utils import contains_per_replica_data
+from mlpug.tensorflow.distributed_utils import create_distributed_func, contains_per_replica_data
 
 from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
@@ -80,7 +81,7 @@ class GatherLossDistributed(Base):
 
 
 # DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
-class GatherTensorData(Base, metaclass=abc.ABCMeta):
+class GatherDistributedTensorData(Base, metaclass=abc.ABCMeta):
     def __init__(self,
                  distribution_strategy=None,
                  batch_dim=0,
@@ -121,13 +122,13 @@ class GatherTensorData(Base, metaclass=abc.ABCMeta):
         return tensor
 
 
-class GatherTensorTuple(GatherTensorData):
+class GatherDistributedTensorTuple(GatherDistributedTensorData):
 
     def __call__(self, gathered_input_data: Tuple) -> Collection:
         return tuple(self._gather(tensor) for tensor in gathered_input_data)
 
 
-class GatherTensorDict(GatherTensorData):
+class GatherDistributedTensorDict(GatherDistributedTensorData):
 
     def __call__(self, gathered_input_data: Dict) -> Collection:
         return {metric_name: self._gather(tensor)
@@ -172,10 +173,12 @@ class MetricEvaluator(MetricEvaluatorBase):
                  distribution_strategy=None,
                  gather_metric_inputs_funcs=None,
                  gather_distributed_inputs_funcs=None,
+                 clean_up_batch_data_func=None,
                  combine_metric_inputs_funcs=None,
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
                  batch_dim=0,
+                 monitor_tracing=False,
                  name="MetricEvaluator",
                  **kwargs):
         """
@@ -193,15 +196,7 @@ class MetricEvaluator(MetricEvaluatorBase):
             gather_metric_inputs_funcs = {}
 
         if "loss" not in gather_metric_inputs_funcs:
-            gather_metric_inputs_funcs["loss"] = tf.function(GatherLoss(requester=name))
-
-        if distribution_strategy is not None:
-            gather_loss_base_func = gather_metric_inputs_funcs["loss"]
-
-            def gather_loss_func(*args, **kwargs):
-                return distribution_strategy.run(gather_loss_base_func, args=args, kwargs=kwargs)
-
-            gather_metric_inputs_funcs["loss"] = gather_loss_func
+            gather_metric_inputs_funcs["loss"] = GatherLoss(requester=name)
 
         metric_names = gather_metric_inputs_funcs.keys()
 
@@ -230,11 +225,45 @@ class MetricEvaluator(MetricEvaluatorBase):
 
         super().__init__(gather_metric_inputs_funcs=gather_metric_inputs_funcs,
                          gather_distributed_inputs_funcs=gather_distributed_inputs_funcs,
+                         clean_up_batch_data_func=clean_up_batch_data_func,
                          combine_metric_inputs_funcs=combine_metric_inputs_funcs,
                          combine_metric_inputs_func=combine_metric_inputs_func,
                          metric_funcs=metric_funcs,
                          name=name,
                          **kwargs)
+
+        # Wrap in as distributed and tf.function
+        if distribution_strategy is not None:
+            distributed_func_factory = partial(
+                create_distributed_func,
+                logger=self._log,
+                monitor_tracing=monitor_tracing
+            )
+
+            for metric_name in metric_names:
+                gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
+                gather_metric_inputs_func = tf.function(gather_metric_inputs_func)
+                self._gather_metric_inputs_funcs[metric_name] = distributed_func_factory(
+                    gather_metric_inputs_func,
+                    distribution_strategy
+                )
+
+            if self._clean_up_batch_data_func is not None:
+
+                clean_up_batch_data_func = self._clean_up_batch_data_func
+
+                def distributed_clean_up_batch_data_func(batch, evaluate_settings, model_output):
+                    unpacked_batch = distribution_strategy.experimental_local_results(batch)
+                    unpacked_model_output = distribution_strategy.experimental_local_results(model_output)
+
+                    for replica_batch, replica_model_output in zip(unpacked_batch, unpacked_model_output):
+                        clean_up_batch_data_func(
+                            batch=replica_batch,
+                            evaluate_settings=evaluate_settings,
+                            model_output=replica_model_output
+                        )
+
+                self._clean_up_batch_data_func = distributed_clean_up_batch_data_func
 
         self.distribution_strategy = distribution_strategy
 
