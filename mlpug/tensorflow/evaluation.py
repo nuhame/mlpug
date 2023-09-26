@@ -20,7 +20,7 @@ from mlpug.evaluation import CombineBatchDicts as CombineBatchDictsBase
 from mlpug.evaluation import average_loss
 from mlpug.evaluation import MetricEvaluator as MetricEvaluatorBase
 
-from mlpug.tensorflow.distributed_utils import create_distributed_func, contains_per_replica_data
+from mlpug.tensorflow.distributed_utils import wrap_in_tf_func, create_distributed_func, contains_per_replica_data
 
 from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
@@ -232,17 +232,25 @@ class MetricEvaluator(MetricEvaluatorBase):
                          name=name,
                          **kwargs)
 
+        tf_func_factory = partial(
+            wrap_in_tf_func,
+            monitor_tracing=monitor_tracing,
+            logger=self._log
+        )
+
+        for metric_name in metric_names:
+            gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
+            self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
+
         # Wrap in as distributed and tf.function
         if distribution_strategy is not None:
             distributed_func_factory = partial(
                 create_distributed_func,
-                logger=self._log,
-                monitor_tracing=monitor_tracing
+                logger=self._log
             )
 
             for metric_name in metric_names:
                 gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
-                gather_metric_inputs_func = tf.function(gather_metric_inputs_func)
                 self._gather_metric_inputs_funcs[metric_name] = distributed_func_factory(
                     gather_metric_inputs_func,
                     distribution_strategy
