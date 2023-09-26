@@ -1,14 +1,31 @@
-from functools import cached_property, partial
+from functools import partial
 
-from mlpug.base import Base
+import tensorflow as tf
+
+from mlpug.batch_chunking import *
+
 from mlpug.batch_chunking import (
-    convert_to_chunkable_dataset,
-    get_total_batch_size,
-    get_num_chunks,
-    ChunkableBatchWrapper
+    ChunkableTupleBatchDim0 as ChunkableTupleBatchDim0Base,
+    ChunkableTupleBatchDim1 as ChunkableTupleBatchDim1Base,
 )
 
 from mlpug.tensorflow.distributed_utils import unpack_per_replica_and_map, pack_per_replica
+
+
+class ChunkableTupleBatchDim0(ChunkableTupleBatchDim0Base):
+
+    def __getitem__(self, sample_slice):
+        # Slicing doesn't keep the tensor device of the tensor from the slice originates
+        with tf.device(self.device):
+            return super().__getitem__(sample_slice)
+
+
+class ChunkableTupleBatchDim1(ChunkableTupleBatchDim1Base):
+
+    def __getitem__(self, sample_slice):
+        # Slicing doesn't keep the tensor device of the tensor from the slice originates
+        with tf.device(self.device):
+            return super().__getitem__(sample_slice)
 
 
 class DistributedChunkableBatchDataset(Base):
@@ -24,7 +41,7 @@ class DistributedChunkableBatchDataset(Base):
     ):
         """
 
-        :param batch: batch with PerReplica objects containing batch per replica (device)
+        :param per_replica_batch: batch with PerReplica objects containing batch per replica (device)
         :param chunkable_batch_wrapper: Converts a batch to something that is chunkable (can be sliced)
         :param batch_chunk_size:
         :param distribution_strategy:
