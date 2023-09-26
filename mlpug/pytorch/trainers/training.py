@@ -14,12 +14,11 @@ from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
-from mlpug.mlpug_exceptions import TrainerInvalidException, BatchNotChunkableException, LossNotAvailableException
+from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException
 from mlpug.pytorch.utils import SlidingWindow
-from mlpug.batch_chunking import is_chunkable, apply_chunkable_batch_wrapper, ChunkableBatch
+from mlpug.batch_chunking import BatchChunkingResults, is_chunkable, apply_chunkable_batch_wrapper
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
-from mlpug.batch_chunking import BatchChunkingResults
 
 
 class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
