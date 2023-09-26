@@ -12,7 +12,6 @@ from basics.logging import get_logger
 
 import mlpug.abstract_interface as mlp_interface
 from mlpug.base import Base
-from mlpug.batch_chunking import ChunkableTupleBatchDim0
 
 from examples.chatbot.datasets.manager import DatasetManager
 from examples.chatbot.datasets.multiple_choice import max_sequence_length_in
@@ -332,7 +331,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # In case of gradient accumulation batch_chunk_size > 0 and a wrapper function is given
             # to make the batches sliceable such that we can chunk them into smaller pieces.
             batch_chunk_size=self._args.batch_chunk_size,
-            chunkable_batch_wrapper=ChunkableTupleBatchDim0.wrapper,
+            chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper,
             **custom_trainer_config)
 
     @abc.abstractmethod
