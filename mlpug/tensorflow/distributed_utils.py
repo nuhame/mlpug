@@ -10,6 +10,7 @@ import tensorflow as tf
 from tensorflow.python.distribute import values
 from tensorflow.python.types.distribute import DistributedValues
 
+from mlpug.base import Base
 
 module_logger = get_logger(os.path.basename(__file__))
 
@@ -37,6 +38,30 @@ def wrap_in_tf_func(func, *tf_func_args, monitor_tracing=False,  logger=None, **
     return tf.function(monitored_func, *tf_func_args, **tf_func_kwargs)
 
 
+class DistributedFuncWrapper(Base):
+
+    def __init__(self, func: Callable, distribution_strategy):
+        func_name = func.__name__ if hasattr(func, "__name__") else str(func)
+        name = f"Distributed version of {func_name}"
+
+        super().__init__(pybase_logger_name=name)
+
+        self._func_name = func_name
+        self._func = func
+        self._distribution_strategy = distribution_strategy
+
+    @property
+    def func_name(self):
+        return self._func_name
+
+    def __call__(self, *args, **kwargs):
+        return self._distribution_strategy.run(
+            self._func,
+            args=args,
+            kwargs=kwargs
+        )
+
+
 def create_distributed_func(func: Callable, distribution_strategy, logger=None):
     if logger is None:
         logger = module_logger
@@ -45,16 +70,9 @@ def create_distributed_func(func: Callable, distribution_strategy, logger=None):
         raise ValueError(f"No valid function given (not callable), "
                          f"unable to create distributed function for: {func}")
 
-    func_name = func.__name__ if hasattr(func, "__name__") else str(func)
+    distributed_func = DistributedFuncWrapper(func, distribution_strategy)
 
-    def distributed_func(*args, **kwargs):
-        return distribution_strategy.run(
-            func,
-            args=args,
-            kwargs=kwargs
-        )
-
-    logger.debug(f"Wrapped function {func_name} as distributed function with "
+    logger.debug(f"Wrapped function {distributed_func.func_name} as distributed function with "
                  f"ID\t: {hex(id(distributed_func))}")
 
     return distributed_func
