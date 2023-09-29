@@ -232,20 +232,11 @@ class MetricEvaluator(MetricEvaluatorBase):
                          name=name,
                          **kwargs)
 
-        tf_func_factory = partial(
-            wrap_in_tf_func,
-            monitor_tracing=monitor_tracing,
-            logger=self._log
-        )
-
-        for metric_name in metric_names:
-            gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
-            self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
-
         # Wrap in as distributed and tf.function
         if distribution_strategy is not None:
             distributed_func_factory = partial(
                 create_distributed_func,
+                distribution_strategy=distribution_strategy,
                 logger=self._log
             )
 
@@ -253,7 +244,6 @@ class MetricEvaluator(MetricEvaluatorBase):
                 gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
                 self._gather_metric_inputs_funcs[metric_name] = distributed_func_factory(
                     gather_metric_inputs_func,
-                    distribution_strategy
                 )
 
             if self._clean_up_batch_data_func is not None:
@@ -272,6 +262,16 @@ class MetricEvaluator(MetricEvaluatorBase):
                         )
 
                 self._clean_up_batch_data_func = distributed_clean_up_batch_data_func
+
+        tf_func_factory = partial(
+            wrap_in_tf_func,
+            monitor_tracing=monitor_tracing,
+            logger=self._log
+        )
+
+        for metric_name in metric_names:
+            gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
+            self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
 
         self.distribution_strategy = distribution_strategy
 
