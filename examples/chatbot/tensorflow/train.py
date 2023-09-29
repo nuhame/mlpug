@@ -144,8 +144,17 @@ class TrainingProcess(TrainingProcessBase):
 
     def _setup_compute(self):
         if self.is_distributed:
-            devices = [f"/gpu:{i}" for i in range(self.num_devices)]
-            self._distribution_strategy = tf.distribute.MirroredStrategy(devices=devices)
+            devices = [f"GPU:{i}" for i in range(self.num_devices)]
+            self._distribution_strategy = tf.distribute.MirroredStrategy(
+                devices=devices,
+                # TODO: required to make strategy.gather work for next_sentence_prediction_data
+                #       Is this because NCCL version issues? Old GPUs/Machines?
+                #       Should function properly with default cross_device_ops=None, leading to
+                #       use of CollectiveAllReduce.
+                #       Alternatively, this might also be because we execute some code eagerly
+                #       between strategy.run code.
+                cross_device_ops=tf.distribute.ReductionToOneDevice()
+            )
         else:
             num_gpus_available = len(tf.config.list_physical_devices('GPU'))
 
