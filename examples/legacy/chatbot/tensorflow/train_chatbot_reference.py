@@ -254,10 +254,10 @@ if __name__ == "__main__":
                                                             name="AverageLossEvaluator")
 
     callbacks = [mlp.callbacks.TrainingMetricsLogger(metric_evaluator=average_loss_evaluator),
-                 mlp.callbacks.TestMetricsLogger(validation_dist_dataset,
-                                                 'validation',
-                                                 metric_evaluator=average_loss_evaluator,
-                                                 batch_averaging_window=len_validation_dataset),
+                 mlp.callbacks.DatasetMetricsLogger(validation_dist_dataset,
+                                                    'validation',
+                                                    metric_evaluator=average_loss_evaluator,
+                                                    batch_averaging_window=len_validation_dataset),
                  # mlp.callbacks.BatchSizeLogger(),
                  mlp.callbacks.CheckpointManager(metric_to_monitor='validation.sliding_window.loss',
                                                  base_checkpoint_filename=args.experiment_name,
