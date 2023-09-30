@@ -9,6 +9,8 @@ from mlpug.batch_chunking import is_chunkable, ChunkableBatch
 import basics.base_utils as _
 from basics.logging_utils import log_exception
 
+from mlpug.reserved import RESERVED_LOG_FIELDS
+
 
 class LogProgress(Callback):
 
@@ -220,8 +222,7 @@ class LogProgress(Callback):
 
         metric_names = scalar_metric_names + dict_metric_names
 
-        # TODO : Make this a library level constant
-        skip_metric_names = ["model_outputs", "auxiliary_results", "duration"]
+        skip_metric_names = RESERVED_LOG_FIELDS
         metric_names = [name for name in metric_names if name not in skip_metric_names]
 
         num_metrics = len(metric_names)
