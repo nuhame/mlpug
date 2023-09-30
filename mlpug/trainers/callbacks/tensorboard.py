@@ -16,6 +16,9 @@ except Exception as e:
     log_exception(module_logger, "Please `pip install tensorboardX`", e)
 
 
+from mlpug.reserved import RESERVED_LOG_FIELDS
+
+
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'
 SLIDING_WINDOW_METRICS_WRITER = 'sliding-window-metrics'
@@ -795,8 +798,7 @@ class AutoTensorboard(Callback):
     def _get_all_metrics_from(self, base_path, current_logs, batch_level):
         dataset_metrics = get_value_at(base_path, current_logs)
 
-        # TODO : Make this a library level constant
-        skip_metric_names = {"auxiliary_results", "model_outputs"}
+        skip_metric_names = RESERVED_LOG_FIELDS
 
         metrics = {}
 
