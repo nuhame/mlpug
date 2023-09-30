@@ -560,8 +560,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                     loss, model_outputs = self.trainer.train_on(training_batch, logs["training_settings"])
 
-                    set_value_at("training.batch.loss", current, loss)
-                    set_value_at("training.batch.model_outputs", current, model_outputs)
+                    set_value_at("training.batch.raw.loss", current, loss)
+                    set_value_at("training.batch.raw.model_outputs", current, model_outputs)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
