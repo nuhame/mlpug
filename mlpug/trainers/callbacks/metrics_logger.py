@@ -202,7 +202,7 @@ class MetricsLoggerBase(Callback):
             batch_metrics = results["metrics"]
 
             batch_path = f"{self._dataset_name}.batch"
-            dataset_batch_logs = get_value_at(batch_path, current)
+            dataset_batch_logs = get_value_at(batch_path, current, {})
 
             # Merge in new batch level results
             dataset_batch_logs = {**dataset_batch_logs, **batch_metrics}
@@ -216,7 +216,7 @@ class MetricsLoggerBase(Callback):
                     return False
 
                 sliding_window_path = f"{self._dataset_name}.sliding_window"
-                dataset_sliding_window_logs = get_value_at(sliding_window_path, current)
+                dataset_sliding_window_logs = get_value_at(sliding_window_path, current, {})
 
                 # Merge in new batch level results
                 dataset_sliding_window_logs = {**dataset_sliding_window_logs, **sliding_window_metrics}
@@ -267,7 +267,7 @@ class MetricsLoggerBase(Callback):
         """
 
         current = self._get_logs_base(logs)
-        dataset_metrics_log = get_value_at(dataset_metrics_log_path, current)
+        dataset_metrics_log = get_value_at(dataset_metrics_log_path, current, {})
 
         evaluate_settings = self._get_current_evaluate_settings(logs)
 
@@ -302,7 +302,7 @@ class MetricsLoggerBase(Callback):
         model_outputs = None
         if self._dataset is None:
             current = self._get_logs_base(logs)
-            model_outputs = get_value_at(f"{self._dataset_name}.batch.model_outputs", current)
+            model_outputs = get_value_at(f"{self._dataset_name}.batch.raw.model_outputs", current)
 
             # Use the model_outputs instead of the batch data
             batch = None
@@ -473,7 +473,7 @@ class TrainingMetricsLogger(MetricsLoggerBase):
         return super().on_training_start(num_epochs, num_batches_per_epoch, start_epoch, start_batch, start_update_iter)
 
 
-class TestMetricsLogger(MetricsLoggerBase):
+class DatasetMetricsLogger(MetricsLoggerBase):
     """
     Child class must implement _evaluate_loss method
 
