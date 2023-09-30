@@ -88,10 +88,10 @@ loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
 callbacks = [
     mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
     # Calculate validation loss only once per epoch over the whole dataset
-    mlp.callbacks.TestMetricsLogger(validation_dataset,
-                                    'validation',
-                                    metric_evaluator=loss_evaluator,
-                                    batch_level=False),
+    mlp.callbacks.DatasetMetricsLogger(validation_dataset,
+                                       'validation',
+                                       metric_evaluator=loss_evaluator,
+                                       batch_level=False),
     mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
 ]
 

@@ -32,10 +32,10 @@ def create_callbacks_for(trainer,
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
-        mlp.callbacks.TestMetricsLogger(validation_dataset,
-                                        'validation',
-                                        metric_evaluator=loss_evaluator,
-                                        batch_level=False),
+        mlp.callbacks.DatasetMetricsLogger(validation_dataset,
+                                           'validation',
+                                           metric_evaluator=loss_evaluator,
+                                           batch_level=False),
         mlp.callbacks.CheckpointManager(base_checkpoint_filename=experiment_name,
                                         batch_level=False,  # monitor per epoch
                                         metric_to_monitor="validation.dataset.loss",

@@ -246,6 +246,7 @@ trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=cla
 MLPug uses a callback system allowing you to customize and extend the training functionality. 
 The list of callback instances you provide the `TrainingManager` will be called using hooks at different stages of the 
 training process.
+
 ```python
 # At minimum you want to log the loss in the training progress
 # By default the batch loss and the moving average of the loss are calculated and logged
@@ -253,15 +254,15 @@ loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
 callbacks = [
     mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
     # Calculate validation loss only once per epoch over the whole dataset
-    mlp.callbacks.TestMetricsLogger(validation_dataset,
-                                    'validation',
-                                    metric_evaluator=loss_evaluator,
-                                    batch_level=False),
+    mlp.callbacks.DatasetMetricsLogger(validation_dataset,
+                                       'validation',
+                                       metric_evaluator=loss_evaluator,
+                                       batch_level=False),
     mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
 ]
 ```
 
-The `TrainingMetricsLogger` and the `TestMetricsLogger` callback instances log training and validation set loss values 
+The `TrainingMetricsLogger` and the `DatasetMetricsLogger` callback instances log training and validation set loss values 
 in a `logs` object that is passed through all callbacks during training. The `LogProgress` callback instance logs the 
 metric values stored in the received `logs` object.
 

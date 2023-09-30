@@ -365,9 +365,9 @@ if __name__ == "__main__":
 
     callbacks += [TeacherForcingController(name="TeacherForcingController"),
                   mlp.callbacks.TrainingMetricsLogger(metric_evaluator=average_loss_evaluator),
-                  mlp.callbacks.TestMetricsLogger(validation_dataset_loader,
-                                                  dataset_name='validation',
-                                                  metric_evaluator=average_loss_evaluator)]
+                  mlp.callbacks.DatasetMetricsLogger(validation_dataset_loader,
+                                                     dataset_name='validation',
+                                                     metric_evaluator=average_loss_evaluator)]
 
     if is_first_worker:
         callbacks += [
