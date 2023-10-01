@@ -472,8 +472,16 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         current["is_best"] = model_improved
 
-    def _copy_logs(self, logs):
-        return self._clean_logs_func(logs.copy())
+    def _copy_logs(self, current_logs):
+        current_logs_copy = current_logs.copy()
+
+        # remove raw results
+        current_training_batch_logs = get_value_at('training.batch', current_logs_copy)
+        if get_value_at('raw', current_training_batch_logs) is not None:
+            del current_training_batch_logs['raw']
+
+        # TODO: is clean_logs_func still required when 'raw' is removed?
+        return self._clean_logs_func(current_logs_copy)
 
     def _create_model_checkpoint(self, model_fn=None, file_to_copy=None):
         if model_fn is None:
