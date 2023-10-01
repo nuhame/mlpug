@@ -1,5 +1,6 @@
 import os
 import traceback
+from typing import Optional, Dict, Any
 
 import basics.base_utils as _
 from basics.logging import get_logger
@@ -24,7 +25,12 @@ def convert_to_dict(type, components):
     return components
 
 
-def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
+def get_value_at(
+        key_path: str,
+        nested_data: Optional[Dict],
+        default: Any = None,
+        warn_on_failure: bool = True
+) -> Any:
     """
     Safe way to get value from nested data structure (e.g. nested dict) based on a key path
 
@@ -37,6 +43,9 @@ def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
 
     :return:
     """
+    if not isinstance(key_path, str):
+        raise ValueError(f"key_path must be a string, but is not: {key_path}")
+
     keys = key_path.split(".")
     value = nested_data
     for key in keys:
@@ -57,7 +66,13 @@ def get_value_at(key_path, nested_data, default=None, warn_on_failure=True):
     return value
 
 
-def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, base_path=None):
+def set_value_at(
+        key_path: str,
+        nested_data: Optional[Dict],
+        value: Any,
+        warn_on_path_unavailable: bool = False,
+        base_path: Optional[str] = None
+):
     """
     Safe way to set value in nested data structure (e.g. nested dict) based on a key path
 
@@ -76,7 +91,10 @@ def set_value_at(key_path, nested_data, value, warn_on_path_unavailable=False, b
     if not can_get_and_set_items(nested_data):
         raise Exception(f"Invalid path {base_path}, can't get or set keys for provided nested data variable")
 
-    keys = key_path.split(".")
+    if not isinstance(key_path, str):
+        raise ValueError(f"key_path must be a string, but is not: {key_path}")
+
+    keys = key_path.split(".") if "." in key_path else [key_path]
     root_key = keys[0]
 
     is_final_key = len(keys) == 1
