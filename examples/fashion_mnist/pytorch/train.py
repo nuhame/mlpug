@@ -120,6 +120,9 @@ def worker_fn(rank, args, world_size):
     is_primary = rank == 0
 
     mlp.logging.use_fancy_colors()
+
+    if is_primary and args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
     
     # ########### EXPERIMENT SETUP ############
     torch.random.manual_seed(args.seed)  # For reproducibility
@@ -284,10 +287,6 @@ if __name__ == '__main__':
     describe_args(args, logger)
 
     logger.warning("Graph compilation is not available for MLPug with PyTorch yet.")
-
-    if args.remote_debug_ip:
-        enable_pycharm_remote_debugging(args.remote_debug_ip)
-
     # ############## TRAIN MODEL ##############
     if args.distributed:
 
