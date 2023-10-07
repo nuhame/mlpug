@@ -151,12 +151,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self._update_model_parameters_wrapped = self._update_model_parameters
 
-        tf_func_factory = partial(
-            wrap_in_tf_func,
-            monitor_tracing=monitor_tracing,
-            logger=self._log
-        )
-
         if distribution_strategy is not None:
             distributed_func_factory = partial(
                 create_distributed_func,
@@ -193,6 +187,12 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 )
 
         if not eager_mode:
+            tf_func_factory = partial(
+                wrap_in_tf_func,
+                monitor_tracing=monitor_tracing,
+                logger=self._log
+            )
+
             self._log.info(f"Training in graph mode.")
             if self._batch_data_signature is None:
                 self._log.warning("batch_data_signature not given, "
