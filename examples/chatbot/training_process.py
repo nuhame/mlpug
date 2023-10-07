@@ -1,5 +1,9 @@
 import abc
 import os
+
+# See https://stackoverflow.com/a/57549064/889617
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
 import random
 
 from functools import cached_property
@@ -511,20 +515,20 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # Calculate validation loss and classification quality, every <progress_log_period> batches
             mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
                                                'validation',
-                                               metric_evaluator=all_metrics_evaluator,
+                                               metric_evaluator=loss_only_evaluator,  # all_metrics_evaluator,
                                                log_condition_func=log_metrics,
                                                sliding_window_length=avg_window_validation,
                                                inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate training metrics only once per epoch over the whole dataset
             mlp.callbacks.DatasetMetricsLogger(self._batch_training_set,
                                                'training',
-                                               metric_evaluator=all_metrics_evaluator,
+                                               metric_evaluator=loss_only_evaluator,  # all_metrics_evaluator,
                                                # epoch level only
                                                batch_level=False),
             # Calculate validation metrics only once per epoch over the whole dataset
             mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
                                                'validation',
-                                               metric_evaluator=all_metrics_evaluator,
+                                               metric_evaluator=loss_only_evaluator,  # all_metrics_evaluator,
                                                # epoch level only
                                                batch_level=False),
         ]
