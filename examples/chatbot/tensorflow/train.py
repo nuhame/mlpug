@@ -62,11 +62,13 @@ def clean_up_batch_data(model_output, **kwargs):
 
 # MLPug needs a TrainModel that outputs the loss
 class TrainModel(tf.keras.Model):
-    def __init__(self, model, lm_loss_weight):
+    def __init__(self, model, lm_loss_weight, ignore_class=-100):
         super(TrainModel, self).__init__()
 
         self.model = model
         self.lm_loss_weight = lm_loss_weight
+
+        self.ignore_class = ignore_class
 
         # TODO: tf.keras is behind keras, so using keras directly here
         #       We need it because we miss the ignore_class feature
@@ -100,6 +102,19 @@ class TrainModel(tf.keras.Model):
         num_samples = input_ids_batch.shape[0]
 
         lm_loss = self.lm_loss_func(shifted_labels, shifted_logits) / num_samples
+        num_not_ignored_tokens = tf.math.reduce_sum(
+            tf.cast(
+                tf.not_equal(
+                    shifted_labels,
+                    tf.convert_to_tensor(self.ignore_class, shifted_labels.dtype)
+                ),
+                lm_loss.dtype
+            )
+        )
+
+        if num_not_ignored_tokens > 0:
+            lm_loss /= num_not_ignored_tokens
+
         mc_loss = self.mc_loss_func(reply_class_batch, mc_logits) / num_samples
 
         loss = (lm_loss*self.lm_loss_weight + mc_loss)/(self.lm_loss_weight+1.0)
@@ -144,16 +159,17 @@ class TrainingProcess(TrainingProcessBase):
 
     def _setup_compute(self):
         if self.is_distributed:
+
             devices = [f"GPU:{i}" for i in range(self.num_devices)]
             self._distribution_strategy = tf.distribute.MirroredStrategy(
                 devices=devices,
                 # TODO: required to make strategy.gather work for next_sentence_prediction_data
-                #       Is this because NCCL version issues? Old GPUs/Machines?
+                #       Is this because NCCL version issues? Old GPUs/Machines? Bug in CUDA/CuDNN?
                 #       Should function properly with default cross_device_ops=None, leading to
                 #       use of CollectiveAllReduce.
                 #       Alternatively, this might also be because we execute some code eagerly
                 #       between strategy.run code.
-                cross_device_ops=tf.distribute.ReductionToOneDevice()
+                cross_device_ops=None,  # tf.distribute.ReductionToOneDevice()
             )
         else:
             num_gpus_available = len(tf.config.list_physical_devices('GPU'))
@@ -272,7 +288,7 @@ class TrainingProcess(TrainingProcessBase):
 
         # Tensorflow only needs batch_data_signature as additional argument, compared to PyTorch
         return {
-            "eager_mode": False,
+            "eager_mode": self._args.no_graph_compilation,
             "distribution_strategy": self._distribution_strategy,
             "batch_data_signature": self._batch_training_set.element_spec,
             "monitor_tracing": True
@@ -359,7 +375,7 @@ if __name__ == '__main__':
         logger.info(f"Single device mode.")
         global_batch_size = args.batch_size
 
-    logger.info(f"Global batch size: {args.batch_size}")
+    logger.info(f"Global batch size: {global_batch_size}")
 
     training_process = TrainingProcess(args, num_devices=num_devices)
     training_process.setup()
