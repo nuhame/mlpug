@@ -558,9 +558,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
-                    loss, model_outputs = self.trainer.train_on(training_batch, logs["training_settings"])
+                    model_outputs = self.trainer.train_on(training_batch, logs["training_settings"])
 
-                    set_value_at("training.batch.raw.loss", current, loss)
                     set_value_at("training.batch.raw.model_outputs", current, model_outputs)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
@@ -939,18 +938,17 @@ class Trainer(Base, metaclass=abc.ABCMeta):
         :param batch_data: batch_data object (e.g. dict, list, tuple)
         :param training_settings: optional training_settings object (usually dict)
 
-        :return: loss, model_outputs
+        :return: model_outputs
 
-                 model_outputs is a
-                    List with single normalized results dict:
-                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]
+                 model_outputs is a single normalized results dict:
+                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
                  or
                     BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
                         [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                          ...
                          {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Tensor, Union[List[Dict], BatchChunkingResults[Dict]]
+        :rtype: Tuple[Dict, BatchChunkingResults[Dict]}
         """
         raise NotImplemented("Please implement this method in your child class")
 
