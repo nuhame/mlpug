@@ -1,7 +1,7 @@
 import sys
 import abc
 
-from typing import Optional, Iterable, Tuple, Dict, Collection
+from typing import Optional, Iterable, Tuple, Dict, Collection, Union
 
 import numpy as np
 
@@ -612,6 +612,13 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 _.log_exception(self._log, "Evaluating model on batch input data failed", e)
                 return None, False
 
+        if not isinstance(model_output, dict):
+            self._log.error(
+                f"Given model_output is not a dict, "
+                f"unable to gather batch metric inputs: \n{model_output}"
+            )
+            return None, False
+
         metric_func_args = {**model_output, **{
             'batch': batch_data,
             'evaluate_settings': evaluate_settings
@@ -783,7 +790,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
     def calc_batch_metrics_for(self,
                                batch_data=None,
-                               model_outputs: Optional[Collection[Dict]] = None,
+                               model_outputs: Optional[Union[Dict, BatchChunkingResults[Dict]]] = None,
                                evaluate_settings=None,
                                return_gathered_inputs=False):
         """
@@ -795,7 +802,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param model_outputs: Optional, externally calculated model outputs
                               (one model output for a single batch, or multiple outputs for multiple batch chunks)
-        :type model_outputs: Collection[Dict]
+        :type model_outputs: Union[Dict, BatchChunkingResults[Dict]]
 
         :param evaluate_settings:
         :type evaluate_settings:
@@ -839,24 +846,10 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 return_gathered_inputs=return_gathered_inputs,
                 dataset_name="batch chunks")
 
-        model_output = None
-        if model_outputs is not None:
-            if not hasattr(model_outputs, '__iter__'):
-                self._log.error(f"The given model_outputs is not iterable, "
-                                f"unable to gather metric inputs over batch")
-                return results, success
-
-            if len(model_outputs) > 1:
-                self._log.error(f"The model_outputs are not considered to be model outputs for batch chunks, "
-                                f"however more then one model outputs were provided, unknown how to select the "
-                                f"model output for the batch of interest; unable to gather metric inputs over batch")
-                return results, success
-
-            model_output = next(iter(model_outputs))
-
+        # model_outputs is a single Dict
         gathered_inputs, success = self.gather_batch_metric_inputs(
             batch_data=batch_data,
-            model_output=model_output,
+            model_output=model_outputs,
             evaluate_settings=evaluate_settings)
 
         if return_gathered_inputs:

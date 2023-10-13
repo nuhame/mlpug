@@ -40,18 +40,6 @@ from mlpug.tensorflow.distributed_utils import (
 from mlpug.tensorflow.batch_chunking import DistributedChunkableBatchDataset
 
 
-def reduce_chunk_num_samples(accumulated_model_outputs):
-    return reduce(lambda tot, mo: tot + mo['num_samples'], accumulated_model_outputs, 0)
-
-
-def reduce_chunk_loss(accumulated_model_outputs: BatchChunkingResults, num_samples: int):
-    loss = reduce(lambda tot, mo: tot + (float(mo['num_samples']) * mo['loss']), accumulated_model_outputs, 0)
-
-    loss /= float(num_samples)
-
-    return loss
-
-
 class TFTrainerMixin:
 
     def _activate_inference_mode(self, inference_mode):
@@ -146,9 +134,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         self._process_chunk_wrapped = self._process_chunk
         self._accumulate_gradients_wrapped = self._accumulate_gradients
 
-        self._reduce_chunk_num_samples_wrapped = reduce_chunk_num_samples
-        self._reduce_chunk_loss_wrapped = reduce_chunk_loss
-
         self._update_model_parameters_wrapped = self._update_model_parameters
 
         if distribution_strategy is not None:
@@ -173,13 +158,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
                 self._accumulate_gradients_wrapped = distributed_func_factory(
                     self._accumulate_gradients_wrapped
-                )
-
-                self._reduce_chunk_num_samples_wrapped = distributed_func_factory(
-                    self._reduce_chunk_num_samples_wrapped
-                )
-                self._reduce_chunk_loss_wrapped = distributed_func_factory(
-                    self._reduce_chunk_loss_wrapped
                 )
 
                 self._update_model_parameters_wrapped = distributed_func_factory(
@@ -222,14 +200,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
                 self._accumulate_gradients_wrapped = tf_func_factory(
                     self._accumulate_gradients_wrapped
-                )
-
-                self._reduce_chunk_num_samples_wrapped = tf_func_factory(
-                    self._reduce_chunk_num_samples_wrapped
-                )
-
-                self._reduce_chunk_loss_wrapped = tf_func_factory(
-                    self._reduce_chunk_loss_wrapped
                 )
 
                 self._update_model_parameters_wrapped = tf_func_factory(
@@ -330,14 +300,30 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         loss, calculated over a chunk, is the average of the sample losses.
 
         :param batch_data: batch_data object to train on (Only list and tuple are supported)
-        TODO: can we support dict?
+                           TODO: can we support dict?
+
+                           When `batch_chunk_size` is given, `batch_data` must be an object that implements the
+                           `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal
+                           with slices.
+
+                           Alternatively, a chunkable_batch_wrapper can be provided at construction to convert
+                           any batch into a chunkable batch
 
         :param training_settings: optional training_settings object (usually dict)
 
-        :return: loss, auxiliary_results
+        :return: model_outputs
 
-        loss : number (e.g. float)
-        auxiliary_results : can be anything, e.g dict or list with values or data items
+                 model_outputs is a
+                     Single normalized results dict:
+                            {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
+                     or
+                        BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+                            [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
+                             ...
+                             {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
+
+        :rtype: Union[Dict, BatchChunkingResults[Dict]]
+
         """
 
         if not self.instance_valid():
@@ -357,9 +343,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        loss, model_outputs = self._train_on(batch_data, training_settings)
+        model_outputs = self._train_on(batch_data, training_settings)
 
-        return loss, model_outputs
+        return model_outputs
 
     def _create_call_model_signature(self):
         if self._batch_data_signature:
@@ -421,26 +407,26 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             )
 
     def _train_step(self, batch_data, training_settings):
-        loss, model_outputs, gradients = self._calc_gradients(
+        model_outputs, gradients = self._calc_gradients(
             batch_data,
             training_settings)
 
         self._apply_gradients(gradients)
 
-        return loss, model_outputs
+        return model_outputs
 
     def _train_step_in_chunks(
             self,
             chunkable_batch_dataset: ChunkableBatchDatasetInterface,
             training_settings
     ):
-        loss, model_outputs, gradients = self._calc_gradients_in_chunks(
+        model_outputs, gradients = self._calc_gradients_in_chunks(
             chunkable_batch_dataset,
             training_settings)
 
         self._apply_gradients(gradients)
 
-        return loss, model_outputs
+        return model_outputs
 
     def _retrieve_trainable_variables(self):
         if len(self.optimizers) > 1:
@@ -525,10 +511,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         :return: dict or tuple
             {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
-            (loss, ... auxiliary results ...)
+            (loss, num_samples, ... auxiliary results ...)
         """
 
         if not (type(inference_mode) is bool):
@@ -551,9 +538,27 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _calc_gradients(self, batch_data, training_settings):
+        """
+        See `train_on` method.
+
+        Calculate batch gradients.
+
+        :param batch_data: List or tuple with batch tensors
+        :param training_settings:
+
+        :return: Tuple of (model_outputs, gradients)
+
+                 model_outputs:
+                 {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
+
+                 gradients: Dict with gradients per optimizer
+
+
+        :rtype: Tuple[Dict, Dict]
+        """
 
         with tf.GradientTape() as tape:
-            results = self.evaluate_loss(
+            model_outputs = self.evaluate_loss(
                 batch_data,
                 inference_mode=False,
                 evaluate_settings=training_settings)
@@ -562,15 +567,14 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             # We now have evaluated the model and the trainable variables should be available
             self._retrieve_trainable_variables()
 
-        if 'loss' not in results:
+        if 'loss' not in model_outputs:
             raise LossNotAvailableException()
 
-        loss = results['loss']
-        model_outputs = [results]
+        loss = model_outputs['loss']
 
         gradients = self._back_propagate_from(loss, tape)
 
-        return loss, model_outputs, gradients
+        return model_outputs, gradients
 
     def _calc_gradients_in_chunks(
             self,
@@ -582,19 +586,20 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         See `train_on` method.
 
         Calculate batch gradients by accumulating gradients over batch chunks.
-        `chunks_tf_dataset` contains batch chunks which are slices of the batch data to use during this training step.
-        The slices (chunks) have size `self.batch_chunk_size`.
 
         :param chunkable_batch_dataset: Usually a ChunkableBatchDataset or DistributedChunkableBatchDataset
         :param training_settings:
 
-        :return: loss, model_outputs
-                model_outputs: BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+        :return: Tuple of accumulated_model_outputs, accumulated_gradients
+
+                 accumulated_model_outputs: BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
                     [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                      ...
                      {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Tensor, BatchChunkingResults[Dict]]
+                 accumulated_gradients: Dict with accumulated gradients per optimizer
+
+        :rtype: Tuple[BatchChunkingResults[Dict]. Dict]
         """
 
         # Could be distributed
@@ -605,10 +610,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         accumulated_gradients = None
         for chunk_idx, batch_chunk in enumerate(chunkable_batch_dataset):
 
-            # tf.print("batch_chunk[0] : ",
-            #          self._distribution_strategy.experimental_local_results(batch_chunk[0])[-1].device,
-            #          output_stream=sys.stdout)
-
             # When distributed, process chunk results are per replica
             chunk_model_outputs, chunk_gradients = self._process_chunk_wrapped(
                 batch_chunk,
@@ -616,15 +617,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 tf.constant(total_batch_size, dtype=tf.int64),
                 training_settings
             )
-
-            # tf.print("\nchunk_model_outputs['auxiliary_results']['nsp_logits'][2].device",
-            #          chunk_model_outputs['auxiliary_results']['nsp_logits'].values[2].device)
-            # tf.print("chunk_gradients['optimizer'][0][2].device",
-            #          chunk_gradients['optimizer'][0].values[2].device)
-
-            # tf.print("chunk_model_outputs['loss'] : ",
-            #          self._distribution_strategy.experimental_local_results(chunk_model_outputs['loss'])[-1].device,
-            #          output_stream=sys.stdout)
 
             # ### ACCUMULATE CHUNK MODEL OUTPUTS ###
             if accumulated_model_outputs is None:
@@ -647,24 +639,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 chunk_gradients
             )
 
-            # tf.print("accumulated_gradients['optimizer'][0] : ",
-            #          self._distribution_strategy.experimental_local_results(
-            #              accumulated_gradients['optimizer'][0]
-            #          )[-1].device,
-            #          output_stream=sys.stdout)
-
-        num_samples = self._reduce_chunk_num_samples_wrapped(accumulated_model_outputs)
-        loss = self._reduce_chunk_loss_wrapped(accumulated_model_outputs, num_samples)
-
-        # When distributed, loss, and accumulated_gradients are per replica.
+        # When distributed, accumulated_gradients are per replica.
         # accumulated_model_outputs is per replica, per chunk
-        return loss, accumulated_model_outputs, accumulated_gradients
+        return accumulated_model_outputs, accumulated_gradients
 
     def _process_chunk(self, chunk, last_chunk: bool, total_batch_size: int, training_settings: Dict):
-
-        # tf.print("chunk[0] : ",
-        #          chunk[0].device,
-        #          output_stream=sys.stdout)
 
         with tf.GradientTape() as tape:
             # Chunk model outputs
@@ -672,9 +651,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                 chunk,
                 inference_mode=False,
                 evaluate_settings=training_settings)
-
-            # tf.print("chunk_model_outputs['auxiliary_results']['nsp_logits'].device",
-            #          chunk_model_outputs['auxiliary_results']['nsp_logits'].device)
 
             if 'loss' not in chunk_model_outputs:
                 raise LossNotAvailableException()
@@ -694,14 +670,6 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             self._retrieve_trainable_variables()
 
         chunk_gradients = self._back_propagate_from(chunk_loss, tape, last_chunk=last_chunk)
-
-        # tf.print("chunk_gradients['optimizer'][0] : ",
-        #          chunk_gradients['optimizer'][0].device,
-        #          output_stream=sys.stdout)
-        #
-        # tf.print("chunk_model_outputs['loss'] : ",
-        #          chunk_model_outputs['loss'].device,
-        #          output_stream=sys.stdout)
 
         return chunk_model_outputs, chunk_gradients
 

@@ -432,9 +432,6 @@ class MetricsLoggerBase(Callback):
 class TrainingMetricsLogger(MetricsLoggerBase):
     """
     By default, gets already calculated model_output results from logs
-
-    TODO : needs testing
-    TODO : what to do for batch_level=false? Allow evaluation of metrics on the dataset level?
     """
 
     def __init__(self,
