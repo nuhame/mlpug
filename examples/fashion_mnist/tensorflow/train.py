@@ -121,7 +121,7 @@ def train_model(args, logger):
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
             return
 
-        num_devices = args.num_devices if args.num_devices > 0 else num_gpus_available
+        num_devices = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_gpus_available
         if num_devices > num_gpus_available:
             logger.warn(f"Number of requested GPUs is lower than available GPUs, "
                         f"limiting training to {num_gpus_available} GPUS")
@@ -171,7 +171,9 @@ def train_model(args, logger):
         # ##########################################
 
         # ############ SETUP OPTIMIZER #############
-        optimizer = tf.keras.optimizers.Adam()
+        # Scale learning rate to num devices
+        lr = args.learning_rate * num_devices
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
         # ##########################################
 
     # ############# SETUP TRAINING ##############
@@ -194,18 +196,20 @@ def train_model(args, logger):
         "hidden_size": args.hidden_size
     }
 
-    callbacks = create_callbacks_for(trainer,
-                                     args.experiment_name,
-                                     model_hyper_parameters,
-                                     strategy,
-                                     validation_dataset,
-                                     args.progress_log_period)
+    callbacks = create_callbacks_for(
+        trainer,
+        args.experiment_name,
+        model_hyper_parameters,
+        strategy,
+        validation_dataset,
+        args.progress_log_period)
 
-    manager = mlp.trainers.TrainingManager(trainer,
-                                           training_dataset,
-                                           num_epochs=args.num_epochs,
-                                           num_batches_per_epoch=num_batches_per_epoch,
-                                           callbacks=callbacks)
+    manager = mlp.trainers.TrainingManager(
+        trainer,
+        training_dataset,
+        num_epochs=args.num_epochs,
+        num_batches_per_epoch=num_batches_per_epoch,
+        callbacks=callbacks)
 
     trainer.set_training_model(train_model)
     # ##########################################
