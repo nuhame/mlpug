@@ -1,11 +1,20 @@
+import logging
+
 import os
 import sys
 
+from basics.logging import get_logger
+
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+import torch.distributed as dist
+
+from torch_xla import runtime as xr
+
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.xla_multiprocessing as xmp
-
-from basics.logging import get_logger
+import torch_xla.distributed.parallel_loader as pl
 
 # Import mlpug for Pytorch/XLA backend
 import mlpug.pytorch.xla as mlp
@@ -13,12 +22,12 @@ import mlpug.pytorch.xla as mlp
 from mlpug.debugging import enable_pycharm_remote_debugging
 
 from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
-from examples.fashion_mnist.pytorch.train import \
-    load_data, \
-    build_model, \
-    TrainModel, \
+from examples.fashion_mnist.pytorch.train import (
+    load_data,
+    build_model,
+    TrainModel,
     test_model
-
+)
 
 def create_callbacks_for(trainer,
                          experiment_name,
@@ -26,25 +35,34 @@ def create_callbacks_for(trainer,
                          is_primary,
                          validation_dataset,
                          progress_log_period):
-    # At minimum you want to log the loss in the training progress
+    # TODO: add DistributedSamplerManager callbacks to reshuffle the data per epoch
+
+    # At minimum, you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
-    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
+    loss_evaluator = mlp.evaluation.MetricEvaluator(
+        # The trainer knows how to evaluate the model
+        # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
+        # metrics in smaller chunks, if these values were set for the trainer.
+        trainer=trainer,
+    )
+
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
-        mlp.callbacks.DatasetMetricsLogger(validation_dataset,
-                                           'validation',
-                                           metric_evaluator=loss_evaluator,
-                                           batch_level=False),
-        mlp.callbacks.CheckpointManager(base_checkpoint_filename=experiment_name,
-                                        batch_level=False,  # monitor per epoch
-                                        metric_to_monitor="validation.dataset.loss",
-                                        metric_monitor_period=1,  # every epoch
-                                        create_checkpoint_every=0,  # We are only interested in the best model,
-                                                                    # not the latest model
-                                        archive_last_model_checkpoint_every=0,  # no archiving
-                                        backup_before_override=False,
-                                        model_hyper_parameters=model_hyper_parameters)
+        mlp.callbacks.DatasetMetricsLogger(
+            validation_dataset,
+            'validation',
+            metric_evaluator=loss_evaluator,
+            batch_level=False),
+        mlp.callbacks.CheckpointManager(
+            base_checkpoint_filename=experiment_name,
+            batch_level=False,  # monitor per epoch
+            metric_to_monitor="validation.dataset.loss",
+            metric_monitor_period=1,  # every epoch
+            create_checkpoint_every=0,  # We are only interested in the best model, not the latest model
+            archive_last_model_checkpoint_every=0,  # no archiving
+            backup_before_override=False,
+            model_hyper_parameters=model_hyper_parameters)
     ]
 
     # Only primary worker needs to log progress
@@ -56,14 +74,18 @@ def create_callbacks_for(trainer,
     return callbacks
 
 
-def worker_fn(rank, flags):
-    args = flags['args']
-    world_size = flags['world_size']
+def worker_fn(rank, args):
+    world_size = xm.xrt_world_size()
 
     distributed = args.distributed
-    is_primary = rank == 0
+    is_primary = xm.is_master_ordinal()
 
-    mlp.logging.use_fancy_colors()
+    is_using_pjrt = xr.using_pjrt()
+
+    mlp.logging.use_fancy_colors(log_level=logging.WARNING)
+
+    if is_primary and args.remote_debug_ip:
+        enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # ########## EXPERIMENT SETUP  ###########
     torch.random.manual_seed(args.seed)  # For reproducibility
@@ -74,19 +96,27 @@ def worker_fn(rank, flags):
         logger_name = os.path.basename(__file__)
 
     logger = get_logger(logger_name)
+
+    if is_primary:
+        logger.info(f"Distributed Data Parallel mode : Using {world_size} XLA devices (Using PJRT={is_using_pjrt})")
+        logger.info(f"Global batch size: {args.batch_size * world_size}")
     # ########################################
 
     # ############## DEVICE SETUP ##############
+    xla_available = len(xm.get_xla_supported_devices()) > 0
+    if not xla_available:
+        raise Exception("No XLA devices available, unable to train")
+
     if args.force_on_cpu:
         raise ValueError("Force on CPU selected: Run the examples/fashion_mnist/pytorch/train.py example instead")
 
-    xla_available = len(xm.get_xla_supported_devices()) > 0
-    if not xla_available:
-        logger.error("No XLA devices available, unable to train")
-        return
-
     if distributed:
         logger.info(f"Training using multiple XLA devices: Using XLA device {rank}/{world_size}")
+        if is_using_pjrt:
+            dist.init_process_group('xla', init_method='xla://')
+        else:
+            dist.init_process_group('xla', world_size=world_size, rank=rank)
+
     else:
         logger.info(f"Single XLA device mode : Using XLA device {rank} ")
 
@@ -95,12 +125,12 @@ def worker_fn(rank, flags):
 
     # ########## SETUP BATCH DATASETS ##########
     if distributed and not is_primary:
-        xm.rendezvous("loading_data")
+        xm.rendezvous("data_loaded")
 
     training_data, test_data = load_data()
 
     if distributed and is_primary:
-        xm.rendezvous("loading_data")
+        xm.rendezvous("data_loaded")
 
     training_sampler = None
     validation_sampler = None
@@ -114,54 +144,77 @@ def worker_fn(rank, flags):
             num_replicas=world_size,
             rank=rank)
 
-    training_dataset = torch.utils.data.DataLoader(training_data,
-                                                   batch_size=args.batch_size,
-                                                   shuffle=(training_sampler is None),
-                                                   sampler=training_sampler,
-                                                   num_workers=3)
+    training_dataset = torch.utils.data.DataLoader(
+        training_data,
+        batch_size=args.batch_size,
+        shuffle=(training_sampler is None),
+        sampler=training_sampler,
+        num_workers=0)
+    training_dataset = pl.MpDeviceLoader(training_dataset, device)
 
     # Using the test set as a validation set, just for demonstration purposes
-    validation_dataset = torch.utils.data.DataLoader(test_data,
-                                                     batch_size=args.batch_size,
-                                                     shuffle=(validation_sampler is None),
-                                                     sampler=validation_sampler,
-                                                     num_workers=3)
+    validation_dataset = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=(validation_sampler is None),
+        sampler=validation_sampler,
+        num_workers=0)
+    validation_dataset = pl.MpDeviceLoader(validation_dataset, device)
     # ##########################################
 
     # ############ BUILD THE MODEL #############
     classifier = build_model(args.hidden_size)
 
     train_model = TrainModel(classifier, device)
+    train_model.to(device)
 
-    # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
-    classifier.to(device)
+    # Initialization is nondeterministic with multiple threads in PjRt.
+    # Synchronize model parameters across replicas manually.
+    if xr.using_pjrt():
+        logger.info("Broadcast master parameters ...")
+        xm.broadcast_master_param(train_model)
+
+    if distributed:
+        logger.info("Wrap train_model in DDP ...")
+        train_model = DDP(train_model, gradient_as_bucket_view=True)
     # ############################################
 
     # ############ SETUP OPTIMIZER #############
-    optimizer = torch.optim.Adam(classifier.parameters(), lr=args.learning_rate)
+    # Scale learning rate to num devices
+    # lr = args.learning_rate * world_size
+    lr = args.learning_rate
+    optimizer = torch.optim.Adam(classifier.parameters(), lr=lr)
     # ##########################################
 
     # ############# SETUP TRAINING ##############
-    trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
+    trainer = mlp.trainers.DefaultTrainer(
+        optimizers=optimizer,
+        model_components=classifier,
+        # In case of gradient accumulation batch_chunk_size > 0 is given
+        batch_chunk_size=args.batch_chunk_size,
+        chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper
+    )
 
     model_hyper_parameters = {
         "hidden_size": args.hidden_size
     }
 
-    callbacks = create_callbacks_for(trainer,
-                                     args.experiment_name,
-                                     model_hyper_parameters,
-                                     is_primary,
-                                     validation_dataset,
-                                     args.progress_log_period)
+    callbacks = create_callbacks_for(
+        trainer,
+        args.experiment_name,
+        model_hyper_parameters,
+        is_primary,
+        validation_dataset,
+        args.progress_log_period)
 
-    manager = mlp.trainers.TrainingManager(trainer,
-                                           training_dataset,
-                                           num_epochs=args.num_epochs,
-                                           callbacks=callbacks,
-                                           experiment_data={
-                                               "args": args
-                                           })
+    manager = mlp.trainers.TrainingManager(
+        trainer,
+        training_dataset,
+        num_epochs=args.num_epochs,
+        callbacks=callbacks,
+        experiment_data={
+            "args": args
+        })
 
     trainer.set_training_model(train_model)
     # ##########################################
@@ -174,6 +227,8 @@ def worker_fn(rank, flags):
 
 
 if __name__ == '__main__':
+    os.environ['PJRT_DEVICE'] = 'TPU'
+
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
     logger = get_logger(os.path.basename(__file__))
@@ -181,41 +236,23 @@ if __name__ == '__main__':
 
     # ############## PARSE ARGS ##############
     parser = create_arg_parser()
-
     parser.parse_args()
 
     args = parser.parse_args()
 
     describe_args(args, logger)
 
-    if args.remote_debug_ip:
-        enable_pycharm_remote_debugging(args.remote_debug_ip)
-
     # ############## TRAIN MODEL ##############
-    flags = {
-        'args': args
-    }
     if args.distributed:
-        num_xla_devices_available = 8
-        flags['world_size'] = args.num_devices if args.num_devices > 0 else num_xla_devices_available
-        if flags['world_size'] > num_xla_devices_available:
-            logger.warn(f"Number of requested XLA devices is lower than available XLA devices, "
-                        f"limiting training to {num_xla_devices_available} XLA devices")
-            world_size = num_xla_devices_available
+        # num_devices automatically derived when None is given
+        num_devices = args.num_devices if args.num_devices is not None and args.num_devices > 0 else None
 
-        logger.info(f"Distributed Data Parallel mode : Using {flags['world_size']} XLA devices")
-        logger.info(f"Global batch size: {args.batch_size * flags['world_size']}")
-
-        xmp.spawn(worker_fn,
-                  args=(flags,),
-                  nprocs=flags['world_size'],
-                  start_method='fork')
+        xmp.spawn(worker_fn, args=(args,), nprocs=num_devices)
     else:
-        flags['world_size'] = 1
         logger.info(f"Single device mode.")
         logger.info(f"Global batch size: {args.batch_size}")
 
-        worker_fn(0, flags)
+        worker_fn(0, args)
 
     # ######### USE THE TRAINED MODEL ##########
     sys.stdout.write("\n\n\n")
