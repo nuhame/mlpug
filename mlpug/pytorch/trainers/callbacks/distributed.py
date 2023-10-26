@@ -1,11 +1,12 @@
 from mlpug.mlpug_exceptions import CallbackInvalidException
+
 from mlpug.pytorch.trainers.callbacks import Callback
 
 
-class DistributedSamplerManager(Callback):
+class DistributedSamplerManagerMixin:
 
-    def __init__(self, sampler, name="DistributedSamplerManager", **kwargs):
-        super(DistributedSamplerManager, self).__init__(name=name, **kwargs)
+    def __init__(self, sampler, name=None, **kwargs):
+        super().__init__(name=name, **kwargs)
 
         if sampler is None or not hasattr(sampler, 'set_epoch') or not callable(sampler.set_epoch):
             raise CallbackInvalidException(name, "No valid DistributedSampler provided, missing set_epoch method")
@@ -39,3 +40,6 @@ class DistributedSamplerManager(Callback):
         self._log.debug(f"Set epoch {epoch} for sampler ...")
         self.sampler.set_epoch(epoch)
 
+
+class DistributedSamplerManager(DistributedSamplerManagerMixin, Callback):
+    pass

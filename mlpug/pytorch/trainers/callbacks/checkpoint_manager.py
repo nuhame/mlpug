@@ -6,7 +6,7 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 from mlpug.pytorch.utils.mlpug_data import MLPugDataCleaner
 
 
-class CheckpointManager(MultiProcessingMixin, CheckpointManagerBase):
+class CheckpointManagerMixin(CheckpointManagerBase):
 
     def __init__(self,
                  *args,
@@ -62,3 +62,7 @@ class CheckpointManager(MultiProcessingMixin, CheckpointManagerBase):
             return True
 
         return super()._copy(source_fname, dest_fname)
+
+
+class CheckpointManager(MultiProcessingMixin, CheckpointManagerMixin):
+    pass

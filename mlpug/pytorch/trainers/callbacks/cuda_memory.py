@@ -3,9 +3,9 @@ import sys
 import torch
 import torch.distributed as dist
 
-from mlpug.pytorch.trainers.callbacks import Callback
-
 from mlpug.mlpug_exceptions import CallbackInvalidException
+
+from mlpug.pytorch.trainers.callbacks import Callback
 
 
 class EmptyCudaCache(Callback):
