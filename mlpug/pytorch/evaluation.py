@@ -16,7 +16,8 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 # DEFAULT FUNCTION TO GATHER LOSS IN DISTRIBUTED COMPUTING CONTEXT
-class GatherLossDistributed(MultiProcessingMixin, Base):
+# Using mixins for easy code reuse with MLPug for pytorch/xla
+class GatherLossDistributedMixin(Base):
 
     def __init__(self, requester=None, name=None, **kwargs):
         if name is None:
@@ -34,8 +35,8 @@ class GatherLossDistributed(MultiProcessingMixin, Base):
 
         if self.is_distributed:
             # Reduce to primary device
-            dist.reduce(loss_sum, 0)
-            dist.reduce(tot_num_samples, 0)
+            loss_sum = self._reduce(loss_sum)
+            tot_num_samples = self._reduce(tot_num_samples)
 
             if self.is_primary:
                 return loss_sum.item(), tot_num_samples.item()
@@ -44,9 +45,17 @@ class GatherLossDistributed(MultiProcessingMixin, Base):
         else:
             return loss_sum.item(), tot_num_samples.item()
 
+    def _reduce(self, tensor):
+        dist.reduce(tensor, 0)
+        return tensor
+
+
+class GatherLossDistributed(MultiProcessingMixin, GatherLossDistributedMixin):
+    pass
+
 
 # DEFAULT FUNCTION TO GATHER METRIC INPUT TENSORS IN DISTRIBUTED COMPUTING CONTEXT
-class GatherDistributedTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCMeta):
+class GatherDistributedTensorDataMixin(Base, metaclass=abc.ABCMeta):
     def __init__(self,
                  device,
                  batch_dim=0,
@@ -75,36 +84,52 @@ class GatherDistributedTensorData(MultiProcessingMixin, Base, metaclass=abc.ABCM
         raise NotImplementedError()
 
     def _gather(self, tensor):
-        if self.is_distributed:
-            gathered_tensors = None
-
-            if self.is_primary:
-                gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.world_size)]
-
-            torch.distributed.gather(tensor, gather_list=gathered_tensors)
-
-            if self.is_primary:
-                gathered_tensors = torch.concat(gathered_tensors, dim=self.batch_dim)
-        else:
-            gathered_tensors = tensor
+        gathered_tensors = self._gather_distributed(tensor) if self.is_distributed else tensor
 
         if gathered_tensors is not None and self.convert_to_numpy:
             gathered_tensors = gathered_tensors.cpu().numpy()
 
         return gathered_tensors
 
+    @abc.abstractmethod
+    def _gather_distributed(self, tensor):
+        raise NotImplementedError()
 
-class GatherDistributedTensorTuple(GatherDistributedTensorData):
+
+class GatherDistributedTensorTupleMixin:
 
     def __call__(self, gathered_input_data: Tuple) -> Collection:
-        return tuple(self._gather(tensor.to(self.device)) for tensor in gathered_input_data)
+        return tuple(self._gather(tensor.to(self.device))
+                     for tensor in gathered_input_data)
 
 
-class GatherDistributedTensorDict(GatherDistributedTensorData):
+class GatherDistributedTensorDictMixin:
 
     def __call__(self, gathered_input_data: Dict) -> Collection:
         return {metric_name: self._gather(tensor.to(self.device))
                 for metric_name, tensor in gathered_input_data.items()}
+
+class GatherDistributedTensorData(MultiProcessingMixin, GatherDistributedTensorDataMixin, metaclass=abc.ABCMeta):
+    def _gather_distributed(self, tensor):
+        gathered_tensors = None
+
+        if self.is_primary:
+            gathered_tensors = [torch.zeros_like(tensor) for _ in range(self.world_size)]
+
+        torch.distributed.gather(tensor, gather_list=gathered_tensors)
+
+        if self.is_primary:
+            gathered_tensors = torch.concat(gathered_tensors, dim=self.batch_dim)
+
+        return gathered_tensors
+
+
+class GatherDistributedTensorTuple(GatherDistributedTensorTupleMixin, GatherDistributedTensorData):
+    pass
+
+
+class GatherDistributedTensorDict(GatherDistributedTensorDictMixin, GatherDistributedTensorData):
+    pass
 
 
 # DEFAULT FUNCTION TO COMBINE GATHERED METRIC INPUTS
