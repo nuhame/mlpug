@@ -17,7 +17,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
 
     parser.add_argument(
         '--num-devices',
-        type=int, required=False, default=-1,
+        type=int, required=False, default=None,
         help='Number of computing devices to use in distributed mode. '
              'Default is all available devices')
 
@@ -80,7 +80,7 @@ def describe_args(args, logger):
     logger.info(f"Distributed: {args.distributed}")
     logger.info(f"No graph compilation (eager mode): {args.no_graph_compilation}")
 
-    num_devices_str = args.num_devices if args.num_devices > 0 else "Use all available"
+    num_devices_str = args.num_devices if args.num_devices is not None and args.num_devices > 0 else "Use all available"
     logger.info(f"Number of computing devices: {num_devices_str}")
     logger.info(f"Force on CPU: {args.force_on_cpu}")
 
