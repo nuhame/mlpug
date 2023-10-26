@@ -361,7 +361,7 @@ if __name__ == '__main__':
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
             exit(-1)
 
-        num_devices = args.num_devices if args.num_devices > 0 else num_gpus_available
+        num_devices = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_gpus_available
         if num_devices > num_gpus_available:
             logger.warn(f"Number of requested GPUs is lower than available GPUs, "
                         f"limiting training to {num_gpus_available} GPUS")

@@ -1,5 +1,7 @@
 import os
 
+import logging
+
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
@@ -310,7 +312,6 @@ class TrainingProcess(TrainingProcessBase):
 
 
 if __name__ == '__main__':
-
     # ############# SETUP LOGGING #############
     mlp.logging.use_fancy_colors()
     logger = get_logger(os.path.basename(__file__))
@@ -335,7 +336,7 @@ if __name__ == '__main__':
             logger.error("--distributed flag set, but no GPUs available, unable to train")
             exit(-1)
 
-        world_size = args.num_devices if args.num_devices > 0 else num_gpus_available
+        world_size = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_gpus_available
         if world_size > num_gpus_available:
             logger.warn(f"Number of requested GPUs is lower than available GPUs, "
                         f"limiting training to {num_gpus_available} GPUS")
