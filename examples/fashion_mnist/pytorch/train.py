@@ -1,6 +1,8 @@
 import os
 import sys
 
+from functools import cache
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -23,11 +25,9 @@ def load_data():
 
     training_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/',
                                              train=True,
-                                             download=True,
                                              transform=transform)
     test_data = tv.datasets.FashionMNIST('./mlpug-datasets-temp/',
                                          train=False,
-                                         download=True,
                                          transform=transform)
 
     ###########
@@ -45,8 +45,9 @@ def create_callbacks_for(trainer,
                          is_primary,
                          validation_dataset,
                          progress_log_period):
+    # TODO: add DistributedSamplerManager callbacks to reshuffle the data per epoch
 
-    # At minimum you want to log the loss in the training progress
+    # At minimum, you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
         # The trainer knows how to evaluate the model
@@ -177,18 +178,20 @@ def worker_fn(rank, args, world_size):
         training_sampler = torch.utils.data.distributed.DistributedSampler(training_data)
         validation_sampler = torch.utils.data.distributed.DistributedSampler(test_data)
 
-    training_dataset = torch.utils.data.DataLoader(training_data,
-                                                   batch_size=args.batch_size,
-                                                   shuffle=(training_sampler is None),
-                                                   sampler=training_sampler,
-                                                   num_workers=0)  # TODO: temporarily disabled due to issue
+    training_dataset = torch.utils.data.DataLoader(
+        training_data,
+        batch_size=args.batch_size,
+        shuffle=(training_sampler is None),
+        sampler=training_sampler,
+        num_workers=0)  # TODO: temporarily disabled due to issue
 
     # Using the test set as a validation set, just for demonstration purposes
-    validation_dataset = torch.utils.data.DataLoader(test_data,
-                                                     batch_size=args.batch_size,
-                                                     shuffle=(validation_sampler is None),
-                                                     sampler=validation_sampler,
-                                                     num_workers=0)  # TODO: temporarily disabled due to issue
+    validation_dataset = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=(validation_sampler is None),
+        sampler=validation_sampler,
+        num_workers=0)  # TODO: temporarily disabled due to issue
     # ##########################################
 
     # ############ BUILD THE MODEL #############
@@ -202,9 +205,10 @@ def worker_fn(rank, args, world_size):
         train_model = DDP(train_model, device_ids=[rank])
     # ############################################
 
-    # ############ SETUP OPTIMIZER #############
+    # ############ SETUP OPTIMIZER ##############
+    # Scale learning rate to num devices
     optimizer = torch.optim.Adam(classifier.parameters(), lr=args.learning_rate)
-    # ##########################################
+    # ###########################################
 
     # ############# SETUP TRAINING ##############
     trainer = mlp.trainers.DefaultTrainer(
@@ -219,20 +223,22 @@ def worker_fn(rank, args, world_size):
         "hidden_size": args.hidden_size
     }
 
-    callbacks = create_callbacks_for(trainer,
-                                     args.experiment_name,
-                                     model_hyper_parameters,
-                                     is_primary,
-                                     validation_dataset,
-                                     args.progress_log_period)
+    callbacks = create_callbacks_for(
+        trainer,
+        args.experiment_name,
+        model_hyper_parameters,
+        is_primary,
+        validation_dataset,
+        args.progress_log_period)
 
-    manager = mlp.trainers.TrainingManager(trainer,
-                                           training_dataset,
-                                           num_epochs=args.num_epochs,
-                                           callbacks=callbacks,
-                                           experiment_data={
-                                               "args": args
-                                           })
+    manager = mlp.trainers.TrainingManager(
+        trainer,
+       training_dataset,
+       num_epochs=args.num_epochs,
+       callbacks=callbacks,
+       experiment_data={
+           "args": args
+       })
 
     trainer.set_training_model(train_model)
     # ##########################################
@@ -294,7 +300,7 @@ if __name__ == '__main__':
             raise ValueError("Can't train in distributed mode and force training on CPU at the same time")
 
         num_gpus_available = torch.cuda.device_count()
-        world_size = args.num_devices if args.num_devices > 0 else num_gpus_available
+        world_size = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_gpus_available
         if world_size > num_gpus_available:
             logger.warn(f"Number of requested GPUs is lower than available GPUs, "
                         f"limiting training to {num_gpus_available} GPUS")
