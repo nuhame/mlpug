@@ -6,15 +6,14 @@ import contextlib
 from torch.cuda.amp import autocast
 import torch.distributed as dist
 
-from functools import reduce
-
 import basics.base_utils as _
+
+from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException
 
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
 
-from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException
 from mlpug.pytorch.utils import SlidingWindow
 from mlpug.batch_chunking import BatchChunkingResults, is_chunkable, apply_chunkable_batch_wrapper
 
@@ -31,10 +30,7 @@ class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
             dist.barrier()
 
 
-class PTTrainerMixin(MultiProcessingMixin):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class PTTrainerMixin:
 
     def _activate_inference_mode(self, inference_mode):
         if inference_mode:
@@ -55,14 +51,14 @@ class PTTrainerMixin(MultiProcessingMixin):
         optimizer.load_state_dict(state)
 
 
-class Trainer(PTTrainerMixin, TrainerBase):
+class Trainer(MultiProcessingMixin, PTTrainerMixin, TrainerBase):
     pass
 
 
-class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
+class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args, scaler=None, name="DefaultTrainer", **kwargs):
-        super(DefaultTrainer, self).__init__(*args, name=name, **kwargs)
+        super().__init__(*args, name=name, **kwargs)
 
         self._scaler = scaler
 
@@ -308,11 +304,18 @@ class DefaultTrainer(PTTrainerMixin, DefaultTrainerBase):
 
     def _update_model_parameters(self):
         for optimizer in self.get_optimizers().values():
-            if self.use_mixed_precision:
-                self._scaler.step(optimizer)
-            else:
-                optimizer.step()
+            self._execute_optimizer(optimizer)
+
+    def _execute_optimizer(self, optimizer):
+        if self.use_mixed_precision:
+            self._scaler.step(optimizer)
+        else:
+            optimizer.step()
 
     def _after_update_model_parameters(self):
         if self.use_mixed_precision:
             self._scaler.update()
+
+
+class DefaultTrainer(MultiProcessingMixin, DefaultTrainerMixin):
+    pass
