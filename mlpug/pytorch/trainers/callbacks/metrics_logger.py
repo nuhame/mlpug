@@ -1,12 +1,10 @@
-from mlpug.trainers.callbacks.metrics_logger import *
+from mlpug.pytorch.utils import SlidingWindow
 
 from mlpug.trainers.callbacks.metrics_logger import \
     TrainingMetricsLogger as TrainingMetricsLoggerBase, \
     DatasetMetricsLogger as DatasetMetricsLoggerBase
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
-
-from mlpug.pytorch.utils import SlidingWindow
 
 
 class TrainingMetricsLogger(MultiProcessingMixin, TrainingMetricsLoggerBase):
