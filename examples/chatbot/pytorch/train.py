@@ -1,9 +1,11 @@
 import os
 
-import logging
+import psutil
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
+
+import torch
 
 import mlpug.pytorch as mlp
 
@@ -133,30 +135,46 @@ class TrainingProcess(TrainingProcessBase):
         self._validation_sampler = None
 
     def _setup_compute(self):
-        use_cuda = torch.cuda.is_available()
-        if use_cuda:
-            torch.cuda.set_device(self.rank)
+        cuda_available = torch.cuda.is_available()
+        mps_available = torch.backends.mps.is_available()
+        if self.is_distributed:
+            self._log.info(f"Distributed Data Parallel (DDP) mode.")
 
-            if self.is_distributed:
-                os.environ['MASTER_ADDR'] = 'localhost'
-                os.environ['MASTER_PORT'] = '12355'
+            os.environ['MASTER_ADDR'] = 'localhost'
+            os.environ['MASTER_PORT'] = '12355'
 
-                dist.init_process_group(backend='nccl',
-                                        rank=self.rank,
-                                        world_size=self._num_devices)
+            if cuda_available and not self._args.force_on_cpu:
+                torch.cuda.set_device(self.rank)
+                self._device = torch.device("cuda")
 
-                self._log.info(f"Distributed Data Parallel mode.")
+                backend = 'nccl'
+
                 self._log.info(f"Training using multiple GPUs: Using GPU {self.rank}/{self.num_devices}")
             else:
-                self._log.info(f"Single device mode : Using GPU {self.rank}")
+                self._device = torch.device(f"cpu")
+                backend = 'gloo'
+                num_cores = psutil.cpu_count(logical=False)
+                num_threads = max(int(num_cores/self.num_devices), 1)
+                torch.set_num_threads(num_threads)
+
+                self._log.info(f"Training using multiple CPU cores: Worker {self.rank}/{self.num_devices}")
+                self._log.info(f"Number of threads per worker: {num_threads}")
+
+            dist.init_process_group(backend=backend,
+                                    rank=self.rank,
+                                    world_size=self.num_devices)
+
+            self._log.info(f"Communication backend used for DDP: {backend}")
         else:
-            if self.is_distributed:
-                self._log.error(f"No GPUs available for data distributed training over multiple GPUs")
-                return
-
-            self._log.info(f"Single device mode : Using CPU")
-
-        self._device = torch.device("cuda" if use_cuda else "cpu")
+            if cuda_available and not self._args.force_on_cpu:
+                self._device = torch.device("cuda")
+                self._log.info(f"Single device mode : Using GPU")
+            elif mps_available and not self._args.force_on_cpu:
+                self._device = torch.device("mps")
+                self._log.info(f"Single device mode : Using available Apple MPS device")
+            else:
+                self._device = torch.device("cpu")
+                self._log.info(f"Single device mode : Using CPU")
 
     def _execute_for_primary_device_first(self, func, *args, **kwargs):
         # In distributed training mode, we allow the primary process to download or generate and cache any data first.
@@ -234,7 +252,8 @@ class TrainingProcess(TrainingProcessBase):
 
         self._training_model.to(self._device)
         if self.is_distributed:
-            self._training_model = DDP(self._training_model, device_ids=[self.rank])
+            device_ids = [self.rank] if self._device.type == 'cuda' else None
+            self._training_model = DDP(self._training_model, device_ids=device_ids)
 
     def _build_optimizer(self):
         # Adapted from Huggingface Transformers package v4.17, Trainer::create_optimizer, transformers/trainer.py:827
@@ -330,19 +349,25 @@ if __name__ == '__main__':
         enable_pycharm_remote_debugging(args.remote_debug_ip)
 
     # ############## TRAIN MODEL ##############
+    cuda_available = torch.cuda.is_available()
     if args.distributed:
-        num_gpus_available = torch.cuda.device_count()
-        if num_gpus_available < 1:
-            logger.error("--distributed flag set, but no GPUs available, unable to train")
+
+        if cuda_available and not args.force_on_cpu:
+            num_devices_available = torch.cuda.device_count()
+        else:
+            num_devices_available = psutil.cpu_count(logical=False)
+
+        if num_devices_available < 1:
+            logger.error(f"--distributed flag set, but {num_devices_available} device available, unable to train")
             exit(-1)
 
-        world_size = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_gpus_available
-        if world_size > num_gpus_available:
-            logger.warn(f"Number of requested GPUs is lower than available GPUs, "
-                        f"limiting training to {num_gpus_available} GPUS")
-            world_size = num_gpus_available
+        world_size = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_devices_available
+        if world_size > num_devices_available:
+            logger.warn(f"Number of requested devices is lower than available devices, "
+                        f"limiting training to {num_devices_available} devices")
+            world_size = num_devices_available
 
-        logger.info(f"Spawning {world_size} training workers, one for each GPU.")
+        logger.info(f"Spawning {world_size} training workers, one for each device.")
         logger.info(f"Global batch size: {args.batch_size*world_size}")
 
         mp.spawn(worker_fn,
