@@ -137,8 +137,9 @@ def worker_fn(rank, args, world_size):
     # ########################################
 
     # ############## DEVICE SETUP ##############
-    use_cuda = torch.cuda.is_available()
-    if use_cuda and not args.force_on_cpu:
+    cuda_available = torch.cuda.is_available()
+    mps_available = torch.backends.mps.is_available()
+    if cuda_available and not args.force_on_cpu:
         torch.cuda.set_device(rank)
 
         if distributed:
@@ -157,9 +158,12 @@ def worker_fn(rank, args, world_size):
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
             return
 
-        logger.info(f"Single device mode : Using CPU")
-
-        device = torch.device("cpu")
+        if mps_available and not args.force_on_cpu:
+            device = torch.device("mps")
+            logger.info(f"Single device mode : Using available Apple MPS device")
+        else:
+            device = torch.device("cpu")
+            logger.info(f"Single device mode : Using CPU")
 
     # ########################################
 
