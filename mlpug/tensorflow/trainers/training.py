@@ -535,7 +535,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             )
 
     def _call_model(self, batch_data, evaluate_settings, inference_mode):
-        return self.training_model(batch_data, evaluate_settings, inference_mode)
+        return self.training_model(batch_data, evaluate_settings, inference_mode=inference_mode)
 
     def _calc_gradients(self, batch_data, training_settings):
         """
