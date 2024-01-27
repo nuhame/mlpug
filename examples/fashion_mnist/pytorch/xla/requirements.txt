@@ -1,0 +1,4 @@
+torch~=2.1.0
+torchvision
+--find-links https://storage.googleapis.com/libtpu-releases/index.html
+torch_xla[tpu]~=2.1.0
