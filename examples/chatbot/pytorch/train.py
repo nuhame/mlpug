@@ -354,15 +354,11 @@ if __name__ == '__main__':
     if args.distributed:
 
         if cuda_available and not args.force_on_cpu:
+            # System with Nvidia GPUs
             num_devices_available = torch.cuda.device_count()
         else:
-            if not mps_available:
-                num_devices_available = None
-            else:
-                # Distributed on Apple M chips implies using the CPU cores as threads for single training process
-                num_devices_available = 1
-                logger.warning(f"On Apple M chips the number of CPUs is 1, no distribution will be performed. \n"
-                               f"Compute for training will be performed using available cores.")
+            # Need to manually provide number of devices
+            num_devices_available = None
 
         if num_devices_available is not None and num_devices_available < 1:
             logger.error(f"--distributed flag set, but {num_devices_available} device available, unable to train")
@@ -376,12 +372,14 @@ if __name__ == '__main__':
         if world_size is None:
             logger.error(f"The number of devices available could not be determined, please set --num-devices manually.")
 
-        if world_size > num_devices_available:
-            logger.warn(f"Number of requested devices is lower than available devices, "
-                        f"limiting training to {num_devices_available} devices")
+        # Only on systems with GPUs we can't scale beyond number of GPUs. On CPU, we could divide the available cores
+        # over different training processes.
+        if cuda_available and not args.force_on_cpu and world_size > num_devices_available:
+            logger.warning(f"Number of requested devices is higher than available devices, "
+                           f"limiting training to {num_devices_available} devices")
             world_size = num_devices_available
 
-        logger.info(f"Spawning {world_size} training workers, one for each device.")
+        logger.info(f"Spawning {world_size} training workers.")
         logger.info(f"Global batch size: {args.batch_size*world_size}")
 
         mp.spawn(worker_fn,
