@@ -355,13 +355,17 @@ if __name__ == '__main__':
         if cuda_available and not args.force_on_cpu:
             num_devices_available = torch.cuda.device_count()
         else:
-            num_devices_available = psutil.cpu_count(logical=False)
+            num_devices_available = os.cpu_count()
 
         if num_devices_available < 1:
             logger.error(f"--distributed flag set, but {num_devices_available} device available, unable to train")
             exit(-1)
 
-        world_size = args.num_devices if args.num_devices is not None and args.num_devices > 0 else num_devices_available
+        world_size = (
+            args.num_devices if args.num_devices is not None and args.num_devices > 0
+            else num_devices_available
+        )
+
         if world_size > num_devices_available:
             logger.warn(f"Number of requested devices is lower than available devices, "
                         f"limiting training to {num_devices_available} devices")
