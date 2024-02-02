@@ -137,7 +137,7 @@ class TrainingProcess(TrainingProcessBase):
     def _setup_compute(self):
         cuda_available = torch.cuda.is_available()
         mps_available = torch.backends.mps.is_available()
-        if self.is_distributed:
+        if self._args.distributed:
             self._log.info(f"Distributed Data Parallel (DDP) mode.")
 
             os.environ['MASTER_ADDR'] = 'localhost'
@@ -154,7 +154,7 @@ class TrainingProcess(TrainingProcessBase):
                 self._device = torch.device(f"cpu")
                 backend = 'gloo'
                 num_cores = psutil.cpu_count(logical=False)
-                num_threads = max(int(num_cores/self.num_devices), 1)
+                num_threads = max(int((num_cores-self._args.num_dataloader_workers)/self.num_devices), 1)
                 torch.set_num_threads(num_threads)
 
                 self._log.info(f"Training using multiple CPU cores: Worker {self.rank}/{self.num_devices}")
@@ -350,14 +350,21 @@ if __name__ == '__main__':
 
     # ############## TRAIN MODEL ##############
     cuda_available = torch.cuda.is_available()
+    mps_available = torch.backends.mps.is_available()
     if args.distributed:
 
         if cuda_available and not args.force_on_cpu:
             num_devices_available = torch.cuda.device_count()
         else:
-            num_devices_available = os.cpu_count()
+            if not mps_available:
+                num_devices_available = None
+            else:
+                # Distributed on Apple M chips implies using the CPU cores as threads for single training process
+                num_devices_available = 1
+                logger.warning(f"On Apple M chips the number of CPUs is 1, no distribution will be performed. \n"
+                               f"Compute for training will be performed using available cores.")
 
-        if num_devices_available < 1:
+        if num_devices_available is not None and num_devices_available < 1:
             logger.error(f"--distributed flag set, but {num_devices_available} device available, unable to train")
             exit(-1)
 
@@ -365,6 +372,9 @@ if __name__ == '__main__':
             args.num_devices if args.num_devices is not None and args.num_devices > 0
             else num_devices_available
         )
+
+        if world_size is None:
+            logger.error(f"The number of devices available could not be determined, please set --num-devices manually.")
 
         if world_size > num_devices_available:
             logger.warn(f"Number of requested devices is lower than available devices, "
