@@ -153,7 +153,7 @@ class TrainingProcess(TrainingProcessBase):
             else:
                 self._device = torch.device(f"cpu")
                 backend = 'gloo'
-                num_cores = psutil.cpu_count(logical=False)
+                num_cores = psutil.cpu_count(logical=True)
                 # Data loader workers per training worker
                 num_dataloader_workers = max(self._args.num_dataloader_workers, 0)
                 num_threads = max(int(num_cores/self.num_devices)-num_dataloader_workers, 1)
