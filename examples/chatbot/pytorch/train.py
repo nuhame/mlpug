@@ -154,7 +154,9 @@ class TrainingProcess(TrainingProcessBase):
                 self._device = torch.device(f"cpu")
                 backend = 'gloo'
                 num_cores = psutil.cpu_count(logical=False)
-                num_threads = max(int((num_cores-self._args.num_dataloader_workers)/self.num_devices), 1)
+                # Data loader workers per training worker
+                num_dataloader_workers = max(self._args.num_dataloader_workers, 0)
+                num_threads = max(int(num_cores/self.num_devices)-num_dataloader_workers, 1)
                 torch.set_num_threads(num_threads)
 
                 self._log.info(f"Training using multiple CPU cores: Worker {self.rank}/{self.num_devices}")
