@@ -2,3 +2,4 @@ datasets
 torch
 tensorboard
 psutil
+botshop

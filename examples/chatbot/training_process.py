@@ -17,6 +17,8 @@ from basics.logging import get_logger
 import mlpug.abstract_interface as mlp_interface
 from mlpug.base import Base
 
+from examples.chatbot.special_tokens import SPECIAL_TOKENS_MAPPING
+
 from examples.chatbot.datasets.manager import DatasetManager
 from examples.chatbot.datasets.multiple_choice import max_sequence_length_in
 
@@ -97,13 +99,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     #          This will allow your IDE to find code references to the BASE classes of MLP,
     #          not of your chosen mlpug implementation!
     MLPUG_MODULE = mlp_interface
-
-    SPECIAL_TOKENS_MAPPING = {
-        'bos_token': '<bos>',
-        'eos_token': '<eos>',
-        'pad_token': '<pad>',
-        'additional_special_tokens': ['<speaker1>', '<speaker2>']
-    }
 
     def __init__(self, rank, args, num_devices, name="TrainingProcess"):
         logger_name, disable_logging = self.get_logger_info(rank, num_devices, name)
@@ -191,10 +186,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         sample_factory = ConversationSampleFactory(
             tokenizer_func,
-            bos=self.SPECIAL_TOKENS_MAPPING['bos_token'],
-            eos=self.SPECIAL_TOKENS_MAPPING['eos_token'],
-            speaker1=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
-            speaker2=self.SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
+            bos=SPECIAL_TOKENS_MAPPING['bos_token'],
+            eos=SPECIAL_TOKENS_MAPPING['eos_token'],
+            speaker1=SPECIAL_TOKENS_MAPPING['additional_special_tokens'][0],
+            speaker2=SPECIAL_TOKENS_MAPPING['additional_special_tokens'][1])
 
         dataset_manager = DatasetManager(
             sample_factory,
@@ -229,7 +224,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._hf_tokenizer = GPT2Tokenizer.from_pretrained(self._args.pretrained_model)
         self._orig_num_tokens = len(self._hf_tokenizer.encoder)
 
-        self._num_special_tokens = self._hf_tokenizer.add_special_tokens(self.SPECIAL_TOKENS_MAPPING)
+        self._num_special_tokens = self._hf_tokenizer.add_special_tokens(SPECIAL_TOKENS_MAPPING)
         self._log.debug(f"Number of special tokens added to tokenizer : {self._num_special_tokens}")
 
     def _generate_dataset(self, manager, dataset_name):
