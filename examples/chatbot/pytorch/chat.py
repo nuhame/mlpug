@@ -1,7 +1,9 @@
 import os
 
+from functools import partial
+from typing import List, Optional, Callable, Tuple
+
 import argparse
-from typing import List, Optional, Callable
 
 import torch
 from botshop.simple_bot import chat_with
@@ -9,32 +11,62 @@ from transformers import PreTrainedTokenizer, GPT2Tokenizer, GPT2DoubleHeadsMode
 
 from botshop import ModelEvaluatorBase, IOProcessorBase, SimpleBot
 from botshop.pytorch import BasicConversationEngine
-from botshop.pytorch.utils import select_max
+from botshop.pytorch.utils import select_max, filter_top_p, random_sample
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.pytorch as mlp
 
-from examples.chatbot.special_tokens import SPECIAL_TOKENS_MAPPING
-from examples.legacy.chatbot.tensorflow.original_transformer_tutorial.evaluation import Chatbot
+from examples.chatbot.special_tokens import SPECIAL_TOKENS_MAPPING, SPECIAL_TOKENS
+
+# ############# SETUP LOGGING #############
+mlp.logging.use_fancy_colors()
+module_logger = get_logger(os.path.basename(__file__))
+# ########################################
 
 
-def build_tokenizer_and_model_from(model_path: str, device: Optional[torch.device] = None):
+def get_default_device() -> torch.device:
+    cuda_available = torch.cuda.is_available()
+    mps_available = torch.backends.mps.is_available()
+
+    if cuda_available:
+        return torch.device("cuda")
+    elif mps_available:
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
+
+
+def build_tokenizer_and_model_from(
+        model_path: str,
+        device: Optional[torch.device] = None,
+        logger=None
+) -> Tuple[GPT2Tokenizer, GPT2DoubleHeadsModel]:
+    if logger is None:
+        logger = module_logger
+
     if device is None:
-        device = torch.device("cpu")
+        device = get_default_device()
+        # device = torch.device("cpu")
+
+    logger.info(f"Using device: {device}")
 
     logger.info(f'Loading model checkpoint ...')
     checkpoint = torch.load(model_path, map_location=device)
 
-    tokenizer = GPT2Tokenizer.from_pretrained(**checkpoint['hyper_parameters'])
+    hyper_params = checkpoint['hyper_parameters']
+    pretrained_model_name_or_path = hyper_params["pretrained_model"]
+
+    tokenizer = GPT2Tokenizer.from_pretrained(pretrained_model_name_or_path=pretrained_model_name_or_path)
     orig_num_tokens = len(tokenizer)
     num_special_tokens = tokenizer.add_special_tokens(SPECIAL_TOKENS_MAPPING)
 
-    model = GPT2DoubleHeadsModel.from_pretrained(**checkpoint['hyper_parameters'])
+    model = GPT2DoubleHeadsModel.from_pretrained(pretrained_model_name_or_path=pretrained_model_name_or_path)
     model.resize_token_embeddings(new_num_tokens=orig_num_tokens + num_special_tokens)
 
     model.load_state_dict(checkpoint['model'])
+    model = model.to(device)
 
     return tokenizer, model
 
@@ -44,6 +76,28 @@ def load_persona_data(persona_file_path: str):
         bot_personality = [line.rstrip() for line in file]
 
     return [line for line in bot_personality if len(line) > 0]
+
+
+def select_top_p_random(logits, top_p=0.70, sample_temp=0.9):
+    logits = logits/sample_temp
+
+    logits, top_p_index = filter_top_p(logits, top_p=top_p)
+    p, selected_token = random_sample(logits)
+
+    return p, top_p_index[selected_token]
+
+
+def sequence_end_detector_func(
+        response: List[int],
+        scores: List[float],
+        end_token_ids: List[int]
+) -> Optional[List[int]]:
+
+    if response[-1] in end_token_ids:
+        return [response[-1]]
+    else:
+        return None
+
 
 class ModelEvaluator(ModelEvaluatorBase):
 
@@ -56,6 +110,8 @@ class ModelEvaluator(ModelEvaluatorBase):
 
         self._model = model
         self._speaker2_id = speaker2_id
+
+        self._device = self._model.device
 
     def reset_state(self):
         pass
@@ -78,12 +134,19 @@ class ModelEvaluator(ModelEvaluatorBase):
 
         :return: None
         """
+
+        input_ids = torch.LongTensor(inputs["input_ids"]).to(self._device)
+        token_type_ids = torch.LongTensor(inputs["token_type_ids"]).to(self._device)
         if conversation_start:
-            conversation_context["input_ids"] = inputs["input_ids"]
-            conversation_context["token_type_ids"] = inputs["token_type_ids"]
+            conversation_context["input_ids"] = input_ids
+            conversation_context["token_type_ids"] = token_type_ids
         else:
-            conversation_context["input_ids"] += inputs["input_ids"]
-            conversation_context["token_type_ids"] += inputs["token_type_ids"]
+            conversation_context["input_ids"] = torch.cat(
+                (conversation_context["input_ids"], input_ids)
+            )
+            conversation_context["token_type_ids"] = torch.cat(
+                (conversation_context["token_type_ids"], token_type_ids)
+            )
 
     def predict_next_token(self, previous_token, prediction_context, conversation_context):
         """
@@ -98,18 +161,29 @@ class ModelEvaluator(ModelEvaluatorBase):
         :return: model output logits
         """
         if previous_token is None:
+            # Prompt start of bot response
+            previous_token = self._speaker2_id
+
             input_ids = conversation_context["input_ids"]
             token_type_ids = conversation_context["token_type_ids"]
         else:
-            input_ids = prediction_context["input_ids"] + previous_token
-            token_type_ids = prediction_context["token_type_ids"] + self._speaker2_id
+            input_ids = prediction_context["input_ids"]
+            token_type_ids = prediction_context["token_type_ids"]
+
+        input_ids = torch.cat(
+            (input_ids, torch.LongTensor([previous_token]).to(self._device))
+        )
+        token_type_ids = torch.cat(
+            (token_type_ids, torch.LongTensor([self._speaker2_id]).to(self._device))
+        )
 
         prediction_context["input_ids"] = input_ids
         prediction_context["token_type_ids"] = token_type_ids
 
-        outputs = self._model(input_ids=input_ids, token_type_ids=token_type_ids)
+        with torch.no_grad():
+            outputs = self._model(input_ids=input_ids, token_type_ids=token_type_ids)
 
-        return outputs.logits[:, -1, :].squeeze()
+        return outputs.logits[-1, :].squeeze()
 
 
 class IOProcessor(IOProcessorBase):
@@ -138,13 +212,6 @@ class IOProcessor(IOProcessorBase):
         self.speaker1_id = self._get_token_id_of(speaker1)
         self.speaker2_id = self._get_token_id_of(speaker2)
 
-        self._input_ids = None
-        self._token_type_ids = None
-
-    def reset_state(self):
-        self._input_ids = None
-        self._token_type_ids = None
-
     def process_inputs(self, inputs, conversation_start):
         """
 
@@ -158,9 +225,11 @@ class IOProcessor(IOProcessorBase):
 
         :return:
         """
+        input_ids = []
+        token_type_ids = []
         if conversation_start:
-            self._input_ids = [self.bos_id] + self._personality_sequence_ids
-            self._token_type_ids = [self.speaker2_id] * (len(self._personality_sequence_ids) + 1)
+            input_ids = [self.bos_id] + self._personality_sequence_ids
+            token_type_ids = [self.speaker2_id] * (len(self._personality_sequence_ids) + 1)
 
         chats, is_user = self._get_input_chats(inputs, conversation_start)
 
@@ -169,12 +238,12 @@ class IOProcessor(IOProcessorBase):
 
             chat_ids = [speaker_id] + self._tokenizer_func(chat)
 
-            self._input_ids += chat_ids
-            self._token_type_ids += [speaker_id] * len(chat_ids)
+            input_ids += chat_ids
+            token_type_ids += [speaker_id] * len(chat_ids)
 
         return {
-            "input_ids": self._input_ids.copy(),
-            "token_type_ids": self._token_type_ids.copy()
+            "input_ids": input_ids,
+            "token_type_ids": token_type_ids
         }
 
     def process_response(self, response, scores=None, stop_sequence=None):
@@ -220,6 +289,7 @@ class IOProcessor(IOProcessorBase):
 
         return token_id[0]
 
+
 def create_arg_parser(description="Chat with persona aware chatbot"):
     parser = argparse.ArgumentParser(description=description)
 
@@ -243,10 +313,7 @@ def describe_args(args, logger):
 
 
 if __name__ == '__main__':
-    # ############# SETUP LOGGING #############
-    mlp.logging.use_fancy_colors()
-    logger = get_logger(os.path.basename(__file__))
-    # ########################################
+    logger = module_logger
 
     # ############## PARSE ARGS ##############
     parser = create_arg_parser()
@@ -267,11 +334,15 @@ if __name__ == '__main__':
 
     model_evaluator = ModelEvaluator(model, speaker2_id=io_processor.speaker2_id)
 
+    special_token_ids = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS)
+    sequence_end_detector = partial(sequence_end_detector_func, end_token_ids=special_token_ids)
+
     conversation_engine = BasicConversationEngine(
         io_processor,
         model_evaluator,
-        select_token_func=select_max,
-        sequence_end_token=io_processor.speaker1_id
+        select_token_func=select_top_p_random,
+        sequence_end_detector_func=sequence_end_detector,
+        max_response_length=100
     )
 
     chatbot = SimpleBot(conversation_engine)
