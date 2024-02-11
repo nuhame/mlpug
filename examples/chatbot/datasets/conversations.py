@@ -100,7 +100,8 @@ class ConversationSampleFactory(Base):
         input_ids += reply_ids
         token_type_ids += [self._speaker2_id] * len(reply_ids)
         if is_real_reply:
-            token_label_ids += [self._ignore_label] + candidate_reply_ids + [self._ignore_label]
+            # Also predict EOS token, such that during inference we can recognize the end of the reply.
+            token_label_ids += [self._ignore_label] + candidate_reply_ids + [self._eos_id]
         else:
             token_label_ids += [self._ignore_label]*len(reply_ids)
 
