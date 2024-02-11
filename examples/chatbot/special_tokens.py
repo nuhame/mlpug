@@ -4,3 +4,5 @@ SPECIAL_TOKENS_MAPPING = {
     'pad_token': '<pad>',
     'additional_special_tokens': ['<speaker1>', '<speaker2>']
 }
+
+SPECIAL_TOKENS = ['<bos>', '<eos>', '<pad>', '<speaker1>', '<speaker2>']
