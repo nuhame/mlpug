@@ -2,7 +2,7 @@ import numpy as np
 
 import tensorflow as tf
 
-from examples.chatbot.tensorflow.collation import MultipleChoiceCollator
+from examples.persona_chatbot.tensorflow.collation import MultipleChoiceCollator
 
 samples = [
     [

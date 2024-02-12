@@ -9,7 +9,7 @@ from basics.logging import get_logger
 
 from mlpug.base import Base
 
-from examples.chatbot.datasets.conversations import ConversationSample
+from examples.persona_chatbot.datasets.conversations import ConversationSample
 
 
 module_logger = get_logger(os.path.basename(__file__))

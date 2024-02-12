@@ -7,9 +7,9 @@ from typing import Optional, Sequence, List
 
 from mlpug.base import Base
 
-from examples.chatbot.datasets.conversations import ConversationSample
-from examples.chatbot.datasets.multiple_choice import MultipleChoiceGenerator
-from examples.chatbot.datasets.distributed import DistributedSampleGenerator
+from examples.persona_chatbot.datasets.conversations import ConversationSample
+from examples.persona_chatbot.datasets.multiple_choice import MultipleChoiceGenerator
+from examples.persona_chatbot.datasets.distributed import DistributedSampleGenerator
 
 from basics.logging_utils import log_exception
 from basics.logging import get_logger
