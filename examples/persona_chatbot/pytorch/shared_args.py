@@ -1,5 +1,5 @@
-from examples.chatbot.shared_args import create_arg_parser as create_base_arg_parser
-from examples.chatbot.shared_args import describe_args as describe_base_args
+from examples.persona_chatbot.shared_args import create_arg_parser as create_base_arg_parser
+from examples.persona_chatbot.shared_args import describe_args as describe_base_args
 
 
 def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using PyTorch"):

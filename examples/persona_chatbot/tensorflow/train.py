@@ -11,10 +11,10 @@ import mlpug.tensorflow as mlp
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
-from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
-from examples.chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
+from examples.persona_chatbot.training_process import TrainingProcess as TrainingProcessBase
+from examples.persona_chatbot.tensorflow.collation import MultipleChoiceCollator, CollatedSampleGenerator
 
-from examples.chatbot.shared_args import create_arg_parser, describe_args
+from examples.persona_chatbot.shared_args import create_arg_parser, describe_args
 
 mlp.logging.use_fancy_colors()
 module_logger = get_logger(os.path.basename(__file__))

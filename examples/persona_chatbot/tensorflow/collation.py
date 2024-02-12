@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from mlpug.base import Base
 
-from examples.chatbot.datasets.conversations import ConversationSample
+from examples.persona_chatbot.datasets.conversations import ConversationSample
 
 
 class CollatedSampleGenerator:

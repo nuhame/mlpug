@@ -17,7 +17,7 @@ from basics.logging import get_logger
 
 import mlpug.pytorch as mlp
 
-from examples.chatbot.special_tokens import SPECIAL_TOKENS_MAPPING, SPECIAL_TOKENS
+from examples.persona_chatbot.special_tokens import SPECIAL_TOKENS_MAPPING, SPECIAL_TOKENS
 
 # ############# SETUP LOGGING #############
 mlp.logging.use_fancy_colors()

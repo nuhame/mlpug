@@ -11,10 +11,10 @@ import mlpug.pytorch as mlp
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
-from examples.chatbot.training_process import TrainingProcess as TrainingProcessBase
-from examples.chatbot.pytorch.collation import BatchCollator
+from examples.persona_chatbot.training_process import TrainingProcess as TrainingProcessBase
+from examples.persona_chatbot.pytorch.collation import BatchCollator
 
-from examples.chatbot.pytorch.shared_args import create_arg_parser, describe_args
+from examples.persona_chatbot.pytorch.shared_args import create_arg_parser, describe_args
 
 module_logger = get_logger(os.path.basename(__file__))
 

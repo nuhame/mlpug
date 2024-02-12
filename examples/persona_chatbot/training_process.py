@@ -17,13 +17,13 @@ from basics.logging import get_logger
 import mlpug.abstract_interface as mlp_interface
 from mlpug.base import Base
 
-from examples.chatbot.special_tokens import SPECIAL_TOKENS_MAPPING
+from examples.persona_chatbot.special_tokens import SPECIAL_TOKENS_MAPPING
 
-from examples.chatbot.datasets.manager import DatasetManager
-from examples.chatbot.datasets.multiple_choice import max_sequence_length_in
+from examples.persona_chatbot.datasets.manager import DatasetManager
+from examples.persona_chatbot.datasets.multiple_choice import max_sequence_length_in
 
-from examples.chatbot.datasets.tokenizers import HFTokenizer
-from examples.chatbot.datasets.conversations import ConversationSampleFactory
+from examples.persona_chatbot.datasets.tokenizers import HFTokenizer
+from examples.persona_chatbot.datasets.conversations import ConversationSampleFactory
 
 
 module_logger = get_logger(os.path.basename(__file__))
