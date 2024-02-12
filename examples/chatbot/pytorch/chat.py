@@ -13,7 +13,6 @@ from botshop import ModelEvaluatorBase, IOProcessorBase, SimpleBot
 from botshop.pytorch import BasicConversationEngine
 from botshop.pytorch.utils import select_max, filter_top_p, random_sample
 
-from basics.logging_utils import log_exception
 from basics.logging import get_logger
 
 import mlpug.pytorch as mlp
@@ -48,7 +47,6 @@ def build_tokenizer_and_model_from(
 
     if device is None:
         device = get_default_device()
-        # device = torch.device("cpu")
 
     logger.info(f"Using device: {device}")
 
@@ -76,6 +74,13 @@ def load_persona_data(persona_file_path: str):
         bot_personality = [line.rstrip() for line in file]
 
     return [line for line in bot_personality if len(line) > 0]
+
+
+def create_token_selection_func(top_p=0.70, sample_temp=0.9):
+    if sample_temp <= 0.0:
+        return select_max
+
+    return partial(select_top_p_random, top_p=top_p, sample_temp=sample_temp)
 
 
 def select_top_p_random(logits, top_p=0.70, sample_temp=0.9):
@@ -304,12 +309,26 @@ def create_arg_parser(description="Chat with persona aware chatbot"):
         help='Path to a file containing a newline separated list of sentences describing the bot persona.'
     )
 
+    parser.add_argument(
+        '--sample-temp',
+        type=float, required=False, default=0.9,
+        help='Sampling temperature for random token sampling. When <= 0, no sampling is performed.'
+    )
+
+    parser.add_argument(
+        '--top-p',
+        type=float, required=False, default=0.7,
+        help='top-p (nucleus) value to pre-select most likely tokens for random sampling'
+    )
+
     return parser
 
 
 def describe_args(args, logger):
     logger.info(f"Model path: {args.model_path}")
     logger.info(f"Persona file path: {args.persona_file_path}")
+    logger.info(f"Sample temp.: {args.sample_temp}")
+    logger.info(f"Top-p: {args.top_p}")
 
 
 if __name__ == '__main__':
@@ -337,12 +356,15 @@ if __name__ == '__main__':
     special_token_ids = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS)
     sequence_end_detector = partial(sequence_end_detector_func, end_token_ids=special_token_ids)
 
+    select_token_func = create_token_selection_func(top_p=args.top_p, sample_temp=args.sample_temp)
+    logger.info(f"Select token functions: {select_token_func}")
+
     conversation_engine = BasicConversationEngine(
         io_processor,
         model_evaluator,
-        select_token_func=select_top_p_random,
+        select_token_func=select_token_func,
         sequence_end_detector_func=sequence_end_detector,
-        max_response_length=100
+        max_response_length=40
     )
 
     chatbot = SimpleBot(conversation_engine)
