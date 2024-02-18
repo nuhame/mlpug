@@ -77,6 +77,7 @@ class Trainer(TFTrainerMixin, TrainerBase):
 class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
     def __init__(self, *args,
+                 use_mixed_precision=False,
                  eager_mode=False,
                  batch_data_signature=None,
                  training_settings_signature=None,
@@ -114,7 +115,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         :param kwargs:
         """
-        super(DefaultTrainer, self).__init__(*args, name=name, **kwargs)
+        if use_mixed_precision:
+            raise NotImplementedError("Mixed precision is not implemented yet for Tensorflow")
+
+        super(DefaultTrainer, self).__init__(*args, use_mixed_precision=use_mixed_precision, name=name, **kwargs)
 
         self._eager_mode = eager_mode
         self._batch_data_signature = batch_data_signature

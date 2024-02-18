@@ -55,7 +55,7 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
 
     parser.add_argument(
         '--lm-loss-weight',
-        type=float, required=False, default=2.0,
+        type=float, required=False, default=1.0,
         help='LM task loss weight in overall loss, combined with Next Sentence Prediction loss')
 
     parser.add_argument(

@@ -32,6 +32,11 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         help='When flag is set, forward and backward computation graphs will NOT be compiled (i.e. eager mode')
 
     parser.add_argument(
+        '--use-mixed-precision',
+        action='store_true',
+        help='When flag is set, mixed precision will be applied during training')
+
+    parser.add_argument(
         '--batch-size',
         type=int, required=False, default=16,
         help='Batch size (per process/replica)')
@@ -79,6 +84,7 @@ def describe_args(args, logger):
     logger.info(f"Random seed: {args.seed}")
     logger.info(f"Distributed: {args.distributed}")
     logger.info(f"No graph compilation (eager mode): {args.no_graph_compilation}")
+    logger.info(f"Use mixed precision: {args.use_mixed_precision}")
 
     num_devices_str = args.num_devices if args.num_devices is not None and args.num_devices > 0 else "Use all available"
     logger.info(f"Number of computing devices: {num_devices_str}")
