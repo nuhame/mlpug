@@ -1043,6 +1043,7 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
+                 eager_mode: bool = False,
                  batch_chunk_size: Optional[int] = None,
                  chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  use_mixed_precision=False,
@@ -1053,6 +1054,8 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
         :param optimizers: dict or list with optimizer(s), or a single optimizer instance
         :param model_components: dict or list with model components(s), or a single model instance
+
+        :param eager_mode: If true, the training step is not compiled
 
         :param batch_chunk_size: optional batch chunk size (int)
             Enables gradient accumulation. If given, batches are processed in
@@ -1088,6 +1091,9 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         optimizers = convert_to_dict("optimizer", optimizers)
 
         super().__init__(model_components, optimizers, name=name, **kwargs)
+
+        # TODO: add property getters, disable setting
+        self.eager_mode = eager_mode
 
         self.batch_chunk_size = batch_chunk_size
         self.chunkable_batch_wrapper = chunkable_batch_wrapper
