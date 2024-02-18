@@ -288,7 +288,7 @@ class TrainingProcess(TrainingProcessBase):
 
         # Tensorflow only needs batch_data_signature as additional argument, compared to PyTorch
         return {
-            "eager_mode": self._args.no_graph_compilation,
+            "eager_mode": self._args.eager_mode,
             "distribution_strategy": self._distribution_strategy,
             "batch_data_signature": self._batch_training_set.element_spec,
             "monitor_tracing": True

@@ -137,6 +137,16 @@ class TrainingProcess(TrainingProcessBase):
     def _setup_compute(self):
         cuda_available = torch.cuda.is_available()
         mps_available = torch.backends.mps.is_available()
+
+        # Optimizations and mitigating issues:
+        if cuda_available and not self._args.force_on_cpu:
+            if not self._args.eager_mode:
+                torch.set_float32_matmul_precision('high')
+
+            if self._args.distributed and self._args.activation_checkpointing:
+                # See issue https://github.com/pytorch/pytorch/issues/108269#issuecomment-1703563821
+                torch._dynamo.config.optimize_ddp = False
+
         if self._args.distributed:
             self._log.info(f"Distributed Data Parallel (DDP) mode.")
 

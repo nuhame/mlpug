@@ -153,6 +153,10 @@ def worker_fn(rank, args, world_size):
             logger.info(f"Single device mode : Using GPU {rank} ")
 
         device = torch.device("cuda")
+
+        # Torch CUDA optimization when compiling
+        if not args.eager_mode:
+            torch.set_float32_matmul_precision('high')
     else:
         if distributed:
             logger.error(f"No GPUs available for data distributed training over multiple GPUs")
@@ -218,6 +222,7 @@ def worker_fn(rank, args, world_size):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
+        eager_mode=args.eager_mode,
         use_mixed_precision=args.use_mixed_precision,
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
@@ -297,7 +302,6 @@ if __name__ == '__main__':
 
     describe_args(args, logger)
 
-    logger.warning("Graph compilation is not available for MLPug with PyTorch yet.")
     # ############## TRAIN MODEL ##############
     if args.distributed:
 
