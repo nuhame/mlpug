@@ -8,7 +8,7 @@ import torch.distributed as dist
 
 import basics.base_utils as _
 
-from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException
+from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException, TrainerStateInvalidException
 
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
@@ -57,8 +57,8 @@ class Trainer(MultiProcessingMixin, PTTrainerMixin, TrainerBase):
 
 class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, scaler=None, name="DefaultTrainer", **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+    def __init__(self, *args, scaler=None, eager_mode=False, name="DefaultTrainer", **kwargs):
+        super().__init__(*args, eager_mode=eager_mode, name=name, **kwargs)
 
         self._scaler = scaler
 
@@ -71,10 +71,18 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         self.no_grad_sync_available = False
 
+        self._training_step_func = None
+
     def set_training_model(self, model):
         super().set_training_model(model)
 
         self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
+
+        if not self.eager_mode:
+            self._training_step_func = torch.compile(self._training_step)
+        else:
+            self._training_step_func = self._training_step
+            self._log.warn("Training in eager mode.")
 
     def set_learning_rate_for(self, optimizer_name, lr):
         """
@@ -154,6 +162,18 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         if not self.instance_valid():
             raise TrainerInvalidException()
+
+        if not callable(self._training_step_func):
+            raise TrainerStateInvalidException("Training_step_func is not callable. "
+                                               "You must first call` my_trainer.set_training_model(my_model)`")
+
+        return self._training_step_func(batch_data, training_settings=training_settings)
+
+    def _training_step(self, batch_data, training_settings=None):
+        """
+        See train_on, for documentation.
+        This function will be compiled when not training in eager mode
+        """
 
         self._reset_gradients()
 
