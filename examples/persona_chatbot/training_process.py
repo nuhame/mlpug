@@ -327,6 +327,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._trainer = mlp.trainers.DefaultTrainer(
             optimizers=self._optimizer,
             model_components=self._model,
+            use_mixed_precision=self._args.use_mixed_precision,
             # In case of gradient accumulation batch_chunk_size > 0 and a wrapper function is given
             # to make the batches sliceable such that we can chunk them into smaller pieces.
             batch_chunk_size=self._args.batch_chunk_size,

@@ -218,6 +218,7 @@ def worker_fn(rank, args, world_size):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
+        use_mixed_precision=args.use_mixed_precision,
         # In case of gradient accumulation batch_chunk_size > 0 is given
         batch_chunk_size=args.batch_chunk_size,
         chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper

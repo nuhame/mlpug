@@ -182,6 +182,7 @@ def train_model(args, logger):
         optimizers=optimizer,
         model_components=classifier,
         distribution_strategy=strategy,
+        use_mixed_precision=args.use_mixed_precision,
         # See issue https://github.com/tensorflow/tensorflow/issues/29911
         batch_data_signature=training_dataset.element_spec,
         # In case of gradient accumulation batch_chunk_size > 0 is given

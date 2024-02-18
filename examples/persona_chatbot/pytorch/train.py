@@ -122,7 +122,7 @@ class TrainModel(torch.nn.Module):
         }
 
 
-# See TrainingProcessBase for more information on the different methods implemented here
+# See TrainingProcessBase for more information on the different methods implemented here.
 # Here we implement the methods that are specific to our problem and specific to our ML library, PyTorch.
 class TrainingProcess(TrainingProcessBase):
 
