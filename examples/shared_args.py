@@ -27,7 +27,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         help='When flag is set, the training process will run on CPU only')
 
     parser.add_argument(
-        '--no-graph-compilation',
+        '--eager-mode',
         action='store_true',
         help='When flag is set, forward and backward computation graphs will NOT be compiled (i.e. eager mode')
 
@@ -83,7 +83,7 @@ def describe_args(args, logger):
     logger.info(f"Num. training epochs: {args.num_epochs}")
     logger.info(f"Random seed: {args.seed}")
     logger.info(f"Distributed: {args.distributed}")
-    logger.info(f"No graph compilation (eager mode): {args.no_graph_compilation}")
+    logger.info(f"Eager mode (no graph compilation): {args.eager_mode}")
     logger.info(f"Use mixed precision: {args.use_mixed_precision}")
 
     num_devices_str = args.num_devices if args.num_devices is not None and args.num_devices > 0 else "Use all available"
