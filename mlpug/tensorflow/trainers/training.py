@@ -89,7 +89,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         """
 
         :param args:
-        :param eager_mode: If true, the training step is not wrapped in a @tf.function
+        :param eager_mode: If true, the training step is not compiled (i.e. not wrapped in a @tf.function)
         :param batch_data_signature: Is only required when eager_mode=False
 
         Example, when batch data is a tuple of an input and target tensor
@@ -118,9 +118,8 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         if use_mixed_precision:
             raise NotImplementedError("Mixed precision is not implemented yet for Tensorflow")
 
-        super(DefaultTrainer, self).__init__(*args, use_mixed_precision=use_mixed_precision, name=name, **kwargs)
+        super(DefaultTrainer, self).__init__(*args, eager_mode=eager_mode, use_mixed_precision=use_mixed_precision, name=name, **kwargs)
 
-        self._eager_mode = eager_mode
         self._batch_data_signature = batch_data_signature
         self._training_settings_signature = training_settings_signature
 
@@ -128,6 +127,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         self._trainable_variables = trainable_variables
 
+        # TODO: should the wrapping be done in set_training_model()?
         # Tensorflow likes wrapping as follows:
         # 1) strategy.run
         # 2) tf.function
