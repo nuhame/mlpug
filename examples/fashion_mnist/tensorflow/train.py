@@ -43,15 +43,19 @@ def create_callbacks_for(trainer,
                          model_hyper_parameters,
                          distribution_strategy,
                          validation_dataset,
+                         eager_mode,
                          progress_log_period):
-    # At minimum you want to log the loss in the training progress
+
+    # At minimum, you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
         # The trainer knows how to evaluate the model
         # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
         # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
-        distribution_strategy=distribution_strategy)
+        distribution_strategy=distribution_strategy,
+        eager_mode=eager_mode
+    )
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -203,6 +207,7 @@ def train_model(args, logger):
         model_hyper_parameters,
         strategy,
         validation_dataset,
+        args.eager_mode,
         args.progress_log_period)
 
     manager = mlp.trainers.TrainingManager(

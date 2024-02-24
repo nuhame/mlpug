@@ -178,12 +178,13 @@ Pytorch/XLA and Tensorflow is very similar.
 
 For details please see :
 
- * [hello_world/pytorch/train.py](examples/hello_world/pytorch/train.py),
+ * [hello_world/pytorch/train.py](examples/hello_world/pytorch/train.py) and 
+[hello_world/pytorch/train_eager.py](examples/hello_world/pytorch/train_eager.py),
 
- * [hello_world/pytorch/xla/train.py](examples/hello_world/pytorch/xla/train.py), 
+ * [hello_world/pytorch/xla/train.py](examples/hello_world/pytorch/xla/train.py),
 
  * [hello_world/tensorflow/train.py](examples/hello_world/tensorflow/train.py) and 
-[hello_world/tensorflow/train_not_eager.py](examples/hello_world/tensorflow/train_not_eager.py)
+[hello_world/tensorflow/train_eager.py](examples/hello_world/tensorflow/train_eager.py)
    
 You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
 
@@ -347,7 +348,7 @@ trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
                                                             tf.TensorSpec(shape=(None,), dtype=tf.uint8),))
 ```
 When you run [hello_world/tensorflow/train.py](examples/hello_world/tensorflow/train.py) and 
-[hello_world/tensorflow/train_not_eager.py](examples/hello_world/tensorflow/train_not_eager.py) you will see
+[hello_world/tensorflow/train_not_eager.py](examples/hello_world/tensorflow/train.py) you will see
 that when not running in eager mode, training is much faster.
 
 Running `hello_world/tensorflow/train.py` finishes like this:
