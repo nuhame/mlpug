@@ -138,14 +138,9 @@ class TrainingProcess(TrainingProcessBase):
         cuda_available = torch.cuda.is_available()
         mps_available = torch.backends.mps.is_available()
 
-        # Optimizations and mitigating issues:
+        # Optimizations
         if cuda_available and not self._args.force_on_cpu:
-            if not self._args.eager_mode:
-                torch.set_float32_matmul_precision('high')
-
-            if self._args.distributed and self._args.activation_checkpointing:
-                # See issue https://github.com/pytorch/pytorch/issues/108269#issuecomment-1703563821
-                torch._dynamo.config.optimize_ddp = False
+            torch.set_float32_matmul_precision('high')
 
         if self._args.distributed:
             self._log.info(f"Distributed Data Parallel (DDP) mode.")
@@ -359,6 +354,9 @@ if __name__ == '__main__':
 
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
+
+    if not args.eager_mode and args.activation_checkpointing:
+        raise ValueError("Currently activation checkpointing doesn't work with graph compilation.")
 
     # ############## TRAIN MODEL ##############
     cuda_available = torch.cuda.is_available()
