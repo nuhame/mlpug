@@ -1,26 +1,19 @@
 import torch
-import torch_xla.core.xla_model as xm
 import torchvision as tv
 
-# Import mlpug for Pytorch/XLA backend
-import mlpug.pytorch.xla as mlp
+# Import mlpug for Pytorch backend
+import mlpug.pytorch as mlp
 
 
-# MLPug needs a TrainModel that outputs the loss
 class TrainModel(torch.nn.Module):
-    def __init__(self, classifier, device):
+    def __init__(self, classifier):
         super(TrainModel, self).__init__()
 
         self.classifier = classifier
-        self.device = device
-
         self.loss_func = torch.nn.CrossEntropyLoss()
 
     def forward(self, batch_data, evaluate_settings, inference_mode=None):
         images, true_labels = batch_data
-
-        images = images.to(self.device)
-        true_labels = true_labels.to(self.device)
 
         logits = self.classifier(images)
         return self.loss_func(logits, true_labels)
@@ -67,11 +60,9 @@ if __name__ == '__main__':
         torch.nn.ReLU(),
         torch.nn.Linear(128, 10))
 
-    device = xm.xla_device()
-
-    train_model = TrainModel(classifier, device)
-    classifier.to(device)
-
+    # ########## BUILD THE TRAIN MODEL ###########
+    # MLPug needs a TrainModel that outputs the loss
+    train_model = TrainModel(classifier)
     # ############################################
 
     # ############ SETUP OPTIMIZER #############
@@ -79,11 +70,15 @@ if __name__ == '__main__':
     # ##########################################
 
     # ############# SETUP TRAINING ##############
-    trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
+    trainer = mlp.trainers.DefaultTrainer(
+        optimizers=optimizer,
+        model_components=classifier,
+        eager_mode=True
+    )
 
-    # At minimum you want to log the loss in the training progress
+    # At minimum, you want to log the loss in the training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
-    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
+    loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer, eager_mode=True)
     callbacks = [
         mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
         # Calculate validation loss only once per epoch over the whole dataset
@@ -111,8 +106,6 @@ if __name__ == '__main__':
     first_sample = next(iter(test_data))
     image = first_sample[0]
     real_label = first_sample[1]
-
-    image = image.to(device)
 
     logits = classifier(image)
     probabilities = torch.softmax(logits, dim=-1)

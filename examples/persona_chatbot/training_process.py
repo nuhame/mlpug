@@ -328,6 +328,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             optimizers=self._optimizer,
             model_components=self._model,
             use_mixed_precision=self._args.use_mixed_precision,
+            eager_mode=self._args.eager_mode,
             # In case of gradient accumulation batch_chunk_size > 0 and a wrapper function is given
             # to make the batches sliceable such that we can chunk them into smaller pieces.
             batch_chunk_size=self._args.batch_chunk_size,
@@ -449,6 +450,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             trainer=self._trainer,
             # The implementation depends on the Deep Learning library backend
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
+            eager_mode=self._args.eager_mode,
             **custom_evaluator_config,
             name="LossOnlyEvaluator")
 
@@ -487,6 +489,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
             # metrics in smaller chunks, if these values were set for the trainer
             trainer=self._trainer,
+            eager_mode=self._args.eager_mode,
             show_progress=True,
             **custom_evaluator_config,
             name="AllMetricsEvaluator")
@@ -503,7 +506,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._callbacks = [
             # Get training loss calculated, during forward pass, and gather+reduce it from all devices
             # The model loss and other auxiliary results are already calculated by the Trainer, so we do not need
-            # to provide the the training set here.
+            # to provide the training set here.
             mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_only_evaluator,
                                                 log_condition_func=log_metrics,
                                                 sliding_window_length=avg_window_train,

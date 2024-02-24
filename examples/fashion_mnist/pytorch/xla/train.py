@@ -34,6 +34,7 @@ def create_callbacks_for(trainer,
                          model_hyper_parameters,
                          is_primary,
                          validation_dataset,
+                         eager_mode,
                          progress_log_period):
     # TODO: add DistributedSamplerManager callbacks to reshuffle the data per epoch
 
@@ -44,6 +45,7 @@ def create_callbacks_for(trainer,
         # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
         # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
+        eager_mode=eager_mode
     )
 
     callbacks = [
