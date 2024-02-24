@@ -205,6 +205,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  combine_metric_inputs_funcs=None,
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
+                 eager_mode: bool = False,
                  batch_chunk_size=None,
                  chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  show_progress=False,
@@ -351,7 +352,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             or of a window of batches.
 
             In general there is no strict signature for the functions here.
-            However for defaults, the following is assumed:
+            However, for defaults, the following is assumed:
                 combine_func(gathered_input_data: Iterable[Tuple[Union[T, float, int]]])
                     -> Tuple[Union[Iterable, T, float, int]]
                 Where T is a Tensor type (numpy arrays are also allowed)
@@ -373,7 +374,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             calculate the metric based on the gathered/combined metric inputs
 
             In general there is no strict signature for the functions here.
-            However for defaults, the following is assumed:
+            However, for defaults, the following is assumed:
                 metric_func(combined_input_data: Tuple[Union[Iterable, T, float, int]]) -> Union[M, Tuple[M], Dict[M]]
                 Where M is a scalar float/int/numpy.number
 
@@ -410,6 +411,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
              * When a tuple is returned, the LogProgress logger will always only print the first value in the tuple
              * When a dict is returned, the LogProgress logger will print values for all keys in the dict
                (e.g. recall and precision)
+
+        :param eager_mode: If true, the evaluation is not compiled
 
         :param batch_chunk_size: If given, batches will be evaluated by chunking it to
                  smaller batches of size batch_chunk_size
@@ -485,7 +488,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
             clean_up_batch_data_func = do_nothing
 
         # For the different deep learning library backends supported, defaults should be provided
-        if type(combine_metric_inputs_funcs) is not dict:
+        if combine_metric_inputs_funcs is None:
             if callable(combine_metric_inputs_func):
                 combine_metric_inputs_funcs = {metric_name: combine_metric_inputs_func for metric_name in metric_names}
             else:
@@ -520,6 +523,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         self._clean_up_batch_data_func = clean_up_batch_data_func
         self._combine_metric_inputs_funcs = combine_metric_inputs_funcs
         self._metric_funcs = metric_funcs
+
+        self._eager_mode = eager_mode
 
         if batch_chunk_size is None and self._trainer is not None:
             batch_chunk_size = self._trainer.batch_chunk_size
