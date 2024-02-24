@@ -177,6 +177,7 @@ class MetricEvaluator(MetricEvaluatorBase):
                  combine_metric_inputs_funcs=None,
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
+                 eager_mode: bool = False,
                  batch_dim=0,
                  monitor_tracing=False,
                  name="MetricEvaluator",
@@ -212,7 +213,7 @@ class MetricEvaluator(MetricEvaluatorBase):
             if not callable(combine_metric_inputs_func):
                 combine_metric_inputs_funcs = {}
 
-        if combine_metric_inputs_funcs is not None:
+        if type(combine_metric_inputs_funcs) is dict:
             for metric_name in metric_names:
                 if metric_name not in combine_metric_inputs_funcs:
                     combine_metric_inputs_funcs[metric_name] = CombineBatchTuples(dim=batch_dim)
@@ -229,6 +230,7 @@ class MetricEvaluator(MetricEvaluatorBase):
                          combine_metric_inputs_funcs=combine_metric_inputs_funcs,
                          combine_metric_inputs_func=combine_metric_inputs_func,
                          metric_funcs=metric_funcs,
+                         eager_mode=eager_mode,
                          name=name,
                          **kwargs)
 
@@ -263,15 +265,16 @@ class MetricEvaluator(MetricEvaluatorBase):
 
                 self._clean_up_batch_data_func = distributed_clean_up_batch_data_func
 
-        tf_func_factory = partial(
-            wrap_in_tf_func,
-            monitor_tracing=monitor_tracing,
-            logger=self._log
-        )
+        if not eager_mode:
+            tf_func_factory = partial(
+                wrap_in_tf_func,
+                monitor_tracing=monitor_tracing,
+                logger=self._log
+            )
 
-        for metric_name in metric_names:
-            gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
-            self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
+            for metric_name in metric_names:
+                gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
+                self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
 
         self.distribution_strategy = distribution_strategy
 

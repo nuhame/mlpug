@@ -173,6 +173,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                  combine_metric_inputs_funcs=None,
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
+                 eager_mode: bool = False,
                  batch_dim=0,
                  show_warning_distributed_metric_evaluation=True,
                  name="MetricEvaluator",
@@ -206,7 +207,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
             if not callable(combine_metric_inputs_func):
                 combine_metric_inputs_funcs = {}
 
-        if combine_metric_inputs_funcs is not None:
+        if type(combine_metric_inputs_funcs) is dict:
             for metric_name in metric_names:
                 if metric_name not in combine_metric_inputs_funcs:
                     combine_metric_inputs_funcs[metric_name] = CombineBatchTuples(dim=batch_dim)
@@ -222,8 +223,14 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                          combine_metric_inputs_funcs=combine_metric_inputs_funcs,
                          combine_metric_inputs_func=combine_metric_inputs_func,
                          metric_funcs=metric_funcs,
+                         eager_mode=eager_mode,
                          name=name,
                          **kwargs)
+
+        if not eager_mode:
+            for metric_name in metric_names:
+                gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
+                self._gather_metric_inputs_funcs[metric_name] = torch.compile(gather_metric_inputs_func)
 
         self._did_show_warning_distributed_metric_evaluation = not show_warning_distributed_metric_evaluation
 
