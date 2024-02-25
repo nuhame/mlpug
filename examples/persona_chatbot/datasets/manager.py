@@ -3,7 +3,7 @@ import os
 import pickle
 from functools import cached_property
 from pathlib import Path
-from typing import Optional, Sequence, List
+from typing import Optional, Sequence, List, Dict
 
 from mlpug.base import Base
 
@@ -74,7 +74,7 @@ class DatasetManager(Base):
             "num_choices_per_sample": num_choices_per_sample
         }
 
-        cached_samples_config_path = self._cached_samples_config_path(dataset_name)
+        cached_samples_config_path = self._cached_samples_config_path(**config)
         try:
             with open(cached_samples_config_path, 'rb') as config_file:
                 cached_config = pickle.load(config_file)
@@ -89,27 +89,51 @@ class DatasetManager(Base):
 
             return multiple_choice_samples
 
-        return self._read_samples_from_cache(**config)
+        return self._read_samples_from_cache(config)
 
     @cached_property
     def persona_dataset(self):
         self._log.info(f"Loading persona dataset {self._persona_dataset_name} ...")
         return load_dataset(self._persona_dataset_name)
 
-    def _cached_samples_config_path(self, dataset_name: str):
-        return Path(os.path.join(
-            self._cache_path,
-            f"multiple_choice_samples-{dataset_name}-config.pickle"))
+    def _cached_samples_config_path(self,
+                                    dataset_name: str,
+                                    max_num_samples: Optional[int] = None,
+                                    num_choices_per_sample: Optional[int] = None,
+                                    **kwargs) -> Path:
+        filename = self._samples_filename(dataset_name, max_num_samples, num_choices_per_sample, "config")
+        return Path(os.path.join(self._cache_path, filename))
 
-    def _cached_samples_path(self, dataset_name: str):
-        return Path(os.path.join(
-            self._cache_path,
-            f"multiple_choice_samples-{dataset_name}.pickle"))
+    def _cached_samples_path(self,
+                             dataset_name: str,
+                             max_num_samples: Optional[int],
+                             num_choices_per_sample: Optional[int],
+                             **kwargs) -> Path:
+        filename = self._samples_filename(dataset_name, max_num_samples, num_choices_per_sample)
+        return Path(os.path.join(self._cache_path, filename))
+
+    def _samples_filename(self,
+                          dataset_name: str,
+                          max_num_samples: Optional[int] = None,
+                          num_choices_per_sample: Optional[int] = None,
+                          postfix: Optional[str] = None,
+                          **kwargs) -> str:
+        filename = f"multiple_choice_samples-{dataset_name}"
+        if max_num_samples is not None:
+            filename += f"-{max_num_samples}"
+        if num_choices_per_sample is not None:
+            filename += f"-{num_choices_per_sample}"
+        if postfix is not None:
+            filename += f"-{postfix}"
+
+        filename += ".pickle"
+
+        return filename
 
     def _generate_samples_for(self,
                               dataset_name: str,
-                              max_num_samples: Optional[int],
-                              num_choices_per_sample: Optional[int],
+                              max_num_samples: Optional[int] = None,
+                              num_choices_per_sample: Optional[int] = None,
                               **kwargs) -> List[List[ConversationSample]]:
 
         sample_generator = MultipleChoiceGenerator(self.persona_dataset[dataset_name],
@@ -135,7 +159,7 @@ class DatasetManager(Base):
 
         dataset_name = config["dataset_name"]
 
-        cached_samples_path = self._cached_samples_path(dataset_name)
+        cached_samples_path = self._cached_samples_path(**config)
 
         self._log.info(f"Caching generated {dataset_name} multiple choice samples to:\n{cached_samples_path}\n")
         with io.open(cached_samples_path, 'wb') as f:
@@ -152,11 +176,11 @@ class DatasetManager(Base):
             for sample in multiple_choice_samples:
                 pickler.dump(sample)
 
-        cached_samples_config_path = self._cached_samples_config_path(dataset_name)
+        cached_samples_config_path = self._cached_samples_config_path(**config)
         with open(cached_samples_config_path, 'wb') as config_file:
             pickle.dump(config, config_file)
 
-    def _read_samples_from_cache(self, dataset_name: str, **kwargs) -> List[List[ConversationSample]]:
+    def _read_samples_from_cache(self, config: Dict) -> List[List[ConversationSample]]:
         """
         Read multiple-choice conversation samples to cache
 
@@ -164,7 +188,8 @@ class DatasetManager(Base):
 
         :return:
         """
-        cached_samples_path = self._cached_samples_path(dataset_name)
+        dataset_name = config["dataset_name"]
+        cached_samples_path = self._cached_samples_path(**config)
 
         self._log.info(f"Loading generated {dataset_name} multiple choice samples from:\n{cached_samples_path}\n")
         with io.open(cached_samples_path, 'rb') as p:
