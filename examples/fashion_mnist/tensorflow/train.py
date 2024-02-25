@@ -176,8 +176,7 @@ def train_model(args, logger):
 
         # ############ SETUP OPTIMIZER #############
         # Scale learning rate to num devices
-        lr = args.learning_rate * num_devices
-        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
         # ##########################################
 
     # ############# SETUP TRAINING ##############
