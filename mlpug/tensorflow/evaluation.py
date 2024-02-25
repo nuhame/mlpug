@@ -272,6 +272,8 @@ class MetricEvaluator(MetricEvaluatorBase):
                 logger=self._log
             )
 
+            self._model_evaluate_func = tf_func_factory(self._model_evaluate_func)
+
             for metric_name in metric_names:
                 gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
                 self._gather_metric_inputs_funcs[metric_name] = tf_func_factory(gather_metric_inputs_func)
