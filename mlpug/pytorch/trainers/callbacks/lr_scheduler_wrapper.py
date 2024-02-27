@@ -59,5 +59,6 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
 
         return current_lr
 
+
 class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperMixin):
     pass
