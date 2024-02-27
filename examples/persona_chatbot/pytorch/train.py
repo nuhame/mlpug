@@ -139,6 +139,8 @@ class TrainingProcess(TrainingProcessBase):
         mps_available = torch.backends.mps.is_available()
 
         # Optimizations
+        # DEBUG
+        # torch._dynamo.config.cache_size_limit = 64
         if cuda_available and not self._args.force_on_cpu:
             torch.set_float32_matmul_precision('high')
 

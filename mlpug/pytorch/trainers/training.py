@@ -8,6 +8,9 @@ import torch.distributed as dist
 
 import basics.base_utils as _
 
+# DEBUG
+from torch.optim.lr_scheduler import LambdaLR
+
 from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableException, TrainerStateInvalidException
 
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
@@ -72,6 +75,14 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self.no_grad_sync_available = False
 
         self._training_step_func = None
+
+        # DEBUG
+        import mlpug
+        num_warmup_iters = 977
+        total_iters = 5862
+        # lr_scheduling_func = mlpug.scheduler_funcs.LRWarmupSchedule(num_warmup_iters, total_iters)
+        lr_scheduling_func = lambda epoch: 0.95 ** epoch
+        self._scheduler = LambdaLR(self.optimizers["optimizer"], lr_scheduling_func)
 
     def set_training_model(self, model):
         super().set_training_model(model)
@@ -335,6 +346,10 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
     def _after_update_model_parameters(self):
         if self.use_mixed_precision:
             self._scaler.update()
+
+        # DEBUG
+        print("LR Scheduler step")
+        self._scheduler.step()
 
 
 class DefaultTrainer(MultiProcessingMixin, DefaultTrainerMixin):
