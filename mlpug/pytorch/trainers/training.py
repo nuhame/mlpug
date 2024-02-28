@@ -1,4 +1,6 @@
 import math
+from typing import Optional, Dict
+
 import torch
 
 import contextlib
@@ -57,8 +59,15 @@ class Trainer(MultiProcessingMixin, PTTrainerMixin, TrainerBase):
 
 class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
-    def __init__(self, *args, scaler=None, eager_mode=False, name="DefaultTrainer", **kwargs):
-        super().__init__(*args, eager_mode=eager_mode, name=name, **kwargs)
+    def __init__(
+            self,
+            *args,
+            scaler=None,
+            compile_kwargs: Optional[Dict] = None,
+            name="DefaultTrainer",
+            **kwargs
+    ):
+        super().__init__(*args, name=name, **kwargs)
 
         self._scaler = scaler
 
@@ -71,6 +80,8 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         self.no_grad_sync_available = False
 
+        self._compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
+
         self._training_step_func = None
 
     def set_training_model(self, model):
@@ -79,7 +90,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
 
         if not self.eager_mode:
-            self._training_step_func = torch.compile(self._training_step)
+            self._training_step_func = torch.compile(self._training_step, **self._compile_kwargs)
         else:
             self._training_step_func = self._training_step
             self._log.warn("Training in eager mode.")

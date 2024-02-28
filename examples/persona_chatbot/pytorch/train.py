@@ -293,6 +293,24 @@ class TrainingProcess(TrainingProcessBase):
     def _create_clean_up_batch_data_func(self):
         return clean_up_batch_data
 
+    def _get_compile_kwargs(self):
+        return {}
+
+    def _get_custom_evaluator_config(self):
+        return {
+            "compile_kwargs": self._get_compile_kwargs()
+        }
+
+    def _get_custom_trainer_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {
+            "compile_kwargs": self._get_compile_kwargs()
+        }
+
     def _setup_callbacks(self):
         super()._setup_callbacks()
 
