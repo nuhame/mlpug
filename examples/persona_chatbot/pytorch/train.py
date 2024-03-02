@@ -293,6 +293,24 @@ class TrainingProcess(TrainingProcessBase):
     def _create_clean_up_batch_data_func(self):
         return clean_up_batch_data
 
+    def _get_compile_kwargs(self):
+        return {}
+
+    def _get_custom_evaluator_config(self):
+        return {
+            "compile_kwargs": self._get_compile_kwargs()
+        }
+
+    def _get_custom_trainer_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {
+            "compile_kwargs": self._get_compile_kwargs()
+        }
+
     def _setup_callbacks(self):
         super()._setup_callbacks()
 
@@ -316,8 +334,10 @@ class TrainingProcess(TrainingProcessBase):
 
         :return:
         """
+        # See https://github.com/pytorch/pytorch/issues/120934#issuecomment-1973390203
+        lr_scheduling_func = lambda iter: torch.tensor(self._lr_scheduling_func(iter), requires_grad=False)
         self._callbacks += [mlp.callbacks.LRSchedulerWrapper({
-                'warmup-scheduler': LambdaLR(self._optimizer, self._lr_scheduling_func)
+                'warmup-scheduler': LambdaLR(self._optimizer, lr_scheduling_func)
             }, batch_level=True)]
 
     @staticmethod

@@ -1,5 +1,5 @@
 import abc
-from typing import Collection, Tuple, Dict
+from typing import Collection, Tuple, Dict, Optional
 
 import torch
 import torch.distributed as dist
@@ -174,6 +174,7 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
                  eager_mode: bool = False,
+                 compile_kwargs: Optional[Dict] = None,
                  batch_dim=0,
                  show_warning_distributed_metric_evaluation=True,
                  name="MetricEvaluator",
@@ -227,12 +228,20 @@ class MetricEvaluator(MultiProcessingMixin, MetricEvaluatorBase):
                          name=name,
                          **kwargs)
 
+        self._compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
+
         if not eager_mode:
-            self._model_evaluate_func = torch.compile(self._model_evaluate_func)
+            self._model_evaluate_func = torch.compile(
+                self._model_evaluate_func,
+                **self._compile_kwargs
+            )
 
             for metric_name in metric_names:
                 gather_metric_inputs_func = self._gather_metric_inputs_funcs[metric_name]
-                self._gather_metric_inputs_funcs[metric_name] = torch.compile(gather_metric_inputs_func)
+                self._gather_metric_inputs_funcs[metric_name] = torch.compile(
+                    gather_metric_inputs_func,
+                    **self._compile_kwargs
+                )
 
         self._did_show_warning_distributed_metric_evaluation = not show_warning_distributed_metric_evaluation
 
