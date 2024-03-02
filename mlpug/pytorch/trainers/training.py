@@ -1,5 +1,5 @@
 import math
-from typing import Optional, Dict
+from typing import Optional, Dict, Union, Tuple
 
 import torch
 
@@ -80,7 +80,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         self.no_grad_sync_available = False
 
-        self._compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
+        self.compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
 
         self._training_step_func = None
 
@@ -90,7 +90,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
 
         if not self.eager_mode:
-            self._training_step_func = torch.compile(self._training_step, **self._compile_kwargs)
+            self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
         else:
             self._training_step_func = self._training_step
             self._log.warn("Training in eager mode.")
@@ -133,7 +133,10 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         else:
             return super().evaluate_loss(batch_data, inference_mode, evaluate_settings)
 
-    def train_on(self, batch_data, training_settings=None):
+    def train_on(self, batch_data, training_settings=None) -> Tuple[
+        Union[Dict, BatchChunkingResults[Dict]],
+        Dict[str, bool]
+    ]:
         """
         Use batch_data to perform a training iteration.
 
@@ -167,8 +170,19 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
                          ...
                          {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Union[Dict, BatchChunkingResults[Dict]]
+                did_update is a dict, with per optimizer, a boolean indicating if the model weights were updated.
+                In some cases this can be False, for instance, due to when the loss scaling factor is too large for
+                mixed precision training.
 
+                In such cases one can skip, for instance, updating an LR scheduler.
+
+                The did_update dict follows the same structure as the dict returned by get_optimizers(), but instead
+                of having an optimizer for each key (optimizer name), there is a boolean for each key.
+
+        :rtype: Tuple[
+            Union[Dict, BatchChunkingResults[Dict]],
+            Dict[str, bool]
+        ]
         """
 
         if not self.instance_valid():
@@ -192,11 +206,11 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         self._prepare_update_model_parameters()
 
-        self._update_model_parameters()
+        did_update = self._update_model_parameters()
 
-        self._after_update_model_parameters()
+        self._after_update_model_parameters(did_update)
 
-        return model_outputs
+        return model_outputs, did_update
 
     def _reset_gradients(self):
         for optimizer in self.get_optimizers().values():
@@ -334,14 +348,20 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         pass
 
     def _update_model_parameters(self):
-        for optimizer in self.get_optimizers().values():
-            self._execute_optimizer(optimizer)
+        did_update = {}
+        for name, optimizer in self.get_optimizers().items():
+            did_update[name] = self._execute_optimizer(optimizer)
+
+        return did_update
 
     def _execute_optimizer(self, optimizer):
+        did_update = True
         if self.use_mixed_precision:
             self._scaler.step(optimizer)
         else:
             optimizer.step()
+
+        return did_update
 
     def _after_update_model_parameters(self):
         if self.use_mixed_precision:
