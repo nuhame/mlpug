@@ -1,5 +1,7 @@
 from statistics import mean
 
+import torch
+
 from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapper as LRSchedulerWrapperBase
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
@@ -35,6 +37,7 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
 
         return success
 
+    @torch.compile
     def _exec_schedulers(self, training_iter, model_quality=None):
         for name, scheduler in self._schedulers.items():
             if self._metric_to_monitor:
@@ -51,13 +54,14 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
 
         current_lr = {}
         for name, optimizer in self.optimizers.items():
-            lr = []
+            group_lrs = []
             for group in optimizer.param_groups:
-                lr.append(group['lr'])
+                group_lrs.append(group['lr'].item())
 
-            current_lr[name] = mean(lr)
+            current_lr[name] = mean(group_lrs)
 
         return current_lr
+
 
 class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperMixin):
     pass
