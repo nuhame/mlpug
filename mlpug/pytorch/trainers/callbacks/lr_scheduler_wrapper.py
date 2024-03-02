@@ -6,6 +6,12 @@ from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
+    """
+    NOTE: The following warning can occur when Automatic Mixed Precision and no update was made:
+          UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`
+
+          See https://discuss.pytorch.org/t/userwarning-detected-call-of-lr-scheduler-step-before-optimizer-step/164814/2
+    """
 
     def get_state(self):
         """
@@ -58,6 +64,7 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
             current_lr[name] = mean(lr)
 
         return current_lr
+
 
 class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperMixin):
     pass
