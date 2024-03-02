@@ -1,7 +1,7 @@
 import os
 import sys
 import abc
-from typing import Optional
+from typing import Optional, Union, Dict, Tuple
 
 import math
 import time
@@ -12,7 +12,7 @@ from mlpug.base import Base
 import basics.base_utils as _
 from basics.logging import get_logger
 
-from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchWrapper, is_chunkable
+from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchWrapper, is_chunkable, BatchChunkingResults
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
@@ -931,24 +931,39 @@ class Trainer(Base, metaclass=abc.ABCMeta):
         raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
-    def train_on(self, batch_data, training_settings=None):
+    def train_on(self, batch_data, training_settings=None) -> Tuple[
+        Union[Dict, BatchChunkingResults[Dict]],
+        Dict[str, bool]
+    ]:
         """
         Use batch_data to perform a training iteration
 
         :param batch_data: batch_data object (e.g. dict, list, tuple)
         :param training_settings: optional training_settings object (usually dict)
 
-        :return: model_outputs
+        :return: Tuple: (model_outputs, did_update)
 
                  model_outputs is a single normalized results dict:
                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
                  or
-                    BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
+                    BatchChunkingResults: a list of dicts, one dict per batch chunk results:
                         [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
                          ...
                          {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Tuple[Dict, BatchChunkingResults[Dict]}
+                did_update is a dict, with per optimizer, a boolean indicating if the model weights were updated.
+                In some cases this can be False, for instance, due to when the loss scaling factor is too large for
+                mixed precision training.
+
+                In such cases one can skip, for instance, updating an LR scheduler.
+
+                The did_update dict follows the same structure as the dict returned by get_optimizers(), but instead
+                of having an optimizer for each key (optimizer name), there is a boolean for each key.
+
+        :rtype: Tuple[
+            Union[Dict, BatchChunkingResults[Dict]],
+            Dict[str, bool]
+        ]
         """
         raise NotImplemented("Please implement this method in your child class")
 
