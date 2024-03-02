@@ -89,6 +89,9 @@ def describe_args(args, logger):
     logger.info(f"Fraction of samples to discard to reduce max. sequence length: "
                 f"{args.sequence_length_outlier_threshold}")
 
+    logger.info(f"Use LR warmup schedule: {args.lr_warmup_schedule}")
+    logger.info(f"LR warmup epochs (if warmup LR schedule used): {args.lr_warmup_epochs}")
+
     describe_base_args(args, logger)
 
     logger.info(f"Weight decay: {args.weight_decay}")
