@@ -334,8 +334,10 @@ class TrainingProcess(TrainingProcessBase):
 
         :return:
         """
+        # See https://github.com/pytorch/pytorch/issues/120934#issuecomment-1973390203
+        lr_scheduling_func = lambda iter: torch.tensor(self._lr_scheduling_func(iter), requires_grad=False)
         self._callbacks += [mlp.callbacks.LRSchedulerWrapper({
-                'warmup-scheduler': LambdaLR(self._optimizer, self._lr_scheduling_func)
+                'warmup-scheduler': LambdaLR(self._optimizer, lr_scheduling_func)
             }, batch_level=True)]
 
     @staticmethod
