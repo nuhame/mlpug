@@ -15,6 +15,18 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
           See https://discuss.pytorch.org/t/userwarning-detected-call-of-lr-scheduler-step-before-optimizer-step/164814/2
     """
 
+    def on_training_start(self, *args, **kwargs):
+        success = super().on_training_start(*args, **kwargs)
+
+        eager_mode = self.trainer.eager_mode
+        if not eager_mode:
+            self._log.debug("Enabling compilation of LR scheduling ...")
+
+            compile_kwargs = self.trainer.compile_kwargs
+            self._exec_schedulers = torch.compile(self._exec_schedulers, **compile_kwargs)
+
+        return success
+
     def get_state(self):
         """
 
@@ -43,7 +55,6 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
 
         return success
 
-    @torch.compile
     def _exec_schedulers(self, training_iter, model_quality=None):
         for name, scheduler in self._schedulers.items():
             if self._metric_to_monitor:
