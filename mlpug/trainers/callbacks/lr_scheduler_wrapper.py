@@ -6,7 +6,7 @@ from mlpug.trainers.callbacks.callback import Callback
 import basics.base_utils as _
 
 
-class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
+class LRSchedulerWrapper(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  schedulers,
@@ -22,7 +22,7 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
         :param schedulers: A single scheduler instance or a dict or list of schedulers
         :param batch_level: True if the LR schedulers should be updated after every batch, else after every epoch
         :param metric_to_monitor: key path to metric value in the log object,
-                                  e.g. `validation.window_average.perplexity`, used by the schedulers. If None, it is
+                                  e.g. `validation.sliding_window.perplexity`, used by the schedulers. If None, it is
                                   assumed that the schedulers don't monitor any metric.
         """
         super().__init__(name=name, **kwargs)
@@ -71,6 +71,13 @@ class LRSchedulerWrapperBase(Callback, metaclass=abc.ABCMeta):
 
     def on_batch_training_completed(self, training_batch, logs):
         if not self._batch_level:
+            return True
+
+        current = self._get_logs_base(logs)
+
+        model_updated = get_value_at("training.batch.did_update_model", current)
+        if not model_updated:
+            self._log.debug(f"Skipping LR scheduling: not all optimizer assigned parameters were updated ...")
             return True
 
         return self._update_lr(logs, 'global_iter')

@@ -1,5 +1,8 @@
+import os
 import sys
 import abc
+from typing import Optional, Union, Dict, Tuple
+
 import math
 import time
 
@@ -7,28 +10,106 @@ from statistics import mean
 
 from mlpug.base import Base
 import basics.base_utils as _
+from basics.logging import get_logger
+
+from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchWrapper, is_chunkable, BatchChunkingResults
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
 from mlpug.mlpug_exceptions import TrainerInvalidException
 
 
-def normalize_evaluation(results):
-    if type(results) is dict:
-        return results
-    elif type(results) is tuple:
-        return {
-            "loss": results[0],
-            "auxiliary_results": results[1:]
-        }
-    else:
-        return {
-            "loss": results
-        }
+logger = get_logger(os.path.basename(__file__))
 
 
-class BatchChunkingResults(list):
-    pass
+class NormalizeEvaluationResults(Base):
+
+    NUM_SAMPLES_WARNING_MESSAGE = "You need to return the number of samples used in your batch. " \
+                                  "A default of num_samples=1 will be added to your results, " \
+                                  "this will result in correct average metrics if " \
+                                  "all batches have the same sample size."
+
+    def __init__(self, do_warn=True, name=None):
+        super().__init__(pybase_logger_name=name)
+
+        self.did_warn = not do_warn
+
+    def __call__(self, results):
+        """
+
+        Ensures that the training model evaluation results are normalized as a dict
+        containing the required loss and num_samples, and the optional auxiliary_results value
+
+        :param results: Dict, Tuple or only single Tensor loss value
+
+        :return: Normalized results dict
+                 {
+                    'loss': <loss tensor>,
+                    'num_samples': <int>,
+                    'auxiliary_results': <Any>
+                }
+
+        :raises ValueError when the loss value is missing
+
+        """
+        if type(results) is dict:
+            if 'loss' not in results:
+                raise ValueError("Your training model evaluation results dict must contain a 'loss' key and value")
+
+            if 'num_samples' not in results:
+                results['num_samples'] = 1
+                if not self.did_warn:
+                    self.did_warn = True
+                    self._log.warning(
+                        "'num_samples' key and value not found in your training model evaluation results. " +
+                        self.NUM_SAMPLES_WARNING_MESSAGE
+                    )
+
+            if 'auxiliary_results' not in results:
+                results['auxiliary_results'] = None
+
+            return results
+        elif type(results) is tuple:
+            if len(results) == 0:
+                raise ValueError("Results are empty: your training model evaluation results tuple "
+                                 "must at least contain a loss value.")
+
+            loss = results[0]
+
+            if len(results) > 1:
+                num_samples = results[1]
+            else:
+                num_samples = 1
+                if not self.did_warn:
+                    self.did_warn = True
+                    logger.warning("No second value found in your training model evaluation results tuple, "
+                                   "representing the num_samples in your batch. " + self.NUM_SAMPLES_WARNING_MESSAGE)
+
+            auxiliary_results = None
+            if len(results) > 2:
+                auxiliary_results = results[2:]
+
+                if len(auxiliary_results) == 1:
+                    # If exactly three tuple values were given, the third value is assumed to be the auxiliary results
+                    auxiliary_results = auxiliary_results[0]
+
+            return {
+                "loss": loss,
+                "num_samples": num_samples,
+                "auxiliary_results": auxiliary_results
+            }
+        else:
+            # Assuming only the loss was returned
+            if not self.did_warn:
+                self.did_warn = True
+                logger.warning("No second value found in your training model evaluation results, "
+                               "representing the num_samples in your batch. " + self.NUM_SAMPLES_WARNING_MESSAGE)
+
+            return {
+                "loss": results,
+                "num_samples": 1,
+                "auxiliary_results": None
+            }
 
 
 class TrainingManager(Base, metaclass=abc.ABCMeta):
@@ -419,13 +500,14 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
 
         update = self._update_cb_success
+        call_cb = self._call_callbacks
 
-        update(self._call_callbacks('on_training_start',
-                                    self.num_epochs,
-                                    self.num_batches_per_epoch,
-                                    self.epoch,
-                                    self.batch_step,
-                                    self.global_iter))
+        update(call_cb('on_training_start',
+                       self.num_epochs,
+                       self.num_batches_per_epoch,
+                       self.epoch,
+                       self.batch_step,
+                       self.global_iter))
 
         for epoch in range(self.epoch, self.num_epochs):
             self.epoch = epoch
@@ -448,7 +530,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             current = None
             epoch_started = True
             epoch_stopped_early = False
-            for training_batch in iter(training_dataset):
+            for training_batch in training_dataset:
                 batch_training_start_time = time.time()
 
                 if self._stop_training:
@@ -457,15 +539,16 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     self._log.warn("Training epoch stopped early")
                     break
 
+                # We are at the start of a new batch training iteration: reset current dict
                 current = self._init_current_logs()
                 logs["current"] = current
 
                 # on_epoch_start needs to be called in the loop, because some callbacks might need the current object
                 if epoch_started:
-                    update(self._call_callbacks('on_epoch_start', self.logs))
+                    update(call_cb('on_epoch_start', self.logs))
                     epoch_started = False
 
-                update(self._call_callbacks('on_batch_training_start', training_batch, logs))
+                update(call_cb('on_batch_training_start', training_batch, logs))
 
                 # Previous batch duration is only available on_batch_training_start
                 # In this way it is not double recorded in Tensorboard
@@ -475,10 +558,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
-                    loss, auxiliary_results = self.trainer.train_on(training_batch, logs["training_settings"])
+                    model_outputs, did_update_model = self.trainer.train_on(training_batch, logs["training_settings"])
 
-                    set_value_at("training.batch.loss", current, loss)
-                    set_value_at("training.batch.auxiliary_results", current, auxiliary_results)
+                    set_value_at("training.batch.raw.model_outputs", current, model_outputs)
+                    set_value_at("training.batch.did_update_model", current, did_update_model)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -489,13 +572,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                     _.log_exception(self._log, err_msg, e)
 
-                    update(self._call_callbacks('on_batch_training_failed', e, logs))
+                    update(call_cb('on_batch_training_failed', e, logs))
                     training_stopped_on_error = True
 
                 if training_stopped_on_error:
                     break
 
-                update(self._call_callbacks('on_batch_training_completed', training_batch, logs))
+                update(call_cb('on_batch_training_completed', training_batch, logs))
 
                 self.batch_step += 1
                 self.global_iter += 1
@@ -518,21 +601,21 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 mean_batch_duration = self._calc_window_average("training_params.batch.duration")
                 epoch_duration = self._calc_window_sum("training_params.batch.duration")
 
-                set_value_at("training_params.window_average.duration", current, mean_batch_duration)
+                set_value_at("training_params.sliding_window.duration", current, mean_batch_duration)
                 set_value_at("training_params.epoch.duration", current, epoch_duration)
 
-                update(self._call_callbacks('on_epoch_completed', logs))
+                update(call_cb('on_epoch_completed', logs))
 
             if training_stopped_on_error:
                 break
 
             self.batch_step = 0
 
-        update(self._call_callbacks('on_training_ended',
-                                    stopped_early=epoch_stopped_early or training_stopped_early,
-                                    stopped_on_error=training_stopped_on_error,
-                                    interrupted=False,
-                                    callback_calls_success=self.logs["cb_calls_success"]))
+        update(call_cb('on_training_ended',
+                       stopped_early=epoch_stopped_early or training_stopped_early,
+                       stopped_on_error=training_stopped_on_error,
+                       interrupted=False,
+                       callback_calls_success=self.logs["cb_calls_success"]))
 
         if not training_stopped_on_error:
             if self.logs["cb_calls_success"]:
@@ -549,17 +632,13 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             "batch_step": self.batch_step,
             "global_iter": self.global_iter,
 
-            "training": {
-                "batch": {},
-                "window_average": {},
-                "dataset": {},
-            },
+            "training": {},
 
             "training_params": {
                 "batch": {
                     "duration": self._previous_batch_duration,
                 },
-                "window_average": {
+                "sliding_window": {
                     "duration": self._calc_window_average("training_params.batch.duration")
                 },
                 "epoch": {
@@ -660,19 +739,28 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         return self._valid
 
 
-class TrainerBase(Base, metaclass=abc.ABCMeta):
+class Trainer(Base, metaclass=abc.ABCMeta):
 
-    def __init__(self, model_components, optimizers, name="TrainerBase", **kwargs):
+    def __init__(self,
+                 model_components,
+                 optimizers,
+                 warn_about_evaluation_results_issues=True,
+                 name="Trainer",
+                 **kwargs):
         """
 
         :param model_components: dict with model components
         :param optimizers: dict with optimizers
+        :param warn_about_evaluation_results_issues: If True, any issues with normalizing of the
+            training model evaluation results, which can be overcome, will be logged as a warning.
 
         """
-        super(TrainerBase, self).__init__(pybase_logger_name=name, **kwargs)
+        super(Trainer, self).__init__(pybase_logger_name=name, **kwargs)
 
         self.model_components = model_components
         self.optimizers = optimizers
+
+        self.normalize_evaluation = NormalizeEvaluationResults(do_warn=warn_about_evaluation_results_issues)
 
         self._validate()
 
@@ -844,20 +932,38 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         raise NotImplemented("Please implement this method in your child class")
 
     @abc.abstractmethod
-    def train_on(self, batch_data, training_settings=None):
+    def train_on(self, batch_data, training_settings=None) -> Tuple[
+        Union[Dict, BatchChunkingResults[Dict]],
+        bool
+    ]:
         """
-        TODO : Should this also return only one dict with 'loss' and 'auxiliary_results' keys?
-               (Just like evaluate_loss)
-
         Use batch_data to perform a training iteration
 
         :param batch_data: batch_data object (e.g. dict, list, tuple)
         :param training_settings: optional training_settings object (usually dict)
 
-        :return: loss, auxiliary_results
+        :return: Tuple: (model_outputs, did_update)
 
-        loss : number (e.g. float)
-        auxiliary_results : can be anything, e.g dict or list with values or data items
+                 model_outputs is a single normalized results dict:
+                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
+                 or
+                    BatchChunkingResults: a list of dicts, one dict per batch chunk results:
+                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
+                         ...
+                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
+
+                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
+                If there are multiple optimizers for different parameter groups, did_update is only True if all
+                optimizers updated their respective model parameters.
+
+                In some cases did_update can be False, for instance when using mixed precision training,
+                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
+                updating an LR scheduler.
+
+        :rtype: Tuple[
+            Union[Dict, BatchChunkingResults[Dict]],
+            bool
+        ]
         """
         raise NotImplemented("Please implement this method in your child class")
 
@@ -872,6 +978,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         :return: dict:
             {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
@@ -883,7 +990,7 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
             evaluate_settings = {}
 
         results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
-        return normalize_evaluation(results)
+        return self.normalize_evaluation(results)
 
     @abc.abstractmethod
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
@@ -898,12 +1005,13 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
                                Tensorflow:  inference_mode required here
 
         :return: dict or tuple
-            {
+           {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
-            (loss, ... auxiliary results ...)
+            (loss, num_samples, ... auxiliary results ...)
         """
         raise NotImplemented("Please implement this method in your child class")
 
@@ -945,14 +1053,16 @@ class TrainerBase(Base, metaclass=abc.ABCMeta):
         return self._valid
 
 
-class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
+class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  optimizers,
                  model_components=None,
-                 batch_chunk_size=None,
+                 eager_mode: bool = False,
+                 batch_chunk_size: Optional[int] = None,
+                 chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  use_mixed_precision=False,
-                 name="DefaultTrainerBase",
+                 name="DefaultTrainer",
                  **kwargs):
         """
         Simple trainer based on a training_model, that evaluates the loss on batch data
@@ -960,19 +1070,34 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         :param optimizers: dict or list with optimizer(s), or a single optimizer instance
         :param model_components: dict or list with model components(s), or a single model instance
 
+        :param eager_mode: If true, the training step is not compiled
+
         :param batch_chunk_size: optional batch chunk size (int)
-                                 If given, batches are processed in chunks of size `batch_chunk_size` samples to
-                                 calculate the gradients. The last chunk can be smaller than `batch_chunk_size` if
-                                 there is not an exact multiple that is equal to the `batch_data` size
+            Enables gradient accumulation. If given, batches are processed in
+            chunks of size `batch_chunk_size` samples to calculate the gradients.
+            The last chunk can be smaller than `batch_chunk_size` if there is not an exact multiple that is
+            equal to the `batch_data` size.
 
-                                 Note 1.
-                                 Chunked processing of a batch only works when the `batch_data` object, received
-                                 by the `train_on` method, implements the `__len__` and `__getitem__` methods.
-                                 Here the `__getitem__` method must be able to deal with slices.
+            Note 1.
+            In order to enable chunked processing of a batch only works when:
+                A) the `batch_data` object, received by the `train_on` method, implements the
+                   `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal with slices.
 
-                                 Note 2.
-                                 When using chunked batch processing, the default implementation assumes that the
-                                 loss, calculated over a chunk, is the average of the sample losses
+                OR
+
+                B) A `chunkable_batch_wrapper` is given, see parameter description
+
+            Note 2.
+            When using chunked batch processing, the default implementation assumes that the
+            loss, calculated over a chunk, is the average of the sample losses
+
+            Note 3.
+            When the `batch_chunk_size` is not an exact multiple of the `batch_data` size, this
+            could trigger retracing of the computation graphs in libraries such as Tensorflow.
+
+        :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
+            This is required when a batch_chunk_size is given and batches are not already chunkable when
+            provided for training
 
         :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
         """
@@ -982,13 +1107,18 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
 
         super().__init__(model_components, optimizers, name=name, **kwargs)
 
+        # TODO: add property getters, disable setting
+        self.eager_mode = eager_mode
+
         self.batch_chunk_size = batch_chunk_size
+        self.chunkable_batch_wrapper = chunkable_batch_wrapper
+
         if self.batch_chunk_size is not None:
-            self._log.info(f"Will train on batches by slicing the batch is chunks of {batch_chunk_size} samples.")
+            self._log.info(f"Will train on batches by slicing the batch in chunks of {batch_chunk_size} samples.")
 
         self.use_mixed_precision = use_mixed_precision
         if self.use_mixed_precision:
-            self._log.info(f"Will train with mixed precision : {self.use_mixed_precision}")
+            self._log.info(f"Will train using mixed precision.")
 
         self.training_model = None
 
@@ -1028,13 +1158,18 @@ class DefaultTrainerBase(TrainerBase, metaclass=abc.ABCMeta):
         :return: dict or tuple
             {
                 "loss": <Tensor>,
+                "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
             }
 
-            (loss, ... auxiliary results ...)
+            (loss, num_samples, ... auxiliary results ...)
         """
 
-        return self.training_model(batch_data, evaluate_settings=evaluate_settings, inference_mode=inference_mode)
+        if is_chunkable(batch_data):
+            # This allows the use of chunkable batches, even if we are not chunking batches
+            batch_data = batch_data[:]
+
+        return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _validate_model(self):
         # TODO : this is framework dependent

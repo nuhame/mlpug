@@ -1,0 +1,4 @@
+I am MLPug.
+I love to train neural networks.
+I'm a model-training and -evaluation framework.
+Visionscaper is my creator.
