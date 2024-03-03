@@ -291,7 +291,10 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
         return True
 
-    def train_on(self, batch_data: Union[Tuple, List], training_settings=None):
+    def train_on(self, batch_data: Union[Tuple, List], training_settings=None) -> Tuple[
+        Union[Dict, BatchChunkingResults[Dict]],
+        bool
+    ]:
         """
         Use batch_data to perform a training iteration.
 
@@ -326,8 +329,18 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
                              ...
                              {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-        :rtype: Union[Dict, BatchChunkingResults[Dict]]
+                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
+                If there are multiple optimizers for different parameter groups, did_update is only True if all
+                optimizers updated their respective model parameters.
 
+                In some cases did_update can be False, for instance when using mixed precision training,
+                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
+                updating an LR scheduler.
+
+        :rtype:  Tuple[
+            Union[Dict, BatchChunkingResults[Dict]],
+            bool
+        ]
         """
 
         if not self.instance_valid():
@@ -347,9 +360,7 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             self._first_batch = False
 
-        model_outputs = self._train_on(batch_data, training_settings)
-
-        return model_outputs
+        return self._train_on(batch_data, training_settings)
 
     def _create_call_model_signature(self):
         if self._batch_data_signature:
@@ -415,9 +426,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             batch_data,
             training_settings)
 
-        self._apply_gradients(gradients)
+        did_update = self._apply_gradients(gradients)
 
-        return model_outputs
+        return model_outputs, did_update
 
     def _train_step_in_chunks(
             self,
@@ -428,9 +439,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
             chunkable_batch_dataset,
             training_settings)
 
-        self._apply_gradients(gradients)
+        did_update = self._apply_gradients(gradients)
 
-        return model_outputs
+        return model_outputs, did_update
 
     def _retrieve_trainable_variables(self):
         if len(self.optimizers) > 1:
@@ -704,9 +715,11 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
         return gradients
 
     def _apply_gradients(self, gradients):
-        self._update_model_parameters_wrapped(self._prepare_update_model_parameters(gradients))
+        did_update = self._update_model_parameters_wrapped(self._prepare_update_model_parameters(gradients))
 
         self._after_update_model_parameters(gradients)
+
+        return did_update
 
     def _prepare_update_model_parameters(self, gradients):
         """
@@ -739,6 +752,9 @@ class DefaultTrainer(TFTrainerMixin, DefaultTrainerBase):
 
             optimizer.apply_gradients(zip(opt_gradients, trainable_variables),
                                       skip_aggregate_gradients=manual_reduction_required)
+
+        # All optimizer assigned parameters are updated.
+        return True
 
     def _after_update_model_parameters(self, gradients):
         pass

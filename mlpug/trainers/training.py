@@ -558,9 +558,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
-                    model_outputs = self.trainer.train_on(training_batch, logs["training_settings"])
+                    model_outputs, did_update_model = self.trainer.train_on(training_batch, logs["training_settings"])
 
                     set_value_at("training.batch.raw.model_outputs", current, model_outputs)
+                    set_value_at("training.batch.did_update_model", current, did_update_model)
                 except Exception as e:
                     if isinstance(e, TrainerInvalidException):
                         err_msg = f"Trainer {self.trainer} is misconfigured, unable to train on batch, " \
@@ -933,7 +934,7 @@ class Trainer(Base, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def train_on(self, batch_data, training_settings=None) -> Tuple[
         Union[Dict, BatchChunkingResults[Dict]],
-        Dict[str, bool]
+        bool
     ]:
         """
         Use batch_data to perform a training iteration
@@ -951,18 +952,17 @@ class Trainer(Base, metaclass=abc.ABCMeta):
                          ...
                          {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-                did_update is a dict, with per optimizer, a boolean indicating if the model weights were updated.
-                In some cases this can be False, for instance, due to when the loss scaling factor is too large for
-                mixed precision training.
+                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
+                If there are multiple optimizers for different parameter groups, did_update is only True if all
+                optimizers updated their respective model parameters.
 
-                In such cases one can skip, for instance, updating an LR scheduler.
-
-                The did_update dict follows the same structure as the dict returned by get_optimizers(), but instead
-                of having an optimizer for each key (optimizer name), there is a boolean for each key.
+                In some cases did_update can be False, for instance when using mixed precision training,
+                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
+                updating an LR scheduler.
 
         :rtype: Tuple[
             Union[Dict, BatchChunkingResults[Dict]],
-            Dict[str, bool]
+            bool
         ]
         """
         raise NotImplemented("Please implement this method in your child class")

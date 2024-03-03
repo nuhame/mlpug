@@ -42,7 +42,11 @@ class DefaultTrainer(MultiProcessingMixin, DefaultTrainerMixin):
             **kwargs
         )
 
-    def _execute_optimizer(self, optimizer):
-        super()._execute_optimizer(optimizer)
+    def _execute_optimizer(self, optimizer) -> bool:
+        did_update = super()._execute_optimizer(optimizer)
         if not self.is_distributed:
             xm.mark_step()
+
+        return did_update
+
+
