@@ -1,15 +1,22 @@
+from typing import Dict, List, Tuple
+
 import contextlib
 import io
-import sys
-from typing import Dict, List, Union, Tuple
 
 import h5py
 
-from functools import reduce, partial
+from functools import partial
 
 import basics.base_utils as _
 
 import tensorflow as tf
+
+# Fix https://stackoverflow.com/a/77440332
+# cannot import name '__version__' from 'tensorflow.python.keras'
+from keras import __version__
+import tensorflow.python.keras as tf_keras
+tf_keras.__version__ = __version__
+
 from tensorflow.python.keras.saving import hdf5_format
 
 from mlpug.batch_chunking import (
