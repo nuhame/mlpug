@@ -29,7 +29,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
     parser.add_argument(
         '--eager-mode',
         action='store_true',
-        help='When flag is set, forward and backward computation graphs will NOT be compiled (i.e. eager mode')
+        help='When flag is set, forward and backward computation graphs will NOT be compiled (i.e. eager mode)')
 
     parser.add_argument(
         '--use-mixed-precision',
