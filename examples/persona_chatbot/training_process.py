@@ -283,7 +283,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         if not self._args.lr_warmup_schedule:
             return
 
-        num_iters_per_epoch = len(self._batch_training_set)
+        num_iters_per_epoch = self.num_batches_training_set
         num_warmup_iters = self._args.lr_warmup_epochs*num_iters_per_epoch
         total_iters = self._args.num_epochs*num_iters_per_epoch
 

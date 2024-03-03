@@ -22,7 +22,7 @@ class LRSchedulerWrapper(LRSchedulerWrapperBase):
 
     def _exec_schedulers(self, training_iter, model_quality=None):
         for name, scheduler in self._schedulers.items():
-            scheduler.on_epoch_begin(training_iter)
+            scheduler.step(training_iter)
 
         return True
 
@@ -34,6 +34,7 @@ class LRSchedulerWrapper(LRSchedulerWrapperBase):
         current_lr = {}
         for name, optimizer in self.optimizers.items():
             # https://github.com/keras-team/keras/blob/b80dd12da9c0bc3f569eca3455e77762cf2ee8ef/keras/callbacks.py#L2182
-            current_lr[name] = float(backend.get_value(optimizer.lr))
+            # current_lr[name] = float(backend.get_value(optimizer.lr))
+            current_lr[name] = float(optimizer.learning_rate.numpy())
 
         return current_lr
