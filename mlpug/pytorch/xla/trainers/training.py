@@ -1,14 +1,23 @@
 import torch_xla.core.xla_model as xm
 
-from mlpug.pytorch.trainers import \
-    Trainer, \
-    DefaultTrainer as DefaultTrainerPyTorch, \
-    TrainingManager as TrainingManagerPyTorch
-
 from mlpug.mlpug_exceptions import TrainerInvalidException
 
+from mlpug.pytorch.utils import SlidingWindow
 
-class TrainingManager(TrainingManagerPyTorch):
+from mlpug.trainers.training import TrainingManager as TrainingManagerBase
+from mlpug.trainers.training import Trainer as TrainerBase
+
+from mlpug.pytorch.trainers.training import (
+    PTTrainerMixin,
+    DefaultTrainerMixin
+)
+
+from mlpug.pytorch.xla.multi_processing import MultiProcessingMixin
+
+
+class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
+    def __init__(self, *args, sliding_window_factory=SlidingWindow, **kwargs):
+        super().__init__(*args, sliding_window_factory=sliding_window_factory, **kwargs)
 
     def _training_ended(self):
         if self.is_distributed:
@@ -16,22 +25,28 @@ class TrainingManager(TrainingManagerPyTorch):
             xm.rendezvous("mlpug-training-ended")
 
 
-class DefaultTrainer(DefaultTrainerPyTorch):
+class Trainer(MultiProcessingMixin, PTTrainerMixin, TrainerBase):
+    pass
+
+
+class DefaultTrainer(MultiProcessingMixin, DefaultTrainerMixin):
 
     def __init__(self, *args, use_mixed_precision=False, name="DefaultTrainer", **kwargs):
         if use_mixed_precision:
             raise TrainerInvalidException("Mixed precision training not supported with XLA devices")
 
-        super(DefaultTrainer, self).__init__(*args,
-                                             use_mixed_precision=use_mixed_precision,
-                                             name=name,
-                                             **kwargs)
+        super().__init__(
+            *args,
+            use_mixed_precision=use_mixed_precision,
+            name=name,
+            **kwargs
+        )
 
-    def _back_propagate_from(self, loss, last_chunk=False):
-        super()._back_propagate_from(loss, last_chunk=last_chunk)
-        # Required when evaluating batch chunks for gradient accumulation
-        xm.mark_step()
+    def _execute_optimizer(self, optimizer) -> bool:
+        did_update = super()._execute_optimizer(optimizer)
+        if not self.is_distributed:
+            xm.mark_step()
 
-    def _update_model_parameters(self):
-        for optimizer in self.get_optimizers().values():
-            xm.optimizer_step(optimizer)
+        return did_update
+
+

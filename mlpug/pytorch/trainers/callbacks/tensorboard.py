@@ -1,11 +1,11 @@
-from mlpug.pytorch.multi_processing import MultiProcessingMixin
-
 from mlpug.mlpug_exceptions import CallbackBadUseException
 
 from mlpug.trainers.callbacks.tensorboard import *
 from mlpug.trainers.callbacks.tensorboard import \
     Tensorboard as TensorboardBase, \
     AutoTensorboard as AutoTensorboardBase
+
+from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
 class Tensorboard(MultiProcessingMixin, TensorboardBase):

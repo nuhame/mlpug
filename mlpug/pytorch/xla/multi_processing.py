@@ -11,7 +11,7 @@ class XLADistributedContext(MultiProcessingContextBase):
         super().__init__(name=name)
 
     def is_distributed(self):
-        return xm.xrt_world_size() > 1
+        return self.world_size() > 1
 
     def is_primary(self):
         return xm.is_master_ordinal()

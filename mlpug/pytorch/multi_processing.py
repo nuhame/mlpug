@@ -6,7 +6,7 @@ from mlpug.multi_processing import \
 
 
 # TODO : All the mlpug components that derive from MultiProcessingMixin, here in the pytorch package
-#        should be in a seperate package. This creates an intermediate level between the mlpug base classes
+#        should be in a separate package. This creates an intermediate level between the mlpug base classes
 #        and the Pytorch specializations. In this way the MultiProcessing versions of the components can easily be
 #        reused for another specialization.
 

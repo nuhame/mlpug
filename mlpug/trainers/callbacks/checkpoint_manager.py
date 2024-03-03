@@ -15,13 +15,17 @@ from mlpug.trainers.callbacks.callback import Callback
 import basics.base_utils as _
 
 
+def no_logs_cleaning(logs):
+    return logs
+
+
 class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def __init__(self,
                  model_hyper_parameters=None,
                  checkpoints_path="../trained-models/",
                  batch_level=True,
-                 metric_to_monitor="validation.window_average.perplexity",
+                 metric_to_monitor="validation.sliding_window.loss",
                  metric_opt_mode='min',
                  metric_monitor_period=None,  # batches or epochs
                  metric_checkpoint_threshold=None,
@@ -30,6 +34,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
                  archive_last_model_checkpoint_every=2000,  # batches or epochs
                  create_latest_model_checkpoint=True,
                  create_training_checkpoint=False,
+                 clean_logs_func=None,
                  base_checkpoint_filename=time.strftime("%d-%m-%Y_%H-%M-%S"),
                  model_checkpoint_filename_ext="m-ckp",
                  training_checkpoint_filename_ext="t-ckp",
@@ -75,8 +80,11 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         :param create_training_checkpoint: If False, no training checkpoint will be created periodically
                                            (also see `create_checkpoint_every`)
 
-        :param force_monitoring_on_epoch: When True, the given metric will also be monitored on every epoch
-                                          in the case that monitoring level is batch level
+        :param clean_logs_func: Optional. Whenever the metric we monitor here improves, a copy of the
+                                current logs are made and stored in the logs object using the 'best' key.
+                                This custom function cleans the best logs before they are stored. This is useful
+                                to, for instance, optimize the memory usage.
+
         :param base_checkpoint_filename:
         :param model_checkpoint_filename_ext:
         :param training_checkpoint_filename_ext:
@@ -114,6 +122,14 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
         self._do_create_latest_model_checkpoint = create_latest_model_checkpoint
         self._do_create_training_checkpoint = create_training_checkpoint
+
+        if clean_logs_func is None:
+            clean_logs_func = no_logs_cleaning
+
+        if not callable(clean_logs_func):
+            raise ValueError("Provided clean_logs_func is not callable")
+
+        self._clean_logs_func = clean_logs_func
 
         self._backup_before_override = backup_before_override
 
@@ -452,9 +468,20 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
 
     def _update_logs(self, model_improved, logs, current):
         if model_improved:
-            logs["best"] = current.copy()
+            logs["best"] = self._copy_logs(current)
 
         current["is_best"] = model_improved
+
+    def _copy_logs(self, current_logs):
+        current_logs_copy = current_logs.copy()
+
+        # remove raw results
+        current_training_batch_logs = get_value_at('training.batch', current_logs_copy)
+        if get_value_at('raw', current_training_batch_logs) is not None:
+            del current_training_batch_logs['raw']
+
+        # TODO: is clean_logs_func still required when 'raw' is removed?
+        return self._clean_logs_func(current_logs_copy)
 
     def _create_model_checkpoint(self, model_fn=None, file_to_copy=None):
         if model_fn is None:

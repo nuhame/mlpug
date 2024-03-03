@@ -13,12 +13,15 @@ module_logger = get_logger(os.path.basename(__file__))
 try:
     from tensorboardX import SummaryWriter
 except Exception as e:
-    log_exception(module_logger, "Please `pip install transformers`", e)
+    log_exception(module_logger, "Please `pip install tensorboardX`", e)
+
+
+from mlpug.reserved import RESERVED_LOG_FIELDS
 
 
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'
-WINDOW_AVERAGED_METRICS_WRITER = 'window-averaged-metrics'
+SLIDING_WINDOW_METRICS_WRITER = 'sliding-window-metrics'
 
 
 def get_value_at(path, obj):
@@ -39,7 +42,7 @@ class Tensorboard(Callback):
                  batch_level=True,
                  track_on_start=False,
                  track_epoch_level_metrics_on_batch_level=False,
-                 metrics_are_averages=False,
+                 sliding_window_metrics=False,
                  metric_names=None,
                  batch_log_period=1,
                  flush_period=50,
@@ -85,26 +88,26 @@ class Tensorboard(Callback):
         {
             ...
             'training': {
-                'window_average': {
+                'sliding_window': {
                     'loss': 0.201
                 }
             },
             'validation': {
-                'window_average': {
+                'sliding_window': {
                     'loss': 0.234
                 }
             },
             'training_params': {
                 'batch': { 'duration': 0.534 },
-                'window_average': { 'duration':  0.531 }
+                'sliding_window': { 'duration':  0.531 }
             }
         }
         ```
         The following `Tensorboard`
         ```
-        Tensorboard(['window_average.loss', 'window_average.duration'], 'experiment1', 'validation')
+        Tensorboard(['sliding_window.loss', 'sliding_window.duration'], 'experiment1', 'validation')
         ```
-        Will display a figure with `validation.window_average.loss`, because `window_average.loss` is
+        Will display a figure with `validation.sliding_window.loss`, because `sliding_window.loss` is
         available in `validation`.
 
 
@@ -114,11 +117,11 @@ class Tensorboard(Callback):
         path, defined in all instances will be shown in one graph.
 
         ```
-        t_train = Tensorboard(['window_average.loss'], 'experiment1', 'training')
-        t_val = Tensorboard(['window_average.loss'], 'experiment1', 'validation')
+        t_train = Tensorboard(['sliding_window.loss'], 'experiment1', 'training')
+        t_val = Tensorboard(['sliding_window.loss'], 'experiment1', 'validation')
         ```
 
-        Registering the above tensorboards will plot the window_average Loss for the training set and validation set in
+        Registering the above tensorboards will plot the sliding_window Loss for the training set and validation set in
         one graph
 
 
@@ -172,17 +175,17 @@ class Tensorboard(Callback):
         Further, the `hamburger` and `hotdog` precision plots will be combined in one precision plot.
 
 
-        ## Using `metrics_are_averages` and `metric_names`
+        ## Using `sliding_window_metrics` and `metric_names`
 
-        If `metrics_are_averages=True` the metrics are written to Tensorboard using another writer, such that
-        a metric and its average can be shown in one figure.
+        If `sliding_window_metrics=True` the metrics are written to Tensorboard using another writer, such that
+        a metric calculated over a batch and a sliding window of batches can be shown in one figure.
 
         For instance,
 
         ```
         metric_names = {
-            'batch.loss': 'cross_entropy',
-            'window_average.loss': 'cross_entropy'
+            'batch.loss': 'cross entropy',
+            'sliding_window.loss': 'cross entropy'
         }
 
         Tensorboard([loss], 'experiment1', 'validation', metric_names = metric_names)
@@ -191,18 +194,15 @@ class Tensorboard(Callback):
 
         When also adding the following `Tensorboard`:
         ```
-        Tensorboard([window_average.loss],
+        Tensorboard([sliding_window.loss],
                     'experiment1',
                     'validation',
                     metric_names = metric_names,
-                    metrics_are_averages=True)
+                    sliding_window_metrics=True)
         ```
 
-        Adds the `validation.window_average.loss` averages to the same batch-level `cross_entropy` figure.
-
-
-
-
+        Adds the `validation.sliding_window.loss`, computed over a sliding window of batches, to
+        the same batch-level `cross_entropy` figure.
 
         To show the Tensorboard start is as follows:
 
@@ -232,9 +232,9 @@ class Tensorboard(Callback):
         :param track_epoch_level_metrics_on_batch_level: {boolean} If True, and batch_level = True, epoch level metrics
                                         will also be written to batch level graphs.
 
-        :param metrics_are_averages: {boolean}
+        :param sliding_window_metrics: {boolean}
                                      If True, the given metrics are written by a separate writer dedicated
-                                     to metrics window averages
+                                     to sliding window metrics
 
         :param metric_names:    {dict}
                                 Dict mapping metric paths (keys), to metric names for the metrics (values).
@@ -258,7 +258,9 @@ class Tensorboard(Callback):
         :param log_dir:         Logging directory. When `experiment_name`, `dataset_name` and `label_name` are
                                 provided, the final logging directory will be:
 
-                                log_dir/<experiment_name>/<label_name>-<dataset-name>-[metric or metric-window-averages]
+                                log_dir/<experiment_name>/<label_name>-<dataset-name>-metrics
+                                of
+                                log_dir/<experiment_name>/<label_name>-<dataset-name>-sliding-window-metrics
 
                                 Any parameters not provided will not be used to build up the log_dir
 
@@ -278,7 +280,7 @@ class Tensorboard(Callback):
         self._batch_level = batch_level
         self._track_on_start = track_on_start
         self._track_epoch_level_metrics_on_batch_level = track_epoch_level_metrics_on_batch_level
-        self._metrics_are_averages = metrics_are_averages
+        self._sliding_window_metrics = sliding_window_metrics
 
         self._metric_names = metric_names
 
@@ -292,7 +294,7 @@ class Tensorboard(Callback):
 
         self._ignore_missing_metrics = ignore_missing_metrics
 
-        self._writer_type = WINDOW_AVERAGED_METRICS_WRITER if self._metrics_are_averages else METRIC_WRITER
+        self._writer_type = SLIDING_WINDOW_METRICS_WRITER if self._sliding_window_metrics else METRIC_WRITER
 
         self._writer = None
 
@@ -501,7 +503,7 @@ class AutoTensorboard(Callback):
                  dataset_name,
                  experiment_name=None,
                  show_batch_level=True,
-                 show_batch_window_averages=True,
+                 show_sliding_window_metrics=True,
                  show_epoch_level=True,
                  metric_names=None,
                  batch_log_period=1,
@@ -513,7 +515,7 @@ class AutoTensorboard(Callback):
                  **kwargs):
         """
 
-        Shows batch-level metrics, and/or averaged batch-level (metrics), and/or epoch level metrics.
+        Shows batch-level metrics, and/or metrics computed over a sliding window of batches, and/or epoch level metrics.
 
         All available metrics for `dataset_name` in the `logs` object received from the
         training manager are logged
@@ -527,7 +529,7 @@ class AutoTensorboard(Callback):
                             'batch': {
                                 'loss': 0.65,
                             },
-                            'window_average': {
+                            'sliding_window': {
                                       'loss': 0.63
                                     }
                            }
@@ -537,12 +539,12 @@ class AutoTensorboard(Callback):
         When `show_batch_level` is True, then `validation.batch.loss` will be shown in
         the batch-level `loss` figure.
 
-        When `show_batch_window_averages` is True, then `validation.window_averages.loss` will be shown in
+        When `show_sliding_window_metrics` is True, then `validation.sliding_window.loss` will be shown in
         the batch-level `loss` figure.
 
         When `show_epoch_level` is True, then `validation.dataset.loss` will be shown in
         the epoch-level `loss` figure. Further, if `validation.dataset.loss` is not available,
-        `validation.window_average.loss` will be tried
+        `validation.sliding_window.loss` will be tried
 
 
         To show the Tensorboard start is as follows:
@@ -561,8 +563,8 @@ class AutoTensorboard(Callback):
                                 <dataset_name>.* path first of the logs object provided by the training manager.
 
         :param show_batch_level: {Boolean} If True, batch-level metrics will be logged to Tensorboard
-        :param show_batch_window_averages: {Boolean} If True, (sliding-window) averaged batch-level metrics will be logged
-                                           to Tensorboard
+        :param show_sliding_window_metrics: {Boolean} If True, metrics computed over a sliding window of batches
+                                            will be logged to Tensorboard
         :param show_epoch_level: {Boolean} If True, epoch-level metrics will be logged to Tensorboard
 
         :param metric_names:    {dict}
@@ -574,7 +576,7 @@ class AutoTensorboard(Callback):
                                     'special.my_metric': 'my_awesome_metrics'
                                 }
 
-                                In this case `validation.loss` and `validation.window_average.loss` are
+                                In this case `validation.loss` and `validation.sliding_window.loss` are
                                 named 'cross_entropy'
 
         :param batch_log_period: {int}
@@ -606,7 +608,7 @@ class AutoTensorboard(Callback):
         self._dataset_name = dataset_name
 
         self._show_batch_level = show_batch_level
-        self._show_batch_window_averages = show_batch_window_averages
+        self._show_sliding_window_metrics = show_sliding_window_metrics
         self._show_epoch_level = show_epoch_level
 
         self._metric_names = metric_names
@@ -628,8 +630,8 @@ class AutoTensorboard(Callback):
             # Metrics writer is used for batch level and epoch level
             success = self._setup_writer_for(METRIC_WRITER)
 
-            if self._show_batch_level and self._show_batch_window_averages:
-                success &= self._setup_writer_for(WINDOW_AVERAGED_METRICS_WRITER)
+            if self._show_batch_level and self._show_sliding_window_metrics:
+                success &= self._setup_writer_for(SLIDING_WINDOW_METRICS_WRITER)
 
         except Exception as e:
             _.log_exception(self._log, "An exception occurred setting up the Tensorboard callback", e)
@@ -684,10 +686,10 @@ class AutoTensorboard(Callback):
                                    batch_level=True,
                                    at_start=at_start)
 
-        if self._show_batch_window_averages:
+        if self._show_sliding_window_metrics:
             success &= self._write(current,
                                    global_iter,
-                                   writer_type=WINDOW_AVERAGED_METRICS_WRITER,
+                                   writer_type=SLIDING_WINDOW_METRICS_WRITER,
                                    batch_level=True,
                                    at_start=at_start)
 
@@ -767,10 +769,10 @@ class AutoTensorboard(Callback):
         # Get all metrics available
         if self._dataset_name:
             if batch_level:
-                if writer_type != WINDOW_AVERAGED_METRICS_WRITER:
+                if writer_type != SLIDING_WINDOW_METRICS_WRITER:
                     possible_base_paths = [f"{self._dataset_name}.batch"]
                 else:
-                    possible_base_paths = [f"{self._dataset_name}.window_average"]
+                    possible_base_paths = [f"{self._dataset_name}.sliding_window"]
             else:
                 possible_base_paths = [f"{self._dataset_name}.dataset",
                                        f"{self._dataset_name}.epoch"]
@@ -796,8 +798,7 @@ class AutoTensorboard(Callback):
     def _get_all_metrics_from(self, base_path, current_logs, batch_level):
         dataset_metrics = get_value_at(base_path, current_logs)
 
-        # TODO : Make this a library level constant
-        skip_metric_names = {"auxiliary_results"}
+        skip_metric_names = RESERVED_LOG_FIELDS
 
         metrics = {}
 

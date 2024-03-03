@@ -1,10 +1,31 @@
-from mlpug.pytorch.multi_processing import MultiProcessingMixin
-from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapperBase
-
 from statistics import mean
 
+import torch
 
-class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperBase):
+from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapper as LRSchedulerWrapperBase
+
+from mlpug.pytorch.multi_processing import MultiProcessingMixin
+
+
+class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
+    """
+    NOTE: The following warning can occur when Automatic Mixed Precision and no update was made:
+          UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`
+
+          See https://discuss.pytorch.org/t/userwarning-detected-call-of-lr-scheduler-step-before-optimizer-step/164814/2
+    """
+
+    def on_training_start(self, *args, **kwargs):
+        success = super().on_training_start(*args, **kwargs)
+
+        eager_mode = self.trainer.eager_mode
+        if not eager_mode:
+            self._log.debug("Enabling compilation of LR scheduling ...")
+
+            compile_kwargs = self.trainer.compile_kwargs
+            self._exec_schedulers = torch.compile(self._exec_schedulers, **compile_kwargs)
+
+        return success
 
     def get_state(self):
         """
@@ -50,10 +71,14 @@ class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperBase):
 
         current_lr = {}
         for name, optimizer in self.optimizers.items():
-            lr = []
+            group_lrs = []
             for group in optimizer.param_groups:
-                lr.append(group['lr'])
+                group_lrs.append(group['lr'].item())
 
-            current_lr[name] = mean(lr)
+            current_lr[name] = mean(group_lrs)
 
         return current_lr
+
+
+class LRSchedulerWrapper(MultiProcessingMixin, LRSchedulerWrapperMixin):
+    pass
