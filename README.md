@@ -1,53 +1,20 @@
 # MLPug
-MLPug is a Machine Learning library agnostic framework for model training. A lot of the functionality you need to train your model is independent of the 
-ML library you're using, e.g. PyTorch or Tensorflow. MLPug provides a single framework with a unified API for all such training functionality,
+MLPug is a library for training and evaluating Machine Learning (ML) models, able to use different 
+ML libraries as backends. 
+
+A lot of the functionality you need to train and evaluate your model is 
+independent of the ML library you're using, such as PyTorch, Jax, Apple MLX or TinyGrad. 
+MLPug aims to provide a single framework with a unified API for all such training and evaluation functionality,
 independent of the ML library you are using. 
 
-**Thus, when switching ML library, you don't have to learn a new training API and you can reuse your own training code with no, or minimal, change! 🤩🎉**
+**Thus, when switching ML library, you don't have to learn a new training API and you can reuse your own training code 
+with no, or minimal, change! 🤩🎉**
 
-## Dive right in!
+## MLPug is at version 0.1!
+MLPug is still in development. If you are having trouble using MLPug for your use case, or 
+when you have found a bug, please file an issue.
 
-### Run the repository examples
-
-You can find the example code [here](examples/). 
-How MLPug is used in the examples is explained further [here](#hello-world-with-pytorch).
-
-Clone the MLPug repo:
-
-```
-git clone https://github.com/nuhame/mlpug.git
-```
-
-#### MLPug with PyTorch
-To run the PyTorch examples, install PyTorch first, further use Python >= 3.7.
-```
-cd mlpug
-
-# MLPug Hello World example
-python mlpug/examples/hello_world/pytorch/train.py
-
-# MLPug Fashion MNIST example
-# Run `train.py -h` for options
-python mlpug/examples/fashion_mnist/pytorch/train.py
-```
-
-There are similar examples for using MLPug with PyTorch/XLA, see the `pytorch/xla` directories of the examples.
-
-#### MLPug with Tensorflow
-To run the Tensorflow examples, install Tensorflow first, further use Python >= 3.7.
-```
-cd mlpug
-
-# MLPug Hello World example
-# Run train.py or train_not_eager.py
-python mlpug/examples/hello_world/tensorflow/train.py
-
-# MLPug Fashion MNIST example
-# Run `train.py -h` for options
-python mlpug/examples/fashion_mnist/tensorflow/train.py
-```
-### Use MLPug in your own project
-
+## Dive right in! Installing MLPug as a Python package for your project.
 ```
 pip install mlpug
 ```
@@ -64,14 +31,160 @@ import mlpug.pytorch.xla as mlp
 
 ```Python
 # Using MLPug with Tensorflow
+# WARNING: limited support, will not be developed and maintained further in the future
 import mlpug.tensorflow as mlp
 ```
 
-# What is MLPug?
-MLPug is a machine learning library agnostic framework for model training.
+## Basic template of usage
 
-A lot of the functionality you need to train your machine learning model is 
-independent of the machine learning library you're using, e.g. PyTorch and Tensorflow.
+```
+# ################# SETUP ##################
+# A TrainModel uses your model to calculate and return the training loss and other basic data
+train_model = TrainModel(classifier)
+
+# The trainier knows how to train the model on a batch
+trainer = mlp.trainers.DefaultTrainer(
+    optimizers=optimizer,
+    model_components=classifier
+)
+
+# At minimum, you want to log the loss to track training progress
+# By default the batch loss and the moving average of the loss are calculated and logged
+loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
+callbacks = [
+    mlp.callbacks.TrainingMetricsLogger(metric_evaluator=loss_evaluator),
+    # Calculate validation loss only once per epoch over the whole dataset
+    mlp.callbacks.DatasetMetricsLogger(validation_dataset,
+                                       'validation',
+                                       metric_evaluator=loss_evaluator,
+                                       batch_level=False),
+    # Log the progress during training                                       
+    mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
+]
+
+manager = mlp.trainers.TrainingManager(trainer,
+                                       training_dataset,
+                                       num_epochs=num_epochs,
+                                       callbacks=callbacks)
+
+trainer.set_training_model(train_model)
+
+# ################# START! #################
+manager.start_training()
+```
+
+Also see section [Explaining the MLPug Hello World example](#explaining-the-mlpug-hello-world-example).
+
+## Running the repository examples
+You can find the example code [here](examples/).
+
+In the MLPug examples package there are three examples:
+ * A simple Hello World example
+ * A Fashion MNIST example with multiple commandline options for common MLPug features
+ * [PyTorch only] A complex example where we train a GPT2 chatbot based on the Persona dataset
+
+To get started with the examples clone the MLPug repo:
+```
+git clone https://github.com/nuhame/mlpug.git
+```
+
+To run the examples, be sure to be in the root of the MLPug repository.
+```
+cd mlpug
+```
+
+Ensure that the current directory (the MLPug repo root) is added to the python path, such that python can
+find the example scripts:
+```
+export PYTHONPATH=.:$PYTHONPATH
+```
+
+It is advised to run the examples in a Python virtual environment:
+```
+python3 -m venv  ~/.virtualenvs/mlpug
+# Activate the virtual environment
+source ~/.virtualenvs/mlpug/bin/activate
+```
+
+In your `>=Python3.9` virtual environment, install the basic requirements:
+```
+pip install -r requirements.txt 
+```
+### Examples of using MLPug with PyTorch
+
+Next to examples for PyTorch, there are equivalent examples for using MLPug with PyTorch/XLA and Tensorflow, see the 
+`tensorflow` and `pytorch/xla` directories of the examples. For XLA you need to use a TPU on Google Cloud, or 
+use Google Colab. Here we focus on PyTorch. 
+
+#### Hello world
+Next to the default requirements, for the Hello World example, install the example specific requirements in your 
+`>=Python3.9` virtual environment:
+```
+pip install -r requirements.txt
+pip install -r examples/hello_world/pytorch/requirements.txt
+```
+
+```
+# MLPug Hello World example
+python examples/hello_world/pytorch/train.py
+```
+
+#### Fashion MNIST
+For the Fashion MNIST example install the following requirements:
+```
+pip install -r requirements.txt
+pip install -r examples/fashion_mnist/pytorch/requirements.txt
+```
+
+```
+# MLPug Fashion MNIST example
+python examples/fashion_mnist/pytorch/train.py
+
+# If you have multiple GPUs
+python examples/fashion_mnist/pytorch/train.py --distributed
+
+# To a batch size of 32, evaluated in chunks of 8 samples for gradient accumulation 
+python examples/fashion_mnist/pytorch/train.py --batch-size 32 --batch-chunk-size 8
+```
+
+Some other useful flags are:
+ * `--use-mixed-precision`: When flag is set, mixed precision will be applied during training
+ * `--eager-mode`: When flag is set, forward and backward computation graphs will NOT be compiled (i.e. eager mode)
+
+Run `train.py -h` for all options
+
+#### Training a Persona Chatbot based on GPT2
+Next to the default requirements, install the example specific requirements in your 
+`>=Python3.9` virtual environment:
+```
+pip install -r requirements.txt 
+pip install -r examples/persona_chatbot/requirements.txt 
+pip install -r examples/persona_chatbot/pytorch/requirements.txt 
+```
+
+What batch chunking size (micro batch size for gradient accumulation) depends on your system.
+The following setup assumes multiple GPUs (`--distributed`).
+```
+python examples/persona_chatbot/pytorch/train.py \
+                 --experiment-name persona-bot-experiment \
+                 --num-dataloader-workers 2 \
+                 --batch-size 32 \
+                 --num-choices 8 \
+                 --sequence-length-outlier-threshold 0.05 \
+                 --learning-rate 1e-4 \
+                 --distributed \
+                 --num-epochs 6 \
+                 --progress-log-period 10
+```
+
+See `train.py -h` to see all options.
+
+## What is MLPug?
+MLPug is a library for training and evaluating Machine Learning (ML) models, able to use different 
+ML libraries as backends.
+
+A lot of the functionality you need to train and evaluate your machine learning model is 
+independent of the machine learning library you're using, such as PyTorch, Jax, Apple MLX or TinyGrad.
 For instance, 
 
  * checkpoint management,
@@ -82,37 +195,32 @@ For instance,
 
 You need such functionality no matter what machine learning framework you are using.
 
-MLPug provides a single framework with a unified API for all such training functionality,
-independent of the machine learning library you are using. This also implies that when you switch library
+MLPug aims to provide a single framework with a unified API for all such training and evaluation functionality,
+independent of the ML library you are using. This also implies that when you switch library
 you can reuse your training code with no, or minimal, changes.
 
-## Supported deep learning libraries
+## Supported machine learning libraries
 Currently, MLPug supports the following deep learning/machine learning libraries:
 
  * PyTorch
  * PyTorch/XLA (Training with Pytorch on TPUs)
- * Tensorflow (in development, some features not available yet)
+ * Tensorflow
+
+Tensorflow is not fully supported at the moment and will not be further developed and maintained in the future, unless 
+someone wants to contribute Tensorflow support to MLPug.
+
+The ambition is to also add Jax, Apple MLX and TinyGrad as backends.
 
 ## MLPug focus
 Although MLPug should be able to deal with any training job, its functionality is mostly focussed on dealing with  
 training large models on large datasets, using limited hardware (GPU or TPU) resources and memory.
 
-## Almost at version 0.1!
-MLPug is still in development. If you are having trouble using MLPug for your use case, or 
-when you have found a bug, please file an issue.
-
-## Contents
-[Installing MLPug](#installing-mlpug) \
-\
-[Hello World](#hello-world) ([PT](#hello-world-with-pytorch) | 
-[XLA](#hello-world-with-pytorchxla) | 
-[TF](#hello-world-with-tensorflow)) 
+## Detailed documentation
+The following sections are documentation **ToDo's**, but provide insight in to MLPug's features: 
 
 [Feature parity list](#feature-parity-list)
-\
-\
-\
-The following sections are documentation **ToDo's**, but provide insight in to MLPug's features: \
+
+
 [The `logs` object](#the-logs-object) \
 \
 [Callbacks and the training life cycle](#callbacks-and-the-training-life-cycle) \
@@ -152,46 +260,10 @@ The following sections are documentation **ToDo's**, but provide insight in to M
 \
 [Using multiple optimizers](#using-multiple-optimizers)
 
-## Installing MLPug
-Please ensure that you are using Python3.7+.
+### Explaining the MLPug Hello World example
 
-Install as follows:
-```
-pip install mlpug
-```
+#### Hello World with PyTorch
 
-### Usage with PyTorch
-When you want to use MLPug with PyTorch, you will need to install it:
-```
-pip install torch torchvision
-```
-
-### Usage with Tensorflow
-When you want to use MLPug with Tensorflow, you will need to install it:
-```
-pip install tensorflow
-```
-
-## Hello World!
-This is the Hello World of training with MLPug. You will see that the usage of MLPug with Pytorch, 
-Pytorch/XLA and Tensorflow is very similar.
-
-For details please see :
-
- * [hello_world/pytorch/train.py](examples/hello_world/pytorch/train.py) and 
-[hello_world/pytorch/train_eager.py](examples/hello_world/pytorch/train_eager.py),
-
- * [hello_world/pytorch/xla/train.py](examples/hello_world/pytorch/xla/train.py),
-
- * [hello_world/tensorflow/train.py](examples/hello_world/tensorflow/train.py) and 
-[hello_world/tensorflow/train_eager.py](examples/hello_world/tensorflow/train_eager.py)
-   
-You can download and run these examples (for XLA you need to use a TPU on Google Cloud, or use Google Colab).
-
-When reading through the explanation below it might be that you still have a lot of questions about the why and how of
-training with MLPug, however I will expand the MLPug documentation soon, so you will get better insight.
-
-### 'Hello World' with PyTorch
 To use MLPug with Pytorch
 ```python
 import mlpug.pytorch as mlp
@@ -241,7 +313,10 @@ optimizer = torch.optim.Adam(classifier.parameters(), eps=1e-7)
 
 To now use MLPug to start training, we need to create a `Trainer` which will be used by a `TrainingManager`.
 ```python
-trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
+trainer = mlp.trainers.DefaultTrainer(
+    optimizers=optimizer, 
+    model_components=classifier
+)
 ```
 
 MLPug uses a callback system allowing you to customize and extend the training functionality. 
@@ -249,7 +324,7 @@ The list of callback instances you provide the `TrainingManager` will be called 
 training process.
 
 ```python
-# At minimum you want to log the loss in the training progress
+# At minimum, you want to log the loss to track training progress
 # By default the batch loss and the moving average of the loss are calculated and logged
 loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
 callbacks = [
@@ -259,13 +334,14 @@ callbacks = [
                                        'validation',
                                        metric_evaluator=loss_evaluator,
                                        batch_level=False),
+    # Log the progress during training
     mlp.callbacks.LogProgress(log_period=progress_log_period, set_names=['training', 'validation']),
 ]
 ```
 
 The `TrainingMetricsLogger` and the `DatasetMetricsLogger` callback instances log training and validation set loss values 
 in a `logs` object that is passed through all callbacks during training. The `LogProgress` callback instance logs the 
-metric values stored in the received `logs` object.
+metric values stored in the received `logs` object to the console (stdout).
 
 We can now instantiate the `TrainingManager` and pass it the `trainer`. 
 ```python
@@ -285,15 +361,15 @@ The final step is to actually start training:
 manager.start_training()
 ```
 
-Running `pytorch/hello_world.py` finishes like this:
+Running `examples/hello_world/pytorch/train.py` finishes like this:
 ```text
 ###############################################################################
 Epoch 9/9	READY - Duration 0:00:08
-Moving average:
-training       : loss          0.238.
+Computed over sliding window:
+training       : loss          0.239.
 
 Computed over dataset:
-validation     : loss          0.346.
+validation     : loss          0.355.
 
 
 
@@ -303,10 +379,9 @@ Using the classifier ...
 real label = 9, predicted label = 9
 ```
 
-### 'Hello World' with PyTorch/XLA
-
-The Hello World example with PyTorch/XLA, is largely the same as with [PyTorch](#hello-world-with-pytorch). There are only
-two small differences.
+#### Hello World with PyTorch/XLA
+The Hello World example with PyTorch/XLA, is largely the same as with [PyTorch](#hello-world-with-pytorch). 
+There are only two small differences.
 
 To use MLPug with Pytorch/XLA, load the correct backend
 ```python
@@ -325,7 +400,7 @@ train_model = TrainModel(classifier, device)
 classifier.to(device)
 ```
 
-### 'Hello World' with Tensorflow
+### Hello World with Tensorflow
 Below we will focus only on the minor differences between using MLPug with [PyTorch](#hello-world-with-pytorch) and Tensorflow.
 
 To use MLPug with Tensorflow
@@ -333,14 +408,7 @@ To use MLPug with Tensorflow
 import mlpug.tensorflow as mlp
 ```
 
-The only real difference is that, for Tensorflow, you can specify if the trainer needs to run in eager mode or not.
-If not, you need to specify the input `batch_data_signature`.
-```python
-trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
-                                      model_components=classifier,
-                                      eager_mode=True)
-```
-
+For the `DefaultTrainer`, you can specify the input `batch_data_signature`.
 ```python
 trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
                                       model_components=classifier,
@@ -348,18 +416,18 @@ trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
                                                             tf.TensorSpec(shape=(None,), dtype=tf.uint8),))
 ```
 When you run [hello_world/tensorflow/train.py](examples/hello_world/tensorflow/train.py) and 
-[hello_world/tensorflow/train_not_eager.py](examples/hello_world/tensorflow/train.py) you will see
-that when not running in eager mode, training is much faster.
+[hello_world/tensorflow/train_eager.py](examples/hello_world/tensorflow/train_eager.py) you will see
+that when running in eager mode, training is much slower.
 
-Running `hello_world/tensorflow/train.py` finishes like this:
+Running `hello_world/tensorflow/train_eager.py` finishes like this:
 ```text
 ###############################################################################
-Epoch 9/9	READY - Duration 0:00:15
-Moving average:
-training       : loss          0.229.
+Epoch 9/9	READY - Duration 0:00:21
+Computed over sliding window:
+training       : loss          0.230.
 
 Computed over dataset:
-validation     : loss          0.370.
+validation     : loss          0.349.
 
 
 
@@ -369,15 +437,15 @@ Using the classifier ...
 real label = 9, predicted label = 9
 ```
 
-Running `hello_world/tensorflow/train_not_eager.py` finishes like this:
+Running `hello_world/tensorflow/train.py` finishes like this:
 ```text
 ###############################################################################
-Epoch 9/9	READY - Duration 0:00:06
-Moving average:
-training       : loss          0.229.
+Epoch 9/9	READY - Duration 0:00:09
+Computed over sliding window:
+training       : loss          0.235.
 
 Computed over dataset:
-validation     : loss          0.370.
+validation     : loss          0.354.
 
 
 
@@ -405,7 +473,8 @@ Note the difference in epoch duration!
 | Batch Chunking: chunked evaluation of metrics |      ✓      |      ✓      |      ✓      |             | |
 | Tensorboard support                           |      ✓      |      ✓      |      ✓      |             | Might be refactored |
 | Learning Rate scheduling                      |      ✓      |      ✓      |      ✓      |             | Might be refactored |
-| Mixed Precision Training                      |      ✓      |      ❌     |      ~      |             | Should work with TF, but no specific support |
+| Mixed Precision Training                      |      ✓      |      ❌     |      ❌    |             | Should work with TF, but no specific support |
 | Using multiple optimizers                     |      ✓      |      ✓      |      ✓      |             | |
-| Multi-task training                           |      ~      |      ~      |      ~      |             | No support yet, but can be done when only one DataLoader is required |
+
+
 
