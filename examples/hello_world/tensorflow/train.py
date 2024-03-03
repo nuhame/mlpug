@@ -69,7 +69,7 @@ if __name__ == '__main__':
                                           batch_data_signature=(tf.TensorSpec(shape=(None, 28, 28), dtype=tf.float64),
                                                                 tf.TensorSpec(shape=(None,), dtype=tf.uint8),))
 
-    # At minimum you want to log the loss in the training progress
+    # At minimum, you want to log the loss to track training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
     callbacks = [

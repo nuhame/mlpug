@@ -51,13 +51,13 @@ if __name__ == '__main__':
     training_dataset = torch.utils.data.DataLoader(training_data,
                                                    batch_size=batch_size,
                                                    shuffle=False,
-                                                   num_workers=3)
+                                                   num_workers=1)
 
     # Using the test set as a validation set, just for demonstration purposes
     validation_dataset = torch.utils.data.DataLoader(test_data,
                                                      batch_size=batch_size,
                                                      shuffle=False,
-                                                     num_workers=3)
+                                                     num_workers=1)
     # ##########################################
 
     # ############ BUILD THE MODEL #############
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     # ############# SETUP TRAINING ##############
     trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer, model_components=classifier)
 
-    # At minimum you want to log the loss in the training progress
+    # At minimum, you want to log the loss to track training progress
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(trainer=trainer)
     callbacks = [
