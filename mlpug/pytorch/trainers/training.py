@@ -135,7 +135,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
     def train_on(self, batch_data, training_settings=None) -> Tuple[
         Union[Dict, BatchChunkingResults[Dict]],
-        Dict[str, bool]
+        bool
     ]:
         """
         Use batch_data to perform a training iteration.
@@ -170,18 +170,17 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
                          ...
                          {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
 
-                did_update is a dict, with per optimizer, a boolean indicating if the model weights were updated.
-                In some cases this can be False, for instance, due to when the loss scaling factor is too large for
-                mixed precision training.
+                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
+                If there are multiple optimizers for different parameter groups, did_update is only True if all
+                optimizers updated their respective model parameters.
 
-                In such cases one can skip, for instance, updating an LR scheduler.
-
-                The did_update dict follows the same structure as the dict returned by get_optimizers(), but instead
-                of having an optimizer for each key (optimizer name), there is a boolean for each key.
+                In some cases did_update can be False, for instance when using mixed precision training,
+                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
+                updating an LR scheduler.
 
         :rtype: Tuple[
             Union[Dict, BatchChunkingResults[Dict]],
-            Dict[str, bool]
+            bool
         ]
         """
 
@@ -348,24 +347,33 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         pass
 
     def _update_model_parameters(self):
-        did_update = {}
+        did_update = True
         for name, optimizer in self.get_optimizers().items():
-            did_update[name] = self._execute_optimizer(optimizer)
+            optimizer_did_update = self._execute_optimizer(optimizer)
+            if not optimizer_did_update:
+                self._log.debug(f"Optimizer '{name}' did not update, AMP scaling factor too high ...")
+
+            did_update &= optimizer_did_update
 
         return did_update
 
-    def _execute_optimizer(self, optimizer):
+    def _execute_optimizer(self, optimizer) -> bool:
         did_update = True
         if self.use_mixed_precision:
             self._scaler.step(optimizer)
+
+            old_scale = self._scaler.get_scale()
+            self._scaler.update()
+            new_scale = self._scaler.get_scale()
+
+            did_update = new_scale >= old_scale
         else:
             optimizer.step()
 
         return did_update
 
-    def _after_update_model_parameters(self):
-        if self.use_mixed_precision:
-            self._scaler.update()
+    def _after_update_model_parameters(self, did_update):
+        pass
 
 
 class DefaultTrainer(MultiProcessingMixin, DefaultTrainerMixin):

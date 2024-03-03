@@ -73,6 +73,13 @@ class LRSchedulerWrapper(Callback, metaclass=abc.ABCMeta):
         if not self._batch_level:
             return True
 
+        current = self._get_logs_base(logs)
+
+        model_updated = get_value_at("training.batch.did_update_model", current)
+        if not model_updated:
+            self._log.debug(f"Skipping LR scheduling: not all optimizer assigned parameters were updated ...")
+            return True
+
         return self._update_lr(logs, 'global_iter')
 
     def on_epoch_completed(self, logs):
