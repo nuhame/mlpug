@@ -324,11 +324,8 @@ class TrainingProcess(TrainingProcessBase):
 
         :return:
         """
-        def update_lr(iter, lr):
-            return lr * self._lr_scheduling_func(iter)
-
         self._callbacks += [mlp.callbacks.LRSchedulerWrapper({
-                'warmup-scheduler': tf.keras.callbacks.LearningRateScheduler(update_lr)
+                'warmup-scheduler': mlp.scheduler_funcs.LambdaLR(self._optimizer, self._lr_scheduling_func)
             }, batch_level=True)]
 
 
