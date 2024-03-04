@@ -168,9 +168,10 @@ The following setup assumes multiple GPUs (`--distributed`).
 python examples/persona_chatbot/pytorch/train.py \
                  --experiment-name persona-bot-experiment \
                  --num-dataloader-workers 2 \
-                 --batch-size 32 \
                  --num-choices 8 \
                  --sequence-length-outlier-threshold 0.05 \
+                 --batch-size 32 \
+                 --batch-chunk-size 8 \
                  --learning-rate 1e-4 \
                  --distributed \
                  --num-epochs 6 \
