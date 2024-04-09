@@ -29,6 +29,7 @@ from examples.fashion_mnist.pytorch.train import (
     test_model
 )
 
+
 def create_callbacks_for(trainer,
                          experiment_name,
                          model_hyper_parameters,

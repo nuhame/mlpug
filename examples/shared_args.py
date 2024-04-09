@@ -22,6 +22,12 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
              'Default is all available devices')
 
     parser.add_argument(
+        '--device-idx',
+        type=int, required=False, default=None,
+        help='Index of compute device to use, only required when not choosing device 0. '
+             'Not used in distributed mode')
+
+    parser.add_argument(
         '--force-on-cpu',
         action='store_true',
         help='When flag is set, the training process will run on CPU only')

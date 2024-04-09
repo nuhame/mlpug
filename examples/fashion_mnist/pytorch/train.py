@@ -142,9 +142,9 @@ def worker_fn(rank, args, world_size):
     cuda_available = torch.cuda.is_available()
     mps_available = torch.backends.mps.is_available()
     if cuda_available and not args.force_on_cpu:
-        torch.cuda.set_device(rank)
-
         if distributed:
+            torch.cuda.set_device(rank)
+
             os.environ['MASTER_ADDR'] = 'localhost'
             os.environ['MASTER_PORT'] = '12355'
 
@@ -152,7 +152,10 @@ def worker_fn(rank, args, world_size):
 
             logger.info(f"Training using multiple GPUs: Using GPU {rank}/{world_size}")
         else:
-            logger.info(f"Single device mode : Using GPU {rank} ")
+            device_idx = args.device_idx if args.device_idx is not None else rank
+            torch.cuda.set_device(device_idx)
+
+            logger.info(f"Single device mode : Using GPU {device_idx}")
 
         device = torch.device("cuda")
 
