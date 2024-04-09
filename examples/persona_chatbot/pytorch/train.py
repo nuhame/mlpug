@@ -174,8 +174,9 @@ class TrainingProcess(TrainingProcessBase):
             self._log.info(f"Communication backend used for DDP: {backend}")
         else:
             if cuda_available and not self._args.force_on_cpu:
-                self._device = torch.device("cuda")
-                self._log.info(f"Single device mode : Using GPU")
+                device_idx = args.device_idx if args.device_idx is not None else self.rank
+                self._device = torch.device(f"cuda:{device_idx}")
+                self._log.info(f"Single device mode : Using GPU: {self._device}")
             elif mps_available and not self._args.force_on_cpu:
                 self._device = torch.device("mps")
                 self._log.info(f"Single device mode : Using available Apple MPS device")

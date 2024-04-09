@@ -136,7 +136,11 @@ def train_model(args, logger):
 
         global_batch_size = args.batch_size * strategy.num_replicas_in_sync
     else:
-        device = "/device:GPU:0" if num_gpus_available > 0 and not args.force_on_cpu else "/CPU:0"
+        device_idx = args.device_idx if args.device_idx is not None else 0
+        device = f"/device:GPU:{device_idx}" \
+            if num_gpus_available > 0 and not args.force_on_cpu \
+            else f"/CPU:0"
+        logger.info(f"Using device: {device}")
 
         strategy = tf.distribute.OneDeviceStrategy(device=device)
         global_batch_size = args.batch_size
