@@ -7,7 +7,7 @@ import argparse
 
 import torch
 from botshop.simple_bot import chat_with
-from transformers import PreTrainedTokenizer, GPT2Tokenizer, GPT2DoubleHeadsModel
+from transformers import GPT2Tokenizer, GPT2DoubleHeadsModel
 
 from botshop import ModelEvaluatorBase, IOProcessorBase, SimpleBot
 from botshop.pytorch import BasicConversationEngine
