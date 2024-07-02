@@ -511,13 +511,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                 log_condition_func=log_metrics,
                                                 sliding_window_length=avg_window_train,
                                                 inspect_sliding_windows=self._args.inspect_sliding_windows),
-            # Calculate validation loss and classification quality, every <progress_log_period> batches
-            mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
-                                               'validation',
-                                               metric_evaluator=all_metrics_evaluator,
-                                               log_condition_func=log_metrics,
-                                               sliding_window_length=avg_window_validation,
-                                               inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate training metrics only once per epoch over the whole dataset
             mlp.callbacks.DatasetMetricsLogger(self._batch_training_set,
                                                'training',
@@ -531,6 +524,17 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                # epoch level only
                                                batch_level=False),
         ]
+
+        if not self._args.no_batch_level_validation_loss_evaluation:
+            self._callbacks += [
+                # Calculate validation loss and classification quality, every <progress_log_period> batches
+                mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
+                                                   'validation',
+                                                   metric_evaluator=all_metrics_evaluator,
+                                                   log_condition_func=log_metrics,
+                                                   sliding_window_length=avg_window_validation,
+                                                   inspect_sliding_windows=self._args.inspect_sliding_windows),
+            ]
 
         if self._lr_scheduling_func is not None:
             self._log.debug("Adding LR scheduler callback ... ")

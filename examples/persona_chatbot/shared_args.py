@@ -75,6 +75,12 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
         help='When flag is set, will log info related to the sliding metric windows used for '
              'demonstration or debugging purposes')
 
+    parser.add_argument(
+        '--no-batch-level-validation-loss-evaluation',
+        action='store_true',
+        help='When flag is set, no batch-level validation loss will be evaluated during training, only the '
+             'validation loss over the complete validation set will be evaluated once per epoch')
+
     return parser
 
 
@@ -100,3 +106,5 @@ def describe_args(args, logger):
     logger.info(f"Activation checkpointing: {args.activation_checkpointing}")
     logger.info(f"Log a description of logs object: {args.describe_logs_object}")
     logger.info(f"Inspect sliding metric windows: {args.inspect_sliding_windows}")
+
+    logger.info(f"No batch-level validation loss evaluation: {args.no_batch_level_validation_loss_evaluation}")
