@@ -296,9 +296,7 @@ class TrainingProcess(TrainingProcessBase):
 
     def _get_compile_kwargs(self):
         return {
-            "compile_kwargs": {
-                "mode": self._args.graph_compilation_mode
-            }
+            "mode": self._args.graph_compilation_mode
         }
 
     def _get_custom_evaluator_config(self):
