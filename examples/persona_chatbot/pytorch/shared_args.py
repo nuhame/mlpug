@@ -20,5 +20,6 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using 
 
 def describe_args(args, logger):
     logger.info(f"Num. dataloader workers: {args.num_dataloader_workers}")
+    logger.info(f"Graph compilation mode: {args.graph_compilation_mode}")
 
     describe_base_args(args, logger)
