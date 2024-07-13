@@ -10,6 +10,11 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using 
         type=int, required=False, default=2,
         help='Number of dataloader workers.')
 
+    parser.add_argument(
+        '--graph-compilation-mode',
+        type=str, required=False, default="default",
+        help='Torch.compile compilation mode')
+
     return parser
 
 
