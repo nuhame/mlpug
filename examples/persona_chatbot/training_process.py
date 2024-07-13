@@ -582,6 +582,14 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :return:
         """
 
+    def _get_custom_training_manager_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {}
+
     def _setup_training_manager(self):
         """
         Sets self._training_manager.
@@ -591,6 +599,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         mlp = self.MLPUG_MODULE
 
+        custom_config = self._get_custom_training_manager_config()
+
         # TODO: revisit the behavior of MLPug when the total number of batches is not known before hand.
         self._training_manager = mlp.trainers.TrainingManager(self._trainer,
                                                               self._batch_training_set,
@@ -599,7 +609,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                               num_batches_per_epoch=self.num_batches_training_set,
                                                               experiment_data={
                                                                   "args": self._args
-                                                              })
+                                                              },
+                                                              **custom_config)
 
     def _prepare_training(self):
         self._trainer.set_training_model(self._training_model)

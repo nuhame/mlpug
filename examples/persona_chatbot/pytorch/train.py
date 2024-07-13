@@ -341,6 +341,16 @@ class TrainingProcess(TrainingProcessBase):
                 'warmup-scheduler': LambdaLR(self._optimizer, lr_scheduling_func)
             }, batch_level=True)]
 
+    def _get_custom_training_manager_config(self):
+        """
+        Implementation depends on specific ML Library you are using
+
+        :return:
+        """
+        return {
+            "mode": self._args.graph_compilation_mode
+        }
+
     @staticmethod
     def get_logger_info(rank, num_devices, name):
         """
