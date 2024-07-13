@@ -348,7 +348,9 @@ class TrainingProcess(TrainingProcessBase):
         :return:
         """
         return {
-            "mode": self._args.graph_compilation_mode
+            "compile_kwargs": {
+                "mode": self._args.graph_compilation_mode
+            }
         }
 
     @staticmethod
