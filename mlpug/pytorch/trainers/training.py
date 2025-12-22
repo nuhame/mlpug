@@ -1,9 +1,7 @@
-import math
-from typing import Optional, Dict, Union, Tuple
+from contextlib import nullcontext
+from typing import Optional, Dict, Tuple
 
 import torch
-
-import contextlib
 
 from torch.cuda.amp import autocast
 import torch.distributed as dist
@@ -15,9 +13,9 @@ from mlpug.mlpug_exceptions import TrainerInvalidException, LossNotAvailableExce
 from mlpug.trainers.training import TrainingManager as TrainingManagerBase
 from mlpug.trainers.training import Trainer as TrainerBase
 from mlpug.trainers.training import DefaultTrainer as DefaultTrainerBase
+from mlpug.trainers.training import MicroBatchResults
 
 from mlpug.pytorch.utils import SlidingWindow
-from mlpug.batch_chunking import BatchChunkingResults, is_chunkable, apply_chunkable_batch_wrapper
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
@@ -82,7 +80,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
 
-        self._training_step_func = None
+        self._calc_gradients_func = None
 
     def set_training_model(self, model):
         super().set_training_model(model)
@@ -90,9 +88,9 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
 
         if not self.eager_mode:
-            self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
+            self._calc_gradients_func = torch.compile(self._calc_gradients, **self.compile_kwargs)
         else:
-            self._training_step_func = self._training_step
+            self._calc_gradients_func = self._calc_gradients
             self._log.warn("Training in eager mode.")
 
     def set_learning_rate_for(self, optimizer_name, lr):
@@ -133,211 +131,118 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         else:
             return super().evaluate_loss(batch_data, inference_mode, evaluate_settings)
 
-    def train_on(self, batch_data, training_settings=None) -> Tuple[
-        Union[Dict, BatchChunkingResults[Dict]],
-        bool
-    ]:
+    # ========== Public Methods ==========
+
+    def train_on(self, micro_batch, training_settings=None) -> Tuple[MicroBatchResults, bool]:
         """
-        Use batch_data to perform a training iteration.
+        Use micro_batch to perform a training iteration.
 
-        Optionally uses `batch_chunk_size` to evaluate the loss in chunks.
-        If a `batch_chunk_size` was given during construction of the trainer, the gradients are updated by evaluating
-        the batch in chunks.
+        Note that the micro-batch data is simply the batch data when batch_size equals
+        micro_batch_size (i.e. no gradient accumulation).
 
-        *Note*
-        When using chunked batch processing, the default implementation assumes that the
-        loss, calculated over a chunk, is the average of the sample losses.
+        The trainer accumulates gradients across multiple micro-batches (when
+        gradient_accumulation_steps > 1) and steps the optimizer when the
+        accumulation boundary is reached.
 
-        :param batch_data: batch_data object to train on (e.g. dict, list, tuple)
+        :param micro_batch: Micro-batch data object to train on (e.g. dict, list, tuple)
+        :param training_settings: Optional training settings object (usually dict)
 
-                           When `batch_chunk_size` is given, `batch_data` must be an object that implements the
-                           `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal
-                           with slices.
-
-                           Alternatively, a chunkable_batch_wrapper can be provided at construction to convert
-                           any batch into a chunkable batch
-
-        :param training_settings: optional training_settings object (usually dict)
-
-        :return: model_outputs
-
-                 model_outputs is a
-                    Single normalized results dict:
-                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
-                 or
-                    BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
-                         ...
-                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
-
-                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
-                If there are multiple optimizers for different parameter groups, did_update is only True if all
-                optimizers updated their respective model parameters.
-
-                In some cases did_update can be False, for instance when using mixed precision training,
-                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
-                updating an LR scheduler.
-
-        :rtype: Tuple[
-            Union[Dict, BatchChunkingResults[Dict]],
-            bool
-        ]
+        :return: Tuple (micro_batch_results, did_update)
+            micro_batch_results: MicroBatchResults containing results for all micro-batches
+                in the current accumulation window so far.
+            did_update: Boolean indicating if optimizer stepped.
         """
-
         if not self.instance_valid():
             raise TrainerInvalidException()
 
-        if not callable(self._training_step_func):
-            raise TrainerStateInvalidException("Training_step_func is not callable. "
-                                               "You must first call` my_trainer.set_training_model(my_model)`")
+        if not callable(self._calc_gradients_func):
+            raise TrainerStateInvalidException(
+                "_calc_gradients_func is not callable. "
+                "You must first call `my_trainer.set_training_model(my_model)`"
+            )
 
-        return self._training_step_func(batch_data, training_settings=training_settings)
+        self._accumulation_counter += 1
+        is_boundary = (self._accumulation_counter >= self.gradient_accumulation_steps)
 
-    def _training_step(self, batch_data, training_settings=None):
+        # Compute gradients for this micro-batch
+        results = self._calc_gradients_func(micro_batch, training_settings, sync_gradients=is_boundary)
+        self._micro_batch_results.append(results)
+        accumulated_results = MicroBatchResults(self._micro_batch_results)
+
+        did_update = False
+        if is_boundary:
+            self._prepare_update_model_parameters()
+            did_update = self._update_model_parameters()
+            self._after_update_model_parameters(did_update)
+            self._reset_accumulation_state()
+
+        return accumulated_results, did_update
+
+    def epoch_complete(self) -> bool:
         """
-        See train_on, for documentation.
-        This function will be compiled when not training in eager mode
+        Called when an epoch ends. Steps optimizer if mid-accumulation.
+
+        :return: did_update - True if optimizer was stepped, False otherwise.
         """
+        if self._accumulation_counter == 0:
+            return False
 
-        self._reset_gradients()
-
-        model_outputs = self._calc_gradients(batch_data, training_settings=training_settings)
-
+        # Force gradient sync and step optimizer with partial accumulation
         self._prepare_update_model_parameters()
-
         did_update = self._update_model_parameters()
-
         self._after_update_model_parameters(did_update)
+        self._reset_accumulation_state()
 
-        return model_outputs, did_update
+        return did_update
+
+    # ========== Protected Methods ==========
 
     def _reset_gradients(self):
         for optimizer in self.get_optimizers().values():
             optimizer.zero_grad()
 
-    def _calc_gradients(self, batch_data, training_settings=None):
+    def _calc_gradients(self, micro_batch, training_settings, sync_gradients: bool) -> Dict:
         """
+        Compute gradients for a single micro-batch.
 
-        :param batch_data:
-        :type batch_data:
-        :param training_settings:
-        :type training_settings:
+        :param micro_batch: Micro-batch data
+        :param training_settings: Training settings
+        :param sync_gradients: If True, allow gradient synchronization (DDP).
+            If False, use no_sync context to skip synchronization.
 
-        :return: loss, model_outputs
-
-                 model_outputs is a
-                    Single normalized results dict:
-                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
-                 or
-                    BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
-                         ...
-                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
-
-        :rtype: Union[Dict, BatchChunkingResults[Dict]]
-
-        :raises MLPugException, LossNotAvailableException
+        :return: Normalized results dict with 'loss', 'num_samples', 'auxiliary_results'
         """
+        # Use no_sync context when not at accumulation boundary (DDP optimization)
+        context = self._get_no_sync_context() if not sync_gradients else nullcontext()
 
-        return self._calc_gradients_single_batch(batch_data, training_settings) \
-            if not self.batch_chunk_size else self._calc_gradients_chunked(batch_data, training_settings)
-
-    def _calc_gradients_single_batch(self, batch_data, training_settings=None):
-        """
-
-        :param batch_data:
-        :param training_settings:
-
-       :return: model_outputs a single normalized results dict:
-                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
-
-        :rtype: Dict
-
-        """
-        results = self.evaluate_loss(batch_data,
-                                     inference_mode=False,
-                                     evaluate_settings=training_settings)
-
-        if 'loss' not in results:
-            raise LossNotAvailableException()
-
-        loss = results['loss']
-
-        self._back_propagate_from(loss)
-
-        # Reduce memory usage
-        loss.detach_()
-
-        # single model output
-        return results
-
-    def _calc_gradients_chunked(self, batch_data, training_settings=None):
-        """
-        See `train_on` method.
-
-        This method slices the `batch_data` in slices of size `self.batch_chunk_size`. For each slice the loss is
-        calculated and the gradients are updated through back prop.
-
-        :return: model_outputs: BatchChunkingResults: a list of tuples, one tuple per batch chunk results:
-                    [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
-                     ...
-                     {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
-
-        :rtype: BatchChunkingResults[Dict]
-        """
-
-        if not is_chunkable(batch_data):
-            batch_data = apply_chunkable_batch_wrapper(
-                batch_data,
-                self.chunkable_batch_wrapper)
-
-        model_outputs = BatchChunkingResults()
-
-        batch_size = len(batch_data)
-        num_chunks = math.ceil(batch_size / self.batch_chunk_size)
-
-        def process_chunk(chunk_idx, chunk_results):
-            chunk_start = chunk_idx * self.batch_chunk_size
-            chunk_end = min((chunk_idx + 1) * self.batch_chunk_size, batch_size)
-
-            chunk_len = chunk_end - chunk_start
-
-            chunk = batch_data[chunk_start:chunk_end]
-
-            results = self.evaluate_loss(chunk, inference_mode=False, evaluate_settings=training_settings)
+        with context:
+            results = self.evaluate_loss(
+                micro_batch,
+                inference_mode=False,
+                evaluate_settings=training_settings
+            )
 
             if 'loss' not in results:
                 raise LossNotAvailableException()
 
             loss = results['loss']
 
-            # loss is assumed to be the average over the sample loss for the chunk
-            # Divide through batch size to factor in that this loss is part of a larger batch.
-            last_chunk = chunk_idx == (num_chunks - 1)
-            self._back_propagate_from(chunk_len * loss / batch_size, last_chunk=last_chunk)
+            # Scale loss by accumulation factor
+            scaled_loss = loss / self.gradient_accumulation_steps
+            self._back_propagate_from(scaled_loss)
 
             # Reduce memory usage
             loss.detach_()
 
-            chunk_results += [results]
+        return results
 
-            return chunk_results
+    def _get_no_sync_context(self):
+        """Get DDP no_sync context if available, otherwise nullcontext."""
+        if self.no_grad_sync_available:
+            return self.training_model.no_sync()
+        return nullcontext()
 
-        # Speed up processing by disabling gradient syncing for all batch chunk backward operations
-        # except for the last
-        no_sync = self.training_model.no_sync() if self.no_grad_sync_available else contextlib.suppress()
-
-        with no_sync:
-            for c_idx in range(num_chunks-1):
-                model_outputs = process_chunk(c_idx, model_outputs)
-
-        # sync gradients
-        model_outputs = process_chunk(num_chunks-1, model_outputs)
-
-        # model outputs for each chunk
-        return model_outputs
-
-    def _back_propagate_from(self, loss, last_chunk=False):
+    def _back_propagate_from(self, loss):
         if self.use_mixed_precision:
             self._scaler.scale(loss).backward()
         else:
@@ -354,6 +259,10 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
                 self._log.debug(f"Optimizer '{name}' did not update, AMP scaling factor too high ...")
 
             did_update &= optimizer_did_update
+
+        # Reset gradients after optimizer step
+        if did_update:
+            self._reset_gradients()
 
         return did_update
 
