@@ -86,7 +86,7 @@ def calc_classification_quality(classification_data):
 
 class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
-    # Set this to your MLPUG implementation of choice, e.g. mlpug.pytorch, mlpug.pytorch.xla or mlpug.tensorflow:
+    # Set this to your MLPUG implementation of choice, e.g. mlpug.pytorch or mlpug.pytorch.xla:
     #
     # import mlpug.pytorch as mlp
     #
@@ -327,12 +327,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._trainer = mlp.trainers.DefaultTrainer(
             optimizers=self._optimizer,
             model_components=self._model,
+            batch_size=self._args.batch_size,
+            micro_batch_size=self._args.micro_batch_size,
             use_mixed_precision=self._args.use_mixed_precision,
             eager_mode=self._args.eager_mode,
-            # In case of gradient accumulation batch_chunk_size > 0 and a wrapper function is given
-            # to make the batches sliceable such that we can chunk them into smaller pieces.
-            batch_chunk_size=self._args.batch_chunk_size,
-            chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper,
             **custom_trainer_config)
 
     @abc.abstractmethod
@@ -428,7 +426,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         #   This is relevant When calculating metrics over:
         #   * a complete dataset, where the dataset was broken-up in batches
         #   * a window of batches
-        #   * the batch chunks of a batch when gradient accumulation was applied.
+        #   * the micro-batches when gradient accumulation was applied.
         #
         #   (using "combine_metric_inputs_funcs" dict, with a function per metric)
         #
@@ -445,8 +443,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         # We are using all the default loss gathering functions here.
         loss_only_evaluator = mlp.evaluation.MetricEvaluator(
             # The trainer knows how to evaluate the model
-            # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
-            # metrics in smaller chunks, if these values were set for the trainer
             trainer=self._trainer,
             # The implementation depends on the Deep Learning library backend
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
@@ -486,8 +482,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             },
             #
             # The trainer knows how to evaluate the model
-            # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
-            # metrics in smaller chunks, if these values were set for the trainer
             trainer=self._trainer,
             eager_mode=self._args.eager_mode,
             show_progress=True,

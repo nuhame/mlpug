@@ -42,8 +42,6 @@ def create_callbacks_for(trainer,
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
         # The trainer knows how to evaluate the model
-        # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
-        # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
         eager_mode=eager_mode
     )
@@ -146,9 +144,12 @@ def worker_fn(rank, args):
             num_replicas=world_size,
             rank=rank)
 
+    # DataLoader yields micro-batches (or full batches if no gradient accumulation)
+    dataloader_batch_size = args.micro_batch_size if args.micro_batch_size else args.batch_size
+
     training_dataset = torch.utils.data.DataLoader(
         training_data,
-        batch_size=args.batch_size,
+        batch_size=dataloader_batch_size,
         shuffle=(training_sampler is None),
         sampler=training_sampler,
         num_workers=0)
@@ -157,7 +158,7 @@ def worker_fn(rank, args):
     # Using the test set as a validation set, just for demonstration purposes
     validation_dataset = torch.utils.data.DataLoader(
         test_data,
-        batch_size=args.batch_size,
+        batch_size=dataloader_batch_size,
         shuffle=(validation_sampler is None),
         sampler=validation_sampler,
         num_workers=0)
@@ -192,9 +193,8 @@ def worker_fn(rank, args):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
-        # In case of gradient accumulation batch_chunk_size > 0 is given
-        batch_chunk_size=args.batch_chunk_size,
-        chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper
+        batch_size=args.batch_size,
+        micro_batch_size=args.micro_batch_size,
     )
 
     model_hyper_parameters = {
