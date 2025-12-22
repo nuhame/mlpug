@@ -94,9 +94,23 @@ class Callback(Base, metaclass=abc.ABCMeta):
 
     def on_batch_training_failed(self, exception, logs):
         """
-
         :param exception:
         :param logs:
+
+        :return: success (True or False)
+        """
+        return True
+
+    def on_micro_batch_completed(self, training_batch, logs):
+        """
+        Called after each micro-batch is processed (every train_on call).
+
+        When gradient_accumulation_steps > 1, this fires more frequently than
+        on_batch_training_completed. When gradient_accumulation_steps = 1,
+        this fires at the same time as on_batch_training_completed.
+
+        :param training_batch: The micro-batch data that was just processed
+        :param logs: Training logs
 
         :return: success (True or False)
         """
