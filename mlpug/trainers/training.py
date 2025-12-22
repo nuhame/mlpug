@@ -165,8 +165,12 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.num_batches_per_epoch = num_batches_per_epoch
 
         self.global_iter = 0
-        self.batch_step = 0
+        self.micro_batch_step = 0  # Counts dataloader iterations (micro-batches)
+        self.batch_step = 0  # Counts effective batches (after accumulation)
         self.epoch = 0
+
+        # Will be set in _assess_num_batches_per_epoch
+        self.num_micro_batches_per_epoch = None
 
         self.callbacks = callbacks or []
         self.cb_names = None
@@ -255,6 +259,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         state = {
             "manager": {
                 "epoch": self.epoch,
+                "micro_batch_step": self.micro_batch_step,
                 "batch_step": self.batch_step,
                 "global_iter": self.global_iter,
                 "logs": self.logs,
@@ -305,6 +310,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return {
                    "epoch": self.epoch,
+                   "micro_batch_step": self.micro_batch_step,
                    "batch_step": self.batch_step,
                    "global_iter": self.global_iter,
                    "logs": self.logs,
@@ -334,14 +340,26 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.batch_step = state["manager"]["batch_step"]
         self.global_iter = state["manager"]["global_iter"]
 
+        # Backwards compatibility: old checkpoints may not have micro_batch_step
+        # In that case, estimate from batch_step and accumulation_steps
+        accumulation_steps = getattr(self.trainer, 'gradient_accumulation_steps', 1)
+        if "micro_batch_step" in state["manager"]:
+            self.micro_batch_step = state["manager"]["micro_batch_step"]
+        else:
+            # Estimate: assume we're at the end of the accumulation window
+            self.micro_batch_step = self.batch_step * accumulation_steps
+
         # start at next iteration
         self.global_iter += 1
+        self.micro_batch_step += 1
         self.batch_step += 1
-        if self.batch_step > self.num_batches_per_epoch-1:
+        if self.micro_batch_step >= self.num_micro_batches_per_epoch:
             self.epoch += 1
+            self.micro_batch_step = 0
             self.batch_step = 0
 
         self.init_logs["epoch"] = self.epoch
+        self.init_logs["micro_batch_step"] = self.micro_batch_step
         self.init_logs["batch_step"] = self.batch_step
         self.init_logs["global_iter"] = self.global_iter
 
@@ -507,6 +525,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         # override log state for certain parameters given at construction
         self.logs["final_epoch"] = self.num_epochs - 1
+        self.logs["final_micro_batch_step"] = self.num_micro_batches_per_epoch - 1
         self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
 
         update = self._update_cb_success
@@ -596,6 +615,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     update(call_cb('on_batch_training_completed', training_batch, logs))
                     self.batch_step += 1
 
+                self.micro_batch_step += 1
                 self.global_iter += 1
 
                 batch_training_end_time = time.time()
@@ -606,10 +626,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 self._previous_batch_duration = batch_duration
 
-                # Situation 1: When the start_batch given was > 0, go to next epoch when epoch finished
+                # Situation 1: When the start micro_batch_step given was > 0, go to next epoch when epoch finished
                 # Situation 2: When num_batches_per_epoch was given to simulate epochs in an
                 #              infinite batch streaming situation
-                if self.batch_step >= self.num_batches_per_epoch:
+                if self.micro_batch_step >= self.num_micro_batches_per_epoch:
                     break
 
             if not (epoch_stopped_early or training_stopped_on_error):
@@ -635,6 +655,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             if training_stopped_on_error:
                 break
 
+            self.micro_batch_step = 0
             self.batch_step = 0
 
         update(call_cb('on_training_ended',
@@ -655,7 +676,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
     def _init_current_logs(self):
         return {
             "epoch": self.epoch,
-            "batch_step": self.batch_step,
+            "micro_batch_step": self.micro_batch_step,  # Dataloader iteration count
+            "batch_step": self.batch_step,  # Effective batch count (after accumulation)
             "global_iter": self.global_iter,
 
             "training": {},
@@ -736,11 +758,29 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         return self.training_dataset
 
     def _assess_num_batches_per_epoch(self):
+        """
+        Determines the number of effective batches per epoch.
+
+        With gradient accumulation, the dataloader yields micro-batches, but we want to
+        track and display progress in terms of effective batches (optimizer steps).
+
+        Sets:
+            - num_micro_batches_per_epoch: Number of dataloader iterations
+            - num_batches_per_epoch: Number of effective batches (optimizer steps)
+        """
+        # Get gradient accumulation steps from trainer (default to 1)
+        accumulation_steps = getattr(self.trainer, 'gradient_accumulation_steps', 1)
+
+        # If num_batches_per_epoch was explicitly provided, use it as-is
+        # (user is specifying effective batches, not micro-batches)
         if self.num_batches_per_epoch:
-            # num_batches_per_epoch given, nothing to do
+            self.num_micro_batches_per_epoch = self.num_batches_per_epoch * accumulation_steps
             return
 
+        # Try to determine from dataset length
+        self.num_micro_batches_per_epoch = math.inf
         self.num_batches_per_epoch = math.inf
+
         err_msg = "Evaluation of training data set length failed, number of batches per epoch is " \
                   "set to Infinite. If this is not what you want, either provide the num_batches_per_epoch " \
                   "argument during construction of the TrainingManager, or ensure that the training_dataset " \
@@ -748,7 +788,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                   "does not fail."
         try:
             if hasattr(self.training_dataset, '__len__'):
-                self.num_batches_per_epoch = len(self.training_dataset)
+                self.num_micro_batches_per_epoch = len(self.training_dataset)
+                # Calculate effective batches (round up to handle partial final batch)
+                self.num_batches_per_epoch = math.ceil(self.num_micro_batches_per_epoch / accumulation_steps)
+                self._log.debug(f"Number of micro-batches per epoch : {self.num_micro_batches_per_epoch}")
                 self._log.debug(f"Number of batches per epoch : {self.num_batches_per_epoch}")
             else:
                 self._log.warn(err_msg)
