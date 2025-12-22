@@ -4,7 +4,6 @@ import datetime
 
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.utils import get_value_at, describe_data
-from mlpug.batch_chunking import is_chunkable, ChunkableBatch
 
 import basics.base_utils as _
 from basics.logging_utils import log_exception
@@ -272,27 +271,26 @@ class LogProgress(Callback):
 
 class BatchSizeLogger(Callback):
 
-    def __init__(self, batch_dimension=1, name="BatchSizeLogger", **kwargs):
+    def __init__(self, batch_dimension=0, name="BatchSizeLogger", **kwargs):
         super().__init__(name=name, **kwargs)
 
         self._batch_dimension = batch_dimension
 
     def on_batch_training_start(self, training_batch, logs):
         """
+        Logs the batch size of the current training batch.
 
-        :param training_batch:
-        :param logs:
+        :param training_batch: Training batch, expected to be a tuple/list where first
+            element is a tensor with the batch dimension.
+        :param logs: Training logs dict
 
         :return: success (True or False)
         """
 
         current = self._get_logs_base(logs)
 
-        # TODO : doesn't work for Tensorflow
-        # TODO : This is not safe
-        current['training_params']['batch']['batch_size'] = len(training_batch) \
-            if isinstance(training_batch, ChunkableBatch) else \
-            training_batch[0].size(self._batch_dimension)
+        # Assumes batch is a tuple/list where first element is a tensor with shape[batch_dimension]
+        current['training_params']['batch']['batch_size'] = training_batch[0].size(self._batch_dimension)
 
         return True
 
