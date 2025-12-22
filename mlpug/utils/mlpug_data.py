@@ -1,7 +1,6 @@
 import numpy as np
 
 from mlpug.utils.utils import has_method
-from mlpug.trainers.training import MicroBatchResults
 
 
 class ValueDescription:

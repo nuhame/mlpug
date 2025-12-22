@@ -268,7 +268,7 @@ def test_model(model_checkpoint_filename, logger, device=None):
         device = torch.device("cpu")
 
     logger.info(f'Loading model checkpoint ...')
-    checkpoint = torch.load(model_checkpoint_filename, map_location=device)
+    checkpoint = torch.load(model_checkpoint_filename, map_location=device, weights_only=False)
 
     # Contains 'hidden_size'
     classifier = build_model(**checkpoint['hyper_parameters'])
