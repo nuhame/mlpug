@@ -31,7 +31,7 @@ def load_data():
                                          transform=transform)
 
     ###########
-    # Convert all images to Tensors beforehand to get a more fair comparison with Tensorflow
+    # Convert all images to Tensors beforehand for consistent benchmarking
     training_data = [(image_tensor, label) for image_tensor, label in training_data]
     test_data = [(image_tensor, label) for image_tensor, label in test_data]
     ###########
@@ -52,8 +52,6 @@ def create_callbacks_for(trainer,
     # By default the batch loss and the moving average of the loss are calculated and logged
     loss_evaluator = mlp.evaluation.MetricEvaluator(
         # The trainer knows how to evaluate the model
-        # We also get batch_chunk_size and chunkable_batch_wrapper from the trainer, to evaluate the
-        # metrics in smaller chunks, if these values were set for the trainer.
         trainer=trainer,
         eager_mode=eager_mode
     )
@@ -188,9 +186,12 @@ def worker_fn(rank, args, world_size):
         training_sampler = torch.utils.data.distributed.DistributedSampler(training_data)
         validation_sampler = torch.utils.data.distributed.DistributedSampler(test_data)
 
+    # DataLoader yields micro-batches (or full batches if no gradient accumulation)
+    dataloader_batch_size = args.micro_batch_size if args.micro_batch_size else args.batch_size
+
     training_dataset = torch.utils.data.DataLoader(
         training_data,
-        batch_size=args.batch_size,
+        batch_size=dataloader_batch_size,
         shuffle=(training_sampler is None),
         sampler=training_sampler,
         num_workers=0)  # TODO: temporarily disabled due to issue
@@ -198,7 +199,7 @@ def worker_fn(rank, args, world_size):
     # Using the test set as a validation set, just for demonstration purposes
     validation_dataset = torch.utils.data.DataLoader(
         test_data,
-        batch_size=args.batch_size,
+        batch_size=dataloader_batch_size,
         shuffle=(validation_sampler is None),
         sampler=validation_sampler,
         num_workers=0)  # TODO: temporarily disabled due to issue
@@ -224,11 +225,10 @@ def worker_fn(rank, args, world_size):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
+        batch_size=args.batch_size,
+        micro_batch_size=args.micro_batch_size,
         eager_mode=args.eager_mode,
         use_mixed_precision=args.use_mixed_precision,
-        # In case of gradient accumulation batch_chunk_size > 0 is given
-        batch_chunk_size=args.batch_chunk_size,
-        chunkable_batch_wrapper=mlp.batch_chunking.ChunkableTupleBatchDim0.wrapper
     )
 
     model_hyper_parameters = {
