@@ -3,7 +3,7 @@ from typing import Optional, Dict, Tuple
 
 import torch
 
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -62,6 +62,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             self,
             *args,
             scaler=None,
+            amp_init_scale: int = 2**10,
             compile_kwargs: Optional[Dict] = None,
             name="DefaultTrainer",
             **kwargs
@@ -73,7 +74,9 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         if self.use_mixed_precision:
             if scaler is None:
                 self._log.debug("Creating default scaler instance for automatic mixed precision ...")
-                self._scaler = torch.cuda.amp.GradScaler()
+                # Default 65536 causes overflow on some platforms (e.g., ROCm 7.1.1)
+                # Lower initial scale (1024) provides better stability
+                self._scaler = torch.amp.GradScaler('cuda', init_scale=amp_init_scale)
 
             self._log.info(f"Using scalar instance for automatic mixed precision : {self._scaler}")
 
@@ -112,20 +115,6 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
             self._log.info("Compiled training step.")
 
-    def _compile_ddp_inner_module(self, model):
-        """
-        Compile the inner module of a DDP-wrapped model.
-
-        This follows PyTorch's recommendation for torch.compile + DDP:
-        compile the model inside the DDP wrapper, not code that uses DDP from outside.
-        """
-        if not hasattr(model, 'module'):
-            self._log.warn("DDP model has no 'module' attribute, skipping compilation.")
-            return
-
-        model.module = torch.compile(model.module, **self.compile_kwargs)
-        self._log.debug(f"Compiled DDP inner module with kwargs: {self.compile_kwargs}")
-
     def set_learning_rate_for(self, optimizer_name, lr):
         """
 
@@ -157,7 +146,7 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         if self.use_mixed_precision:
             self._activate_inference_mode(inference_mode)
 
-            with autocast():
+            with autocast('cuda'):
                 results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
 
                 return self.normalize_evaluation(results)
@@ -235,6 +224,20 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
     def _reset_gradients(self):
         for optimizer in self.get_optimizers().values():
             optimizer.zero_grad()
+
+    def _compile_ddp_inner_module(self, model):
+        """
+        Compile the inner module of a DDP-wrapped model.
+
+        This follows PyTorch's recommendation for torch.compile + DDP:
+        compile the model inside the DDP wrapper, not code that uses DDP from outside.
+        """
+        if not hasattr(model, 'module'):
+            self._log.warn("DDP model has no 'module' attribute, skipping compilation.")
+            return
+
+        model.module = torch.compile(model.module, **self.compile_kwargs)
+        self._log.debug(f"Compiled DDP inner module with kwargs: {self.compile_kwargs}")
 
     def _training_step(self, micro_batch, training_settings, is_boundary) -> Tuple[Dict, bool]:
         """
