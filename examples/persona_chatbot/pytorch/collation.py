@@ -11,6 +11,7 @@ class BatchCollator(Base):
         self._pad_token_idx = pad_token_idx
         self._ignore_label_idx = ignore_label_idx
         self._max_sequence_length = max_sequence_length
+        self._logged_fixed_length = False
 
     def __call__(self, batch_samples):
         """
@@ -37,8 +38,13 @@ class BatchCollator(Base):
 
         max_seq_len = self._max_sequence_length
         if max_seq_len is None:
+            # Dynamic sequence length - compute from batch (not recommended for torch.compile)
             max_seq_len = max([max([len(sample[choice_idx][0]) for choice_idx in range(num_choices)])
                                for sample in batch_samples])
+        elif not self._logged_fixed_length:
+            # Log once that we're using fixed sequence length (good for torch.compile)
+            self._log.info(f"Using fixed sequence length for static shapes: {max_seq_len}")
+            self._logged_fixed_length = True
 
         input_ids_batch = self._pad_token_idx*torch.ones(
             (batch_size, num_choices, max_seq_len),

@@ -207,28 +207,33 @@ class TrainingProcess(TrainingProcessBase):
             self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._training_set)
             self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._validation_set)
 
+        # DataLoader yields micro-batches (or full batches if no gradient accumulation)
+        dataloader_batch_size = self._args.micro_batch_size if self._args.micro_batch_size else self._args.batch_size
+
         self._batch_training_set = torch.utils.data.DataLoader(
             self._training_set,
-            batch_size=self._args.batch_size,
+            batch_size=dataloader_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(
                 pad_token_idx=self._hf_tokenizer.pad_token_id,
                 max_sequence_length=self._opt_max_sequence_length),
-            pin_memory=True)
+            pin_memory=True,
+            drop_last=True)  # Ensure consistent batch sizes for torch.compile
 
         # Using the test set as a validation set, just for demonstration purposes
         self._batch_validation_set = torch.utils.data.DataLoader(
             self._validation_set,
-            batch_size=self._args.batch_size,
+            batch_size=dataloader_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(
                 pad_token_idx=self._hf_tokenizer.pad_token_id,
                 max_sequence_length=self._opt_max_sequence_length),
-            pin_memory=True)
+            pin_memory=True,
+            drop_last=True)  # Ensure consistent batch sizes for torch.compile
 
     def _build_model(self):
         if self.is_distributed and not self.is_primary:

@@ -5,6 +5,7 @@ import torch
 
 from torch.cuda.amp import autocast
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 import basics.base_utils as _
 
@@ -77,21 +78,53 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             self._log.info(f"Using scalar instance for automatic mixed precision : {self._scaler}")
 
         self.no_grad_sync_available = False
+        self._is_ddp = False
 
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
 
-        self._calc_gradients_func = None
+        self._training_step_func = None
 
     def set_training_model(self, model):
         super().set_training_model(model)
 
         self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
+        self._is_ddp = isinstance(model, DDP)
 
-        if not self.eager_mode:
-            self._calc_gradients_func = torch.compile(self._calc_gradients, **self.compile_kwargs)
-        else:
-            self._calc_gradients_func = self._calc_gradients
+        if self.eager_mode:
+            self._training_step_func = self._training_step
             self._log.warn("Training in eager mode.")
+        elif self._is_ddp:
+            # For DDP: compile the inner module, run training step in eager mode.
+            # PyTorch recommends compiling the model before/inside DDP wrapper,
+            # not compiling code that uses DDP from outside.
+            # TODO: Compare performance of single-GPU (compile full training step) vs
+            #       DDP mode (compile model only) to quantify the difference.
+            # TODO: Research encapsulating DDP wrapping inside MLPug so compilation
+            #       order (compile model -> wrap with DDP) is handled automatically.
+            # TODO: Add compiled optimizer step - PyTorch docs show ~48% speedup by
+            #       compiling optimizer.step() separately. See:
+            #       https://docs.pytorch.org/tutorials/recipes/compiling_optimizer.html
+            self._compile_ddp_inner_module(model)
+            self._training_step_func = self._training_step
+            self._log.info("DDP detected: compiled inner module, training step runs in eager mode.")
+        else:
+            # For non-DDP: compile the entire training step
+            self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
+            self._log.info("Compiled training step.")
+
+    def _compile_ddp_inner_module(self, model):
+        """
+        Compile the inner module of a DDP-wrapped model.
+
+        This follows PyTorch's recommendation for torch.compile + DDP:
+        compile the model inside the DDP wrapper, not code that uses DDP from outside.
+        """
+        if not hasattr(model, 'module'):
+            self._log.warn("DDP model has no 'module' attribute, skipping compilation.")
+            return
+
+        model.module = torch.compile(model.module, **self.compile_kwargs)
+        self._log.debug(f"Compiled DDP inner module with kwargs: {self.compile_kwargs}")
 
     def set_learning_rate_for(self, optimizer_name, lr):
         """
@@ -155,25 +188,27 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         if not self.instance_valid():
             raise TrainerInvalidException()
 
-        if not callable(self._calc_gradients_func):
+        if not callable(self._training_step_func):
             raise TrainerStateInvalidException(
-                "_calc_gradients_func is not callable. "
+                "_training_step_func is not callable. "
                 "You must first call `my_trainer.set_training_model(my_model)`"
             )
 
         self._accumulation_counter += 1
         is_boundary = (self._accumulation_counter >= self.gradient_accumulation_steps)
 
-        # Compute gradients for this micro-batch
-        results = self._calc_gradients_func(micro_batch, training_settings, sync_gradients=is_boundary)
+        # Use no_sync context OUTSIDE compiled function to avoid torch.compile issues
+        # with context managers when using dynamic=True
+        context = nullcontext() if is_boundary else self._get_no_sync_context()
+
+        with context:
+            # Core computation in compiled call (no context managers inside)
+            results, did_update = self._training_step_func(micro_batch, training_settings, is_boundary)
+
         self._micro_batch_results.append(results)
         accumulated_results = MicroBatchResults(self._micro_batch_results)
 
-        did_update = False
         if is_boundary:
-            self._prepare_update_model_parameters()
-            did_update = self._update_model_parameters()
-            self._after_update_model_parameters(did_update)
             self._reset_accumulation_state()
 
         return accumulated_results, did_update
@@ -201,40 +236,54 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         for optimizer in self.get_optimizers().values():
             optimizer.zero_grad()
 
-    def _calc_gradients(self, micro_batch, training_settings, sync_gradients: bool) -> Dict:
+    def _training_step(self, micro_batch, training_settings, is_boundary) -> Tuple[Dict, bool]:
         """
-        Compute gradients for a single micro-batch.
+        Training step for a single micro-batch.
+
+        Handles gradient calculation and optimizer step (at accumulation boundary).
+
+        Compilation behavior:
+        - In non-DDP mode: This entire function is compiled via torch.compile.
+        - In DDP mode: The inner model (model.module) is compiled, but this function
+          runs in eager mode. This follows PyTorch's recommendation to compile the
+          model before/inside DDP, not code that uses DDP from outside.
+
+        Note: The no_sync() context is managed OUTSIDE this function (in train_on)
+        to avoid torch.compile issues with context managers.
 
         :param micro_batch: Micro-batch data
         :param training_settings: Training settings
-        :param sync_gradients: If True, allow gradient synchronization (DDP).
-            If False, use no_sync context to skip synchronization.
+        :param is_boundary: Whether this is the accumulation boundary (optimizer step)
 
-        :return: Normalized results dict with 'loss', 'num_samples', 'auxiliary_results'
+        :return: Tuple (results, did_update)
+            results: Normalized results dict with 'loss', 'num_samples', 'auxiliary_results'
+            did_update: Boolean indicating if optimizer stepped
         """
-        # Use no_sync context when not at accumulation boundary (DDP optimization)
-        context = self._get_no_sync_context() if not sync_gradients else nullcontext()
+        results = self.evaluate_loss(
+            micro_batch,
+            inference_mode=False,
+            evaluate_settings=training_settings
+        )
 
-        with context:
-            results = self.evaluate_loss(
-                micro_batch,
-                inference_mode=False,
-                evaluate_settings=training_settings
-            )
+        if 'loss' not in results:
+            raise LossNotAvailableException()
 
-            if 'loss' not in results:
-                raise LossNotAvailableException()
+        loss = results['loss']
 
-            loss = results['loss']
+        # Scale loss by accumulation factor
+        scaled_loss = loss / self.gradient_accumulation_steps
+        self._back_propagate_from(scaled_loss)
 
-            # Scale loss by accumulation factor
-            scaled_loss = loss / self.gradient_accumulation_steps
-            self._back_propagate_from(scaled_loss)
+        # Reduce memory usage
+        loss.detach_()
 
-            # Reduce memory usage
-            loss.detach_()
+        did_update = False
+        if is_boundary:
+            self._prepare_update_model_parameters()
+            did_update = self._update_model_parameters()
+            self._after_update_model_parameters(did_update)
 
-        return results
+        return results, did_update
 
     def _get_no_sync_context(self):
         """Get DDP no_sync context if available, otherwise nullcontext."""
