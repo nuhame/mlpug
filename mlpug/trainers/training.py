@@ -14,7 +14,8 @@ from basics.logging import get_logger
 
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
-from mlpug.mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException, ModelWrapperException
+from mlpug.trainers.model_wrappers import ModelWrapperFunc
 
 
 logger = get_logger(os.path.basename(__file__))
@@ -1132,6 +1133,7 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
+                 model_wrapper_func: Optional[ModelWrapperFunc] = None,
                  batch_size: Optional[int] = None,
                  micro_batch_size: Optional[int] = None,
                  eager_mode: bool = False,
@@ -1147,6 +1149,9 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
         :param optimizers: Dict or list with optimizer(s), or a single optimizer instance
         :param model_components: Dict or list with model components(s), or a single model instance
+        :param model_wrapper_func: Optional callable that wraps the model (e.g., for DDP, FSDP).
+            The wrapper is applied in set_training_model() before any backend-specific processing.
+            See ModelWrapperFunc protocol for the expected signature.
         :param batch_size: Optional effective batch size for optimization. If provided with
             micro_batch_size, must be divisible by micro_batch_size.
             gradient_accumulation_steps = batch_size / micro_batch_size
@@ -1159,6 +1164,8 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
         model_components = convert_to_dict("model", model_components)
         optimizers = convert_to_dict("optimizer", optimizers)
+
+        self._model_wrapper_func = model_wrapper_func
 
         super().__init__(model_components, optimizers, name=name, **kwargs)
 
@@ -1216,25 +1223,51 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
     def set_training_model(self, model):
         """
+        Set the training model, optionally applying a model wrapper.
+
+        If a model_wrapper_func was provided at construction, it is applied here
+        before any backend-specific processing.
+
         :param model: nn.Module that returns the loss based on the given batch
-                      The forward method of the training model must be callable and the following signature:
+            The forward method of the training model must be callable and the following signature:
 
-                      model(self, batch_data, training_settings) -> {
-                        "loss": <Tensor>,
-                        "auxiliary_results": <can be anything, e.g dict or list with values or data items>
-                      }
+            model(self, batch_data, training_settings) -> {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
 
-                      or
+            or
 
-                      model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
+            model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
 
         :return:
         """
+
+        # Apply model wrapper if provided
+        if callable(self._model_wrapper_func):
+            try:
+                model = self._apply_model_wrapper_func(model)
+            except Exception as e:
+                raise ModelWrapperException() from e
 
         self.training_model = model
 
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
+
+    @abc.abstractmethod
+    def _apply_model_wrapper_func(self, model):
+        """
+        Apply the model wrapper function with backend-specific kwargs.
+
+        Subclasses must override to inject relevant trainer constructor parameters.
+        For example, PyTorch injects eager_mode and compile_kwargs.
+
+        :param model: The model to wrap
+
+        :return: The wrapped model
+        """
+        ...
 
     def _reset_accumulation_state(self):
         """Reset the gradient accumulation state."""

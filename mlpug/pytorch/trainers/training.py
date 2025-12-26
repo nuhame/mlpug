@@ -5,7 +5,6 @@ import torch
 
 from torch.amp import autocast
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 import basics.base_utils as _
 
@@ -81,7 +80,6 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             self._log.info(f"Using scalar instance for automatic mixed precision : {self._scaler}")
 
         self.no_grad_sync_available = False
-        self._is_ddp = False
 
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
 
@@ -95,28 +93,43 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
                 "GradScaler tracking requires a single optimizer."
             )
 
+    def _apply_model_wrapper_func(self, model):
+        """
+        Apply the model wrapper function with PyTorch-specific kwargs.
+
+        Injects eager_mode and compile_kwargs so the wrapper can handle compilation
+        before wrapping (e.g., compile model then wrap with DDP).
+
+        :param model: The model to wrap
+
+        :return: The wrapped model
+        """
+        return self._model_wrapper_func(
+            model,
+            eager_mode=self.eager_mode,
+            compile_kwargs=self.compile_kwargs
+        )
+
     def set_training_model(self, model):
+        # Base class applies model wrapper if provided
         super().set_training_model(model)
 
-        self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
-        self._is_ddp = isinstance(model, DDP)
+        # Get the (possibly wrapped) model
+        model = self.training_model
 
-        if self.eager_mode:
+        # Detect DDP features for gradient sync optimization
+        self.no_grad_sync_available = hasattr(model, 'no_sync') and callable(model.no_sync)
+
+        # Determine training step function based on configuration
+        if callable(self._model_wrapper_func):
+            # It is assumed that the wrapper handled model compilation, training step runs in eager mode
+            self._training_step_func = self._training_step
+            self._log.info("Model wrapper provided, no additional model compilation performed.")
+        elif self.eager_mode:
             self._training_step_func = self._training_step
             self._log.warn("Training in eager mode.")
-        elif self._is_ddp:
-            # For DDP: compile the inner module, run training step in eager mode.
-            # PyTorch recommends compiling the model before/inside DDP wrapper,
-            # not compiling code that uses DDP from outside.
-            # TODO: Compare performance of single-GPU (compile full training step) vs
-            #       DDP mode (compile model only) to quantify the difference.
-            # TODO: Research encapsulating DDP wrapping inside MLPug so compilation
-            #       order (compile model -> wrap with DDP) is handled automatically.
-            self._compile_ddp_inner_module(model)
-            self._training_step_func = self._training_step
-            self._log.info("DDP detected: compiled inner module, training step runs in eager mode.")
         else:
-            # For non-DDP: compile the entire training step
+            # No wrapper, not eager - compile the entire training step
             self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
             self._log.info("Compiled training step.")
 
@@ -233,20 +246,6 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         for optimizer in self.get_optimizers().values():
             optimizer.zero_grad()
 
-    def _compile_ddp_inner_module(self, model):
-        """
-        Compile the inner module of a DDP-wrapped model.
-
-        This follows PyTorch's recommendation for torch.compile + DDP:
-        compile the model inside the DDP wrapper, not code that uses DDP from outside.
-        """
-        if not hasattr(model, 'module'):
-            self._log.warn("DDP model has no 'module' attribute, skipping compilation.")
-            return
-
-        model.module = torch.compile(model.module, **self.compile_kwargs)
-        self._log.debug(f"Compiled DDP inner module with kwargs: {self.compile_kwargs}")
-
     def _setup_optimizer_step_funcs(self):
         """
         Setup optimizer step functions for all optimizers.
@@ -281,10 +280,9 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         Handles gradient calculation and optimizer step (at accumulation boundary).
 
         Compilation behavior:
-        - In non-DDP mode: This entire function is compiled via torch.compile.
-        - In DDP mode: The inner model (model.module) is compiled, but this function
-          runs in eager mode. This follows PyTorch's recommendation to compile the
-          model before/inside DDP, not code that uses DDP from outside.
+        - If model_wrapper_func provided: This function runs in eager mode.
+          The wrapper is responsible for model compilation (e.g., compile then wrap with DDP).
+        - If no wrapper and not eager_mode: This entire function is compiled via torch.compile.
 
         Note: The no_sync() context is managed OUTSIDE this function (in train_on)
         to avoid torch.compile issues with context managers.

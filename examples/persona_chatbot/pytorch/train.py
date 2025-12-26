@@ -25,8 +25,6 @@ try:
     import torch.distributed as dist
     import torch.multiprocessing as mp
 
-    from torch.nn.parallel import DistributedDataParallel as DDP
-
     from torch.optim import AdamW
 
     from torch.optim.lr_scheduler import LambdaLR
@@ -34,6 +32,8 @@ try:
     from torch.nn.functional import softmax
 except Exception as e:
     log_exception(module_logger, "Please install PyTorch, see https://pytorch.org/get-started/locally/", e)
+
+from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 
 
 try:
@@ -263,9 +263,10 @@ class TrainingProcess(TrainingProcessBase):
             activation_checkpointing=self._args.activation_checkpointing)
 
         self._training_model.to(self._device)
+
+        # Create model wrapper for DDP if distributed
         if self.is_distributed:
-            device_ids = [self.rank] if self._device.type == 'cuda' else None
-            self._training_model = DDP(self._training_model, device_ids=device_ids)
+            self._model_wrapper_func = DDPModelWrapper(self.rank, self._device)
 
     def _build_optimizer(self):
         # Adapted from Huggingface Transformers package v4.17, Trainer::create_optimizer, transformers/trainer.py:827
