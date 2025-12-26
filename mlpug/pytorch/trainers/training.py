@@ -86,6 +86,14 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else {}
 
         self._training_step_func = None
+        self._optimizer_step_funcs = {}
+
+        # Validate: AMP with multiple optimizers is not supported
+        if self.use_mixed_precision and len(self.get_optimizers()) > 1:
+            raise ValueError(
+                "Mixed precision (AMP) with multiple optimizers is not supported. "
+                "GradScaler tracking requires a single optimizer."
+            )
 
     def set_training_model(self, model):
         super().set_training_model(model)
@@ -104,9 +112,6 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             #       DDP mode (compile model only) to quantify the difference.
             # TODO: Research encapsulating DDP wrapping inside MLPug so compilation
             #       order (compile model -> wrap with DDP) is handled automatically.
-            # TODO: Add compiled optimizer step - PyTorch docs show ~48% speedup by
-            #       compiling optimizer.step() separately. See:
-            #       https://docs.pytorch.org/tutorials/recipes/compiling_optimizer.html
             self._compile_ddp_inner_module(model)
             self._training_step_func = self._training_step
             self._log.info("DDP detected: compiled inner module, training step runs in eager mode.")
@@ -114,6 +119,9 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             # For non-DDP: compile the entire training step
             self._training_step_func = torch.compile(self._training_step, **self.compile_kwargs)
             self._log.info("Compiled training step.")
+
+        # Setup optimizer step functions (compiled if not in eager mode)
+        self._setup_optimizer_step_funcs()
 
     def set_learning_rate_for(self, optimizer_name, lr):
         """
@@ -239,6 +247,33 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         model.module = torch.compile(model.module, **self.compile_kwargs)
         self._log.debug(f"Compiled DDP inner module with kwargs: {self.compile_kwargs}")
 
+    def _setup_optimizer_step_funcs(self):
+        """
+        Setup optimizer step functions for all optimizers.
+
+        For AMP: wraps scaler.step(optimizer)
+        For non-AMP: uses optimizer.step
+
+        If not in eager mode, applies torch.compile with fullgraph=False
+        to allow graph breaks at control flow points (e.g., inf/nan checking in GradScaler).
+        """
+        def make_scaler_step(opt, sc):
+            def step():
+                sc.step(opt)
+            return step
+
+        for name, optimizer in self.get_optimizers().items():
+            if self.use_mixed_precision:
+                step_func = make_scaler_step(optimizer, self._scaler)
+            else:
+                step_func = optimizer.step
+
+            if not self.eager_mode:
+                step_func = torch.compile(step_func, fullgraph=False)
+                self._log.debug(f"Compiled optimizer step for '{name}'")
+
+            self._optimizer_step_funcs[name] = step_func
+
     def _training_step(self, micro_batch, training_settings, is_boundary) -> Tuple[Dict, bool]:
         """
         Training step for a single micro-batch.
@@ -305,31 +340,23 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
     def _update_model_parameters(self):
         did_update = True
-        for name, optimizer in self.get_optimizers().items():
-            optimizer_did_update = self._execute_optimizer(optimizer)
-            if not optimizer_did_update:
-                self._log.debug(f"Optimizer '{name}' did not update, AMP scaling factor too high ...")
 
-            did_update &= optimizer_did_update
+        for name in self.get_optimizers().keys():
+            self._optimizer_step_funcs[name]()
 
-        # Reset gradients after optimizer step
-        if did_update:
-            self._reset_gradients()
-
-        return did_update
-
-    def _execute_optimizer(self, optimizer) -> bool:
-        did_update = True
+        # AMP scale tracking (single optimizer enforced in __init__)
         if self.use_mixed_precision:
-            self._scaler.step(optimizer)
-
             old_scale = self._scaler.get_scale()
             self._scaler.update()
             new_scale = self._scaler.get_scale()
 
             did_update = new_scale >= old_scale
-        else:
-            optimizer.step()
+            if not did_update:
+                self._log.debug("Optimizer did not update, AMP scaling factor too high ...")
+
+        # Reset gradients after optimizer step
+        if did_update:
+            self._reset_gradients()
 
         return did_update
 
