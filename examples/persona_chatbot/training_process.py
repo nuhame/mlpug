@@ -586,7 +586,6 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                               self._batch_training_set,
                                                               num_epochs=self._args.num_epochs,
                                                               callbacks=self._callbacks,
-                                                              num_batches_per_epoch=self.num_batches_training_set,
                                                               experiment_data={
                                                                   "args": self._args
                                                               })
