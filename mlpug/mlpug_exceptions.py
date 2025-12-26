@@ -79,3 +79,12 @@ class NumSamplesNotAvailableException(MLPugException):
             err_msg += f" : {message}"
 
         super().__init__(err_msg)
+
+
+class ModelWrapperException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Failed to apply model wrapper function"
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)

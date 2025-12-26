@@ -5,13 +5,13 @@ from functools import cache
 
 import torch
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
 import torchvision as tv
 
 # Import mlpug for Pytorch backend
 import mlpug.pytorch as mlp
+from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 
 from mlpug.debugging import enable_pycharm_remote_debugging
 
@@ -212,8 +212,11 @@ def worker_fn(rank, args, world_size):
 
     # Move model to assigned GPU (see torch.cuda.set_device(args.local_rank))
     train_model.to(device)
+
+    # Create model wrapper for DDP if distributed
+    model_wrapper_func = None
     if distributed:
-        train_model = DDP(train_model, device_ids=[rank])
+        model_wrapper_func = DDPModelWrapper(rank, device)
     # ############################################
 
     # ############ SETUP OPTIMIZER ##############
@@ -225,6 +228,7 @@ def worker_fn(rank, args, world_size):
     trainer = mlp.trainers.DefaultTrainer(
         optimizers=optimizer,
         model_components=classifier,
+        model_wrapper_func=model_wrapper_func,
         batch_size=args.batch_size,
         micro_batch_size=args.micro_batch_size,
         eager_mode=args.eager_mode,

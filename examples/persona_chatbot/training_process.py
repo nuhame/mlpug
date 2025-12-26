@@ -126,6 +126,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._callbacks = None
         self._training_manager = None
 
+        self._model_wrapper_func = None
+
     @property
     def rank(self):
         return self._rank
@@ -327,6 +329,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._trainer = mlp.trainers.DefaultTrainer(
             optimizers=self._optimizer,
             model_components=self._model,
+            model_wrapper_func=self._model_wrapper_func,
             batch_size=self._args.batch_size,
             micro_batch_size=self._args.micro_batch_size,
             use_mixed_precision=self._args.use_mixed_precision,
