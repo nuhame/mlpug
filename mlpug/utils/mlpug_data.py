@@ -1,7 +1,6 @@
 import numpy as np
 
 from mlpug.utils.utils import has_method
-from mlpug.batch_chunking import BatchChunkingResults
 
 
 class ValueDescription:
@@ -25,12 +24,12 @@ class ValueDescription:
 def describe_data(data):
     """
     Creates description of data, in terms of type, size and device of collection-like values in the data.
-    The description output recursively follows the structure of dicts, tuples and BatchChunkingResults
+    The description output recursively follows the structure of dicts, tuples and MicroBatchResults
 
     The description of None, int, float, bool and str will just be the value itself.
     Otherwise the descriptions are represented by ValueDescription objects
 
-    BatchChunkingResults will be represented by a standard list
+    MicroBatchResults will be represented by a standard list
 
     Can, for instance, be useful to describe the training log object.
 
@@ -54,7 +53,7 @@ def describe_data(data):
         return tas
 
     if isinstance(data, list):
-        # Could also be a BatchChunkingResult
+        # Could also be a MicroBatchResults
         tas = data.__class__()
         for v in data:
             tas += [describe_data(v)]
@@ -101,7 +100,7 @@ class MLPugDataCleaner:
             return values
 
         if isinstance(data, list):
-            # Could also be a BatchChunkingResult
+            # Could also be a MicroBatchResults
             values = data.__class__()
             for v in data:
                 values += [self(v)]

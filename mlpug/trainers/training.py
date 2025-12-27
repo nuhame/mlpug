@@ -1,7 +1,7 @@
 import os
 import sys
 import abc
-from typing import Optional, Union, Dict, Tuple
+from typing import Optional, Union, Dict, Tuple, List
 
 import math
 import time
@@ -12,14 +12,25 @@ from mlpug.base import Base
 import basics.base_utils as _
 from basics.logging import get_logger
 
-from mlpug.batch_chunking import ChunkableBatch, ChunkableBatchWrapper, is_chunkable, BatchChunkingResults
-
 from mlpug.utils import convert_to_dict, get_value_at, set_value_at, has_key, SlidingWindow
 
-from mlpug.mlpug_exceptions import TrainerInvalidException
+from mlpug.mlpug_exceptions import TrainerInvalidException, ModelWrapperException
+from mlpug.trainers.model_wrappers import ModelWrapperFunc
 
 
 logger = get_logger(os.path.basename(__file__))
+
+
+class MicroBatchResults(list):
+    """
+    List of results from micro-batches within an accumulation window.
+
+    Each element is a normalized results dict with keys:
+        - 'loss': The loss tensor for the micro-batch
+        - 'num_samples': Number of samples in the micro-batch
+        - 'auxiliary_results': Any additional results from the model
+    """
+    pass
 
 
 class NormalizeEvaluationResults(Base):
@@ -155,8 +166,12 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.num_batches_per_epoch = num_batches_per_epoch
 
         self.global_iter = 0
-        self.batch_step = 0
+        self.micro_batch_step = 0  # Counts dataloader iterations (micro-batches)
+        self.batch_step = 0  # Counts effective batches (after accumulation)
         self.epoch = 0
+
+        # Will be set in _assess_num_batches_per_epoch
+        self.num_micro_batches_per_epoch = None
 
         self.callbacks = callbacks or []
         self.cb_names = None
@@ -245,6 +260,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         state = {
             "manager": {
                 "epoch": self.epoch,
+                "micro_batch_step": self.micro_batch_step,
                 "batch_step": self.batch_step,
                 "global_iter": self.global_iter,
                 "logs": self.logs,
@@ -295,6 +311,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         return {
                    "epoch": self.epoch,
+                   "micro_batch_step": self.micro_batch_step,
                    "batch_step": self.batch_step,
                    "global_iter": self.global_iter,
                    "logs": self.logs,
@@ -324,14 +341,26 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         self.batch_step = state["manager"]["batch_step"]
         self.global_iter = state["manager"]["global_iter"]
 
+        # Backwards compatibility: old checkpoints may not have micro_batch_step
+        # In that case, estimate from batch_step and accumulation_steps
+        accumulation_steps = getattr(self.trainer, 'gradient_accumulation_steps', 1)
+        if "micro_batch_step" in state["manager"]:
+            self.micro_batch_step = state["manager"]["micro_batch_step"]
+        else:
+            # Estimate: assume we're at the end of the accumulation window
+            self.micro_batch_step = self.batch_step * accumulation_steps
+
         # start at next iteration
         self.global_iter += 1
+        self.micro_batch_step += 1
         self.batch_step += 1
-        if self.batch_step > self.num_batches_per_epoch-1:
+        if self.micro_batch_step >= self.num_micro_batches_per_epoch:
             self.epoch += 1
+            self.micro_batch_step = 0
             self.batch_step = 0
 
         self.init_logs["epoch"] = self.epoch
+        self.init_logs["micro_batch_step"] = self.micro_batch_step
         self.init_logs["batch_step"] = self.batch_step
         self.init_logs["global_iter"] = self.global_iter
 
@@ -497,6 +526,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
         # override log state for certain parameters given at construction
         self.logs["final_epoch"] = self.num_epochs - 1
+        self.logs["final_micro_batch_step"] = self.num_micro_batches_per_epoch - 1
         self.logs["final_batch_step"] = self.num_batches_per_epoch - 1
 
         update = self._update_cb_success
@@ -554,7 +584,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 # In this way it is not double recorded in Tensorboard
                 set_value_at("training_params.batch.duration", current, None)
                 try:
-                    # Note: Tensorflow needs a defined training_settings
+                    # Ensure training_settings exists for callbacks to modify
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
@@ -578,9 +608,15 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 if training_stopped_on_error:
                     break
 
-                update(call_cb('on_batch_training_completed', training_batch, logs))
+                # Fire micro-batch callback after every train_on call
+                update(call_cb('on_micro_batch_completed', training_batch, logs))
 
-                self.batch_step += 1
+                # Fire batch callback only at accumulation boundary (semantic batch)
+                if did_update_model:
+                    update(call_cb('on_batch_training_completed', training_batch, logs))
+                    self.batch_step += 1
+
+                self.micro_batch_step += 1
                 self.global_iter += 1
 
                 batch_training_end_time = time.time()
@@ -591,13 +627,24 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
 
                 self._previous_batch_duration = batch_duration
 
-                # Situation 1: When the start_batch given was > 0, go to next epoch when epoch finished
+                # Situation 1: When the start micro_batch_step given was > 0, go to next epoch when epoch finished
                 # Situation 2: When num_batches_per_epoch was given to simulate epochs in an
                 #              infinite batch streaming situation
-                if self.batch_step >= self.num_batches_per_epoch:
+                if self.micro_batch_step >= self.num_micro_batches_per_epoch:
                     break
 
             if not (epoch_stopped_early or training_stopped_on_error):
+                # Handle any partial accumulation at epoch end
+                try:
+                    did_final_update = self.trainer.epoch_complete()
+                    if did_final_update:
+                        # Final partial batch was processed - fire callbacks
+                        set_value_at("training.batch.did_update_model", current, did_final_update)
+                        update(call_cb('on_batch_training_completed', training_batch, logs))
+                        self.batch_step += 1
+                except Exception as e:
+                    _.log_exception(self._log, "Exception occurred during epoch_complete()", e)
+
                 mean_batch_duration = self._calc_window_average("training_params.batch.duration")
                 epoch_duration = self._calc_window_sum("training_params.batch.duration")
 
@@ -609,6 +656,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             if training_stopped_on_error:
                 break
 
+            self.micro_batch_step = 0
             self.batch_step = 0
 
         update(call_cb('on_training_ended',
@@ -629,7 +677,8 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
     def _init_current_logs(self):
         return {
             "epoch": self.epoch,
-            "batch_step": self.batch_step,
+            "micro_batch_step": self.micro_batch_step,  # Dataloader iteration count
+            "batch_step": self.batch_step,  # Effective batch count (after accumulation)
             "global_iter": self.global_iter,
 
             "training": {},
@@ -710,11 +759,29 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
         return self.training_dataset
 
     def _assess_num_batches_per_epoch(self):
+        """
+        Determines the number of effective batches per epoch.
+
+        With gradient accumulation, the dataloader yields micro-batches, but we want to
+        track and display progress in terms of effective batches (optimizer steps).
+
+        Sets:
+            - num_micro_batches_per_epoch: Number of dataloader iterations
+            - num_batches_per_epoch: Number of effective batches (optimizer steps)
+        """
+        # Get gradient accumulation steps from trainer (default to 1)
+        accumulation_steps = getattr(self.trainer, 'gradient_accumulation_steps', 1)
+
+        # If num_batches_per_epoch was explicitly provided, use it as-is
+        # (user is specifying effective batches, not micro-batches)
         if self.num_batches_per_epoch:
-            # num_batches_per_epoch given, nothing to do
+            self.num_micro_batches_per_epoch = self.num_batches_per_epoch * accumulation_steps
             return
 
+        # Try to determine from dataset length
+        self.num_micro_batches_per_epoch = math.inf
         self.num_batches_per_epoch = math.inf
+
         err_msg = "Evaluation of training data set length failed, number of batches per epoch is " \
                   "set to Infinite. If this is not what you want, either provide the num_batches_per_epoch " \
                   "argument during construction of the TrainingManager, or ensure that the training_dataset " \
@@ -722,7 +789,10 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                   "does not fail."
         try:
             if hasattr(self.training_dataset, '__len__'):
-                self.num_batches_per_epoch = len(self.training_dataset)
+                self.num_micro_batches_per_epoch = len(self.training_dataset)
+                # Calculate effective batches (round up to handle partial final batch)
+                self.num_batches_per_epoch = math.ceil(self.num_micro_batches_per_epoch / accumulation_steps)
+                self._log.debug(f"Number of micro-batches per epoch : {self.num_micro_batches_per_epoch}")
                 self._log.debug(f"Number of batches per epoch : {self.num_batches_per_epoch}")
             else:
                 self._log.warn(err_msg)
@@ -921,7 +991,6 @@ class Trainer(Base, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def set_learning_rate_for(self, optimizer_name, lr):
         """
-
         Set learning rate for specific optimizer `optimizer_name` to `lr`
 
         :param optimizer_name:
@@ -929,43 +998,50 @@ class Trainer(Base, metaclass=abc.ABCMeta):
 
         :return: True on success, else False
         """
-        raise NotImplemented("Please implement this method in your child class")
+        raise NotImplementedError("Please implement this method in your child class")
 
     @abc.abstractmethod
-    def train_on(self, batch_data, training_settings=None) -> Tuple[
-        Union[Dict, BatchChunkingResults[Dict]],
-        bool
-    ]:
+    def train_on(self, batch_data, training_settings=None) -> Tuple[MicroBatchResults, bool]:
         """
-        Use batch_data to perform a training iteration
+        Use batch_data to perform a training iteration on a single micro-batch.
 
-        :param batch_data: batch_data object (e.g. dict, list, tuple)
-        :param training_settings: optional training_settings object (usually dict)
+        The trainer potentially accumulates gradients across multiple micro-batches
+        (when gradient_accumulation_steps > 1) and steps the optimizer when the
+        accumulation boundary is reached.
 
-        :return: Tuple: (model_outputs, did_update)
+        :param batch_data: Micro-batch data object (e.g. dict, list, tuple)
+        :param training_settings: Optional training settings object (usually dict)
 
-                 model_outputs is a single normalized results dict:
-                        {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
-                 or
-                    BatchChunkingResults: a list of dicts, one dict per batch chunk results:
-                        [{'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>},  # Chunk 1
-                         ...
-                         {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}]  # Chunk N
+        :return: Tuple (micro_batch_results, did_update)
+            micro_batch_results: MicroBatchResults containing results for all micro-batches
+                in the current accumulation window so far. Each element is a dict:
+                {'loss': <loss tensor>, 'num_samples': <int>, 'auxiliary_results': <Any>}
 
-                did_update is a boolean indicating if all the model weights, assigned to optimizers, were updated.
-                If there are multiple optimizers for different parameter groups, did_update is only True if all
-                optimizers updated their respective model parameters.
+                When gradient_accumulation_steps=1 (no accumulation), this is a list
+                with a single element.
 
-                In some cases did_update can be False, for instance when using mixed precision training,
-                when the loss scaling factor results in inf/nan values. In such cases one can skip, for instance,
-                updating an LR scheduler.
+            did_update: Boolean indicating if all model weights, assigned to optimizers,
+                were updated. If there are multiple optimizers for different parameter
+                groups, did_update is True only if all optimizers updated their
+                respective model parameters.
 
-        :rtype: Tuple[
-            Union[Dict, BatchChunkingResults[Dict]],
-            bool
-        ]
+                did_update can be False even at accumulation boundary, for instance when
+                using mixed precision training and the loss scaling factor results in
+                inf/nan values. In such cases one can skip, for instance, updating an
+                LR scheduler.
         """
-        raise NotImplemented("Please implement this method in your child class")
+        raise NotImplementedError("Please implement this method in your child class")
+
+    @abc.abstractmethod
+    def epoch_complete(self) -> bool:
+        """
+        Called when an epoch ends. Can be used to perform any necessary cleanup
+        or finalization, e.g. handling partial accumulation windows.
+
+        :return: did_update - True if model parameters were updated as a result
+            of this call, False otherwise.
+        """
+        raise NotImplementedError("Please implement this method in your child class")
 
     def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
         """
@@ -995,17 +1071,16 @@ class Trainer(Base, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
         """
-        Evaluates the given training model on the  given batch_data, using the optional training_settings
-        Depending on the Deep learning backend you might need to use inference mode here
+        Evaluates the given training model on the given batch_data, using the optional training_settings.
+        Depending on the Deep learning backend you might need to use inference mode here.
 
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
-        :param inference_mode: bool, important when inference mode not set in `_activate_inference_mode`
-                               Pytorch:     inference_mode not required here
-                               Tensorflow:  inference_mode required here
+        :param inference_mode: bool, important when inference mode not set in
+            `_activate_inference_mode`
 
         :return: dict or tuple
-           {
+            {
                 "loss": <Tensor>,
                 "num_samples": <int>,
                 "auxiliary_results": <can be anything, e.g dict or list with values or data items>
@@ -1058,63 +1133,87 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
     def __init__(self,
                  optimizers,
                  model_components=None,
+                 model_wrapper_func: Optional[ModelWrapperFunc] = None,
+                 batch_size: Optional[int] = None,
+                 micro_batch_size: Optional[int] = None,
                  eager_mode: bool = False,
-                 batch_chunk_size: Optional[int] = None,
-                 chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  use_mixed_precision=False,
                  name="DefaultTrainer",
                  **kwargs):
         """
-        Simple trainer based on a training_model, that evaluates the loss on batch data
+        Simple trainer based on a training_model, that evaluates the loss on batch data.
 
-        :param optimizers: dict or list with optimizer(s), or a single optimizer instance
-        :param model_components: dict or list with model components(s), or a single model instance
+        Supports gradient accumulation: when batch_size is a multiple of micro_batch_size,
+        the received batch data is assumed to be a micro-batch. The trainer will accumulate
+        gradients over multiple micro-batches until reaching the effective batch_size.
 
-        :param eager_mode: If true, the training step is not compiled
-
-        :param batch_chunk_size: optional batch chunk size (int)
-            Enables gradient accumulation. If given, batches are processed in
-            chunks of size `batch_chunk_size` samples to calculate the gradients.
-            The last chunk can be smaller than `batch_chunk_size` if there is not an exact multiple that is
-            equal to the `batch_data` size.
-
-            Note 1.
-            In order to enable chunked processing of a batch only works when:
-                A) the `batch_data` object, received by the `train_on` method, implements the
-                   `__len__` and `__getitem__` methods. Here the `__getitem__` method must be able to deal with slices.
-
-                OR
-
-                B) A `chunkable_batch_wrapper` is given, see parameter description
-
-            Note 2.
-            When using chunked batch processing, the default implementation assumes that the
-            loss, calculated over a chunk, is the average of the sample losses
-
-            Note 3.
-            When the `batch_chunk_size` is not an exact multiple of the `batch_data` size, this
-            could trigger retracing of the computation graphs in libraries such as Tensorflow.
-
-        :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
-            This is required when a batch_chunk_size is given and batches are not already chunkable when
-            provided for training
-
+        :param optimizers: Dict or list with optimizer(s), or a single optimizer instance
+        :param model_components: Dict or list with model components(s), or a single model instance
+        :param model_wrapper_func: Optional callable that wraps the model (e.g., for DDP, FSDP).
+            The wrapper is applied in set_training_model() before any backend-specific processing.
+            See ModelWrapperFunc protocol for the expected signature.
+        :param batch_size: Optional effective batch size for optimization. If provided with
+            micro_batch_size, must be divisible by micro_batch_size.
+            gradient_accumulation_steps = batch_size / micro_batch_size
+        :param micro_batch_size: Optional size of micro-batches received by train_on().
+            This is the memory unit - what fits in AI accelerator (e.g. GPU) memory.
+            If micro_batch_size is provided without batch_size, a ValueError is raised.
+        :param eager_mode: If True, the training step is not compiled
         :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
         """
 
         model_components = convert_to_dict("model", model_components)
         optimizers = convert_to_dict("optimizer", optimizers)
 
+        self._model_wrapper_func = model_wrapper_func
+
         super().__init__(model_components, optimizers, name=name, **kwargs)
+
+        # Determine gradient accumulation steps based on provided parameters
+        if batch_size is None and micro_batch_size is None:
+            # No accumulation
+            self.batch_size = None
+            self.micro_batch_size = None
+            self.gradient_accumulation_steps = 1
+        elif batch_size is not None and micro_batch_size is None:
+            # batch_size given, assume micro_batch_size = batch_size (no accumulation)
+            self.batch_size = batch_size
+            self.micro_batch_size = batch_size
+            self.gradient_accumulation_steps = 1
+        elif micro_batch_size is not None and batch_size is None:
+            # micro_batch_size given without batch_size - cannot calculate accumulation steps
+            raise ValueError(
+                "micro_batch_size is provided but batch_size is not. "
+                "Cannot calculate gradient_accumulation_steps. "
+                "Please provide batch_size or omit micro_batch_size."
+            )
+        else:
+            # Both provided - validate and calculate
+            if batch_size < micro_batch_size:
+                raise ValueError(
+                    f"batch_size ({batch_size}) must be >= micro_batch_size ({micro_batch_size})"
+                )
+            if batch_size % micro_batch_size != 0:
+                raise ValueError(
+                    f"batch_size ({batch_size}) must be divisible by micro_batch_size ({micro_batch_size})"
+                )
+            self.batch_size = batch_size
+            self.micro_batch_size = micro_batch_size
+            self.gradient_accumulation_steps = batch_size // micro_batch_size
+
+        if self.gradient_accumulation_steps > 1:
+            self._log.info(
+                f"Gradient accumulation enabled: batch_size={self.batch_size}, "
+                f"micro_batch_size={self.micro_batch_size}, "
+                f"gradient_accumulation_steps={self.gradient_accumulation_steps}"
+            )
+
+        # Accumulation state
+        self._accumulation_counter = 0
+        self._micro_batch_results: MicroBatchResults = MicroBatchResults()
 
         # TODO: add property getters, disable setting
         self.eager_mode = eager_mode
-
-        self.batch_chunk_size = batch_chunk_size
-        self.chunkable_batch_wrapper = chunkable_batch_wrapper
-
-        if self.batch_chunk_size is not None:
-            self._log.info(f"Will train on batches by slicing the batch in chunks of {batch_chunk_size} samples.")
 
         self.use_mixed_precision = use_mixed_precision
         if self.use_mixed_precision:
@@ -1124,36 +1223,66 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
     def set_training_model(self, model):
         """
+        Set the training model, optionally applying a model wrapper.
+
+        If a model_wrapper_func was provided at construction, it is applied here
+        before any backend-specific processing.
+
         :param model: nn.Module that returns the loss based on the given batch
-                      The forward method of the training model must be callable and the following signature:
+            The forward method of the training model must be callable and the following signature:
 
-                      model(self, batch_data, training_settings) -> {
-                        "loss": <Tensor>,
-                        "auxiliary_results": <can be anything, e.g dict or list with values or data items>
-                      }
+            model(self, batch_data, training_settings) -> {
+                "loss": <Tensor>,
+                "auxiliary_results": <can be anything, e.g dict or list with values or data items>
+            }
 
-                      or
+            or
 
-                      model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
+            model(self, batch_data, training_settings) -> [<loss_tensor>, ... auxiliary_results ...]
 
         :return:
         """
+
+        # Apply model wrapper if provided
+        if callable(self._model_wrapper_func):
+            try:
+                model = self._apply_model_wrapper_func(model)
+            except Exception as e:
+                raise ModelWrapperException() from e
 
         self.training_model = model
 
         instance_valid = self.instance_valid()
         self._valid = self._validate_model() & instance_valid
 
+    @abc.abstractmethod
+    def _apply_model_wrapper_func(self, model):
+        """
+        Apply the model wrapper function with backend-specific kwargs.
+
+        Subclasses must override to inject relevant trainer constructor parameters.
+        For example, PyTorch injects eager_mode and compile_kwargs.
+
+        :param model: The model to wrap
+
+        :return: The wrapped model
+        """
+        ...
+
+    def _reset_accumulation_state(self):
+        """Reset the gradient accumulation state."""
+        self._accumulation_counter = 0
+        self._micro_batch_results = MicroBatchResults()
+
     def _evaluate_loss(self, batch_data, evaluate_settings=None, inference_mode=None):
         """
-        Evaluates the given training model on the  given batch_data, using the optional training_settings
-        Depending on the Deep learning backend you might need to use inference mode here
+        Evaluates the given training model on the given batch_data, using the optional training_settings.
+        Depending on the Deep learning backend you might need to use inference mode here.
 
         :param batch_data: batch_data object to evaluate loss on (e.g. dict, list, tuple)
         :param evaluate_settings: optional evaluate_settings object (usually dict)
-        :param inference_mode: optional bool, important when inference mode not set in `_activate_inference_mode`
-                               Pytorch:     inference_mode not required here
-                               Tensorflow:  inference_mode required here
+        :param inference_mode: optional bool, important when inference mode not set in
+            `_activate_inference_mode`
 
         :return: dict or tuple
             {
@@ -1164,11 +1293,6 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
 
             (loss, num_samples, ... auxiliary results ...)
         """
-
-        if is_chunkable(batch_data):
-            # This allows the use of chunkable batches, even if we are not chunking batches
-            batch_data = batch_data[:]
-
         return self.training_model(batch_data, evaluate_settings, inference_mode)
 
     def _validate_model(self):

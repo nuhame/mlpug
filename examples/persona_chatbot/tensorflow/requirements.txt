@@ -1,3 +1,0 @@
-tensorflow[and-cuda]
-keras-nlp
-

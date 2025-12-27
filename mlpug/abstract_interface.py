@@ -5,8 +5,6 @@ from .trainers import callbacks
 
 from . import evaluation
 
-from . import batch_chunking
-
 from . import scheduler_funcs
 
 import mlpug.mlpug_logging as logging
