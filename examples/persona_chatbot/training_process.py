@@ -16,6 +16,7 @@ from basics.logging import get_logger
 
 import mlpug.abstract_interface as mlp_interface
 from mlpug.base import Base
+from mlpug.trainers.training import calc_gradient_accumulation_steps
 
 from examples.persona_chatbot.special_tokens import SPECIAL_TOKENS_MAPPING
 
@@ -113,8 +114,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._opt_max_sequence_length = None
 
-        self._batch_training_set = None
-        self._batch_validation_set = None
+        self._micro_batch_training_set = None
+        self._micro_batch_validation_set = None
 
         self._model = None
         self._training_model = None
@@ -145,12 +146,30 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         return self.num_devices > 1
 
     @cached_property
+    def gradient_accumulation_steps(self):
+        _, _, steps = calc_gradient_accumulation_steps(
+            self._args.batch_size,
+            self._args.micro_batch_size
+        )
+        return steps
+
+    @cached_property
+    def num_micro_batches_training_set(self):
+        return len(self._micro_batch_training_set)
+
+    @cached_property
+    def num_micro_batches_validation_set(self):
+        return len(self._micro_batch_validation_set)
+
+    @cached_property
     def num_batches_training_set(self):
-        return len(self._batch_training_set)
+        """Number of effective batches (optimizer steps) per epoch."""
+        return self.num_micro_batches_training_set // self.gradient_accumulation_steps
 
     @cached_property
     def num_batches_validation_set(self):
-        return len(self._batch_validation_set)
+        """Number of effective batches per epoch for validation."""
+        return self.num_micro_batches_validation_set // self.gradient_accumulation_steps
 
     def setup(self):
         self._set_random_seed()
@@ -159,11 +178,13 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         self._setup_tokenizer()
         self._prepare_datasets()
-        self._setup_batch_datasets()
+        self._setup_micro_batch_datasets()
 
         self._build_model()
         self._setup_training_model()
         self._build_optimizer()
+        # Note: If _setup_lr_scheduling_func() is called after _setup_trainer(), we could
+        # reuse self._trainer.gradient_accumulation_steps instead of calculating it ourselves.
         self._setup_lr_scheduling_func()
 
         self._setup_trainer()
@@ -251,10 +272,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         return dataset
 
     @abc.abstractmethod
-    def _setup_batch_datasets(self):
+    def _setup_micro_batch_datasets(self):
         """
-        Sets self._batch_training_set and self._batch_validation_set.
-        Implementation depends on specific ML Library you are using
+        Sets self._micro_batch_training_set and self._micro_batch_validation_set.
+        Implementation depends on specific ML Library you are using.
         :return:
         """
         raise NotImplementedError("Please implement in your child class")
@@ -509,20 +530,20 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
                                                 sliding_window_length=avg_window_train,
                                                 inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate validation loss and classification quality, every <progress_log_period> batches
-            mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
+            mlp.callbacks.DatasetMetricsLogger(self._micro_batch_validation_set,
                                                'validation',
                                                metric_evaluator=all_metrics_evaluator,
                                                log_condition_func=log_metrics,
                                                sliding_window_length=avg_window_validation,
                                                inspect_sliding_windows=self._args.inspect_sliding_windows),
             # Calculate training metrics only once per epoch over the whole dataset
-            mlp.callbacks.DatasetMetricsLogger(self._batch_training_set,
+            mlp.callbacks.DatasetMetricsLogger(self._micro_batch_training_set,
                                                'training',
                                                metric_evaluator=all_metrics_evaluator,
                                                # epoch level only
                                                batch_level=False),
             # Calculate validation metrics only once per epoch over the whole dataset
-            mlp.callbacks.DatasetMetricsLogger(self._batch_validation_set,
+            mlp.callbacks.DatasetMetricsLogger(self._micro_batch_validation_set,
                                                'validation',
                                                metric_evaluator=all_metrics_evaluator,
                                                # epoch level only
@@ -586,7 +607,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         # TODO: revisit the behavior of MLPug when the total number of batches is not known before hand.
         self._training_manager = mlp.trainers.TrainingManager(self._trainer,
-                                                              self._batch_training_set,
+                                                              self._micro_batch_training_set,
                                                               num_epochs=self._args.num_epochs,
                                                               callbacks=self._callbacks,
                                                               experiment_data={

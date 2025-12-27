@@ -202,17 +202,17 @@ class TrainingProcess(TrainingProcessBase):
     def _generate_dataset(self, manager, dataset_name):
         return self._execute_for_primary_device_first(super()._generate_dataset, manager, dataset_name)
 
-    def _setup_batch_datasets(self):
+    def _setup_micro_batch_datasets(self):
         if self.is_distributed:
             self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._training_set)
             self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._validation_set)
 
         # DataLoader yields micro-batches (or full batches if no gradient accumulation)
-        dataloader_batch_size = self._args.micro_batch_size if self._args.micro_batch_size else self._args.batch_size
+        micro_batch_size = self._args.micro_batch_size if self._args.micro_batch_size else self._args.batch_size
 
-        self._batch_training_set = torch.utils.data.DataLoader(
+        self._micro_batch_training_set = torch.utils.data.DataLoader(
             self._training_set,
-            batch_size=dataloader_batch_size,
+            batch_size=micro_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
@@ -223,9 +223,9 @@ class TrainingProcess(TrainingProcessBase):
             drop_last=True)  # Ensure consistent batch sizes for torch.compile
 
         # Using the test set as a validation set, just for demonstration purposes
-        self._batch_validation_set = torch.utils.data.DataLoader(
+        self._micro_batch_validation_set = torch.utils.data.DataLoader(
             self._validation_set,
-            batch_size=dataloader_batch_size,
+            batch_size=micro_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
