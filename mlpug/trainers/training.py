@@ -684,6 +684,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                         set_value_at("training.batch.did_update_model", current, did_final_update)
                         update(call_cb('on_batch_training_completed', training_batch, logs))
                         self.batch_step += 1
+                        self.global_iter += 1
                 except Exception as e:
                     _.log_exception(self._log, "Exception occurred during epoch_complete()", e)
 
