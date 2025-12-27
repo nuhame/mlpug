@@ -29,11 +29,6 @@ import mlpug.pytorch as mlp
 import mlpug.pytorch.xla as mlp
 ```
 
-```Python
-# Using MLPug with Tensorflow
-# WARNING: limited support, will not be developed and maintained further in the future
-import mlpug.tensorflow as mlp
-```
 
 ## Basic template of usage
 
@@ -112,8 +107,8 @@ pip install -r requirements.txt
 ```
 ### Examples of using MLPug with PyTorch
 
-Next to examples for PyTorch, there are equivalent examples for using MLPug with PyTorch/XLA and Tensorflow, see the 
-`tensorflow` and `pytorch/xla` directories of the examples. For XLA you need to use a TPU on Google Cloud, or 
+Next to examples for PyTorch, there are equivalent examples for using MLPug with PyTorch/XLA, see the
+`pytorch/xla` directories of the examples. For XLA you need to use a TPU on Google Cloud, or
 use Google Colab. Here we focus on PyTorch. 
 
 #### Hello world
@@ -143,8 +138,8 @@ python examples/fashion_mnist/pytorch/train.py
 # If you have multiple GPUs
 python examples/fashion_mnist/pytorch/train.py --distributed
 
-# To a batch size of 32, evaluated in chunks of 8 samples for gradient accumulation 
-python examples/fashion_mnist/pytorch/train.py --batch-size 32 --batch-chunk-size 8
+# Use a batch size of 32 with micro-batches of 8 for gradient accumulation
+python examples/fashion_mnist/pytorch/train.py --batch-size 32 --micro-batch-size 8
 ```
 
 Some other useful flags are:
@@ -162,7 +157,7 @@ pip install -r examples/persona_chatbot/requirements.txt
 pip install -r examples/persona_chatbot/pytorch/requirements.txt 
 ```
 
-What batch chunking size (micro batch size for gradient accumulation) depends on your system.
+What micro-batch size to use for gradient accumulation depends on your system.
 The following setup assumes multiple GPUs (`--distributed`).
 ```
 python examples/persona_chatbot/pytorch/train.py \
@@ -171,7 +166,7 @@ python examples/persona_chatbot/pytorch/train.py \
                  --num-choices 8 \
                  --sequence-length-outlier-threshold 0.05 \
                  --batch-size 32 \
-                 --batch-chunk-size 8 \
+                 --micro-batch-size 8 \
                  --learning-rate 1e-4 \
                  --distributed \
                  --num-epochs 6 \
@@ -205,10 +200,6 @@ Currently, MLPug supports the following deep learning/machine learning libraries
 
  * PyTorch
  * PyTorch/XLA (Training with Pytorch on TPUs)
- * Tensorflow
-
-Tensorflow is not fully supported at the moment and will not be further developed and maintained in the future, unless 
-someone wants to contribute Tensorflow support to MLPug.
 
 The ambition is to also add Jax, Apple MLX and TinyGrad as backends.
 
@@ -243,9 +234,7 @@ The following sections are documentation **ToDo's**, but provide insight in to M
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Calculating custom metrics](#calculating-custom-metrics) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Conditional computation of metrics](#conditional-computation-of-metrics) \
 \
-[Batch chunking, dealing with GPU memory limits](#batch-chunking-dealing-with-gpu-memory-limits) \
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Gradient Accumulation](#gradient-accumulation) \
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Chunked Metric Computation](#chunked-metric-computation) \
+[Gradient Accumulation with Micro-batches](#gradient-accumulation-with-micro-batches) \
 \
 [Using Tensorboard](#using-tensorboard) \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Tensorboard made easy with AutoTensorboard](#tensorboard-made-easy-with-auto-tensorboard) \
@@ -401,82 +390,23 @@ train_model = TrainModel(classifier, device)
 classifier.to(device)
 ```
 
-### Hello World with Tensorflow
-Below we will focus only on the minor differences between using MLPug with [PyTorch](#hello-world-with-pytorch) and Tensorflow.
-
-To use MLPug with Tensorflow
-```python
-import mlpug.tensorflow as mlp
-```
-
-For the `DefaultTrainer`, you can specify the input `batch_data_signature`.
-```python
-trainer = mlp.trainers.DefaultTrainer(optimizers=optimizer,
-                                      model_components=classifier,
-                                      batch_data_signature=(tf.TensorSpec(shape=(None, 28, 28), dtype=tf.float64),
-                                                            tf.TensorSpec(shape=(None,), dtype=tf.uint8),))
-```
-When you run [hello_world/tensorflow/train.py](examples/hello_world/tensorflow/train.py) and 
-[hello_world/tensorflow/train_eager.py](examples/hello_world/tensorflow/train_eager.py) you will see
-that when running in eager mode, training is much slower.
-
-Running `hello_world/tensorflow/train_eager.py` finishes like this:
-```text
-###############################################################################
-Epoch 9/9	READY - Duration 0:00:21
-Computed over sliding window:
-training       : loss          0.230.
-
-Computed over dataset:
-validation     : loss          0.349.
-
-
-
-INFO    : TrainingManager::_train : Training completed. All good! ❤️
-
-Using the classifier ...
-real label = 9, predicted label = 9
-```
-
-Running `hello_world/tensorflow/train.py` finishes like this:
-```text
-###############################################################################
-Epoch 9/9	READY - Duration 0:00:09
-Computed over sliding window:
-training       : loss          0.235.
-
-Computed over dataset:
-validation     : loss          0.354.
-
-
-
-INFO    : TrainingManager::_train : Training completed. All good! ❤️
-
-Using the classifier ...
-real label = 9, predicted label = 9
-```
-
-Note the difference in epoch duration!
-
-
 ## Feature parity list
 
 
-|              Feature                          |   PyTorch   | PyTorch/XLA | Tensorflow  |     JAX     |           Comments               |
-|-----------------------------------------------|-------------|-------------|-------------|-------------|----------------------------------|
-| Callbacks and training life cycle             |      ✓      |      ✓      |      ✓      |             | |
-| Progress Logging                              |      ✓      |      ✓      |      ✓      |             | |
-| Distributed training                          |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF. TPU training with TF is untested |
-| Distributed evaluation                        |      ✓      |      ✓      |      ✓      |             | Both multi-GPU and multi-TPU support for PyTorch and TF. evaluation on TPU with TF is untested |
-| Model and training checkpoint management      |      ✓      |      ✓      |      ✓      |             | |
-| Custom  metric evaluation                     |      ✓      |      ✓      |      ✓      |             | |
-| Conditional evaluation of metrics             |      ✓      |      ✓      |      ✓      |             | |
-| Batch Chunking: gradient accumulation         |      ✓      |      ✓      |      ✓      |             | |
-| Batch Chunking: chunked evaluation of metrics |      ✓      |      ✓      |      ✓      |             | |
-| Tensorboard support                           |      ✓      |      ✓      |      ✓      |             | Might be refactored |
-| Learning Rate scheduling                      |      ✓      |      ✓      |      ✓      |             | Might be refactored |
-| Mixed Precision Training                      |      ✓      |      ❌     |      ❌    |             | Should work with TF, but no specific support |
-| Using multiple optimizers                     |      ✓      |      ✓      |      ✓      |             | |
+|              Feature                          |   PyTorch   | PyTorch/XLA |     JAX     |           Comments               |
+|-----------------------------------------------|-------------|-------------|-------------|----------------------------------|
+| Callbacks and training life cycle             |      ✓      |      ✓      |             | |
+| Progress Logging                              |      ✓      |      ✓      |             | |
+| Distributed training                          |      ✓      |      ✓      |             | Multi-GPU and multi-TPU support |
+| Distributed evaluation                        |      ✓      |      ✓      |             | Multi-GPU and multi-TPU support |
+| Model and training checkpoint management      |      ✓      |      ✓      |             | |
+| Custom metric evaluation                      |      ✓      |      ✓      |             | |
+| Conditional evaluation of metrics             |      ✓      |      ✓      |             | |
+| Gradient accumulation (micro-batches)         |      ✓      |      ✓      |             | |
+| Tensorboard support                           |      ✓      |      ✓      |             | Might be refactored |
+| Learning Rate scheduling                      |      ✓      |      ✓      |             | Might be refactored |
+| Mixed Precision Training                      |      ✓      |      ❌     |             | |
+| Using multiple optimizers                     |      ✓      |      ✓      |             | |
 
 
 

@@ -43,16 +43,6 @@ class TrainerStateInvalidException(MLPugException):
         super().__init__(err_msg)
 
 
-class BatchNotChunkableException(MLPugException):
-    def __init__(self, message=None):
-        err_msg = "Given batch is not chunkable, provide a `chunkable_batch_wrapper` to make your match chunkable, or" \
-                  "ensure that the batch object is derived from the `ChunkableBatch` class"
-        if message:
-            err_msg += f" : {message}"
-
-        super().__init__(err_msg)
-
-
 class StateInvalidException(MLPugException):
     def __init__(self, message=None):
         err_msg = "State invalid, unable to set state"
@@ -85,6 +75,15 @@ class NumSamplesNotAvailableException(MLPugException):
     def __init__(self, message=None):
         err_msg = "Key 'num_samples' not available in evaluation results dict. " \
                   "TIP : your model needs to return a dict with a 'num_samples' key."
+        if message:
+            err_msg += f" : {message}"
+
+        super().__init__(err_msg)
+
+
+class ModelWrapperException(MLPugException):
+    def __init__(self, message=None):
+        err_msg = "Failed to apply model wrapper function"
         if message:
             err_msg += f" : {message}"
 

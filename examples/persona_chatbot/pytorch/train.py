@@ -25,8 +25,6 @@ try:
     import torch.distributed as dist
     import torch.multiprocessing as mp
 
-    from torch.nn.parallel import DistributedDataParallel as DDP
-
     from torch.optim import AdamW
 
     from torch.optim.lr_scheduler import LambdaLR
@@ -34,6 +32,8 @@ try:
     from torch.nn.functional import softmax
 except Exception as e:
     log_exception(module_logger, "Please install PyTorch, see https://pytorch.org/get-started/locally/", e)
+
+from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 
 
 try:
@@ -207,28 +207,33 @@ class TrainingProcess(TrainingProcessBase):
             self._training_sampler = torch.utils.data.distributed.DistributedSampler(self._training_set)
             self._validation_sampler = torch.utils.data.distributed.DistributedSampler(self._validation_set)
 
+        # DataLoader yields micro-batches (or full batches if no gradient accumulation)
+        dataloader_batch_size = self._args.micro_batch_size if self._args.micro_batch_size else self._args.batch_size
+
         self._batch_training_set = torch.utils.data.DataLoader(
             self._training_set,
-            batch_size=self._args.batch_size,
+            batch_size=dataloader_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._training_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(
                 pad_token_idx=self._hf_tokenizer.pad_token_id,
                 max_sequence_length=self._opt_max_sequence_length),
-            pin_memory=True)
+            pin_memory=True,
+            drop_last=True)  # Ensure consistent batch sizes for torch.compile
 
         # Using the test set as a validation set, just for demonstration purposes
         self._batch_validation_set = torch.utils.data.DataLoader(
             self._validation_set,
-            batch_size=self._args.batch_size,
+            batch_size=dataloader_batch_size,
             shuffle=False,  # Samples already shuffled
             sampler=self._validation_sampler,
             num_workers=self._args.num_dataloader_workers,
             collate_fn=BatchCollator(
                 pad_token_idx=self._hf_tokenizer.pad_token_id,
                 max_sequence_length=self._opt_max_sequence_length),
-            pin_memory=True)
+            pin_memory=True,
+            drop_last=True)  # Ensure consistent batch sizes for torch.compile
 
     def _build_model(self):
         if self.is_distributed and not self.is_primary:
@@ -258,9 +263,10 @@ class TrainingProcess(TrainingProcessBase):
             activation_checkpointing=self._args.activation_checkpointing)
 
         self._training_model.to(self._device)
+
+        # Create model wrapper for DDP if distributed
         if self.is_distributed:
-            device_ids = [self.rank] if self._device.type == 'cuda' else None
-            self._training_model = DDP(self._training_model, device_ids=device_ids)
+            self._model_wrapper_func = DDPModelWrapper(self.rank, self._device)
 
     def _build_optimizer(self):
         # Adapted from Huggingface Transformers package v4.17, Trainer::create_optimizer, transformers/trainer.py:827
@@ -374,9 +380,6 @@ if __name__ == '__main__':
 
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
-
-    if not args.eager_mode and args.activation_checkpointing:
-        raise ValueError("Currently activation checkpointing doesn't work with graph compilation.")
 
     # ############## TRAIN MODEL ##############
     cuda_available = torch.cuda.is_available()

@@ -1,22 +1,14 @@
 import sys
 import abc
 
-from typing import Optional, Iterable, Tuple, Dict, Collection, Union
+from typing import Optional, Iterable, Tuple, Dict, Collection, Union, List
 
 import numpy as np
 
 from mlpug.base import Base
 import basics.base_utils as _
 
-from mlpug.batch_chunking import (
-    ChunkableBatch,
-    BatchChunkingResults,
-    ChunkableBatchDataset,
-    ChunkableBatchWrapper,
-    is_chunkable,
-    convert_to_chunkable_dataset,
-    ChunkableBatchDatasetInterface
-)
+from mlpug.trainers.training import MicroBatchResults
 
 from mlpug.mlpug_exceptions import InvalidParametersException
 from mlpug.utils import *
@@ -206,8 +198,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                  combine_metric_inputs_func=None,
                  metric_funcs=None,
                  eager_mode: bool = False,
-                 batch_chunk_size=None,
-                 chunkable_batch_wrapper: Optional[ChunkableBatchWrapper] = None,
                  show_progress=False,
                  name="MetricEvaluator",
                  **kwargs):
@@ -216,8 +206,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         A MetricEvaluator can evaluate metrics using the batch data and the training model output.
         It can do this at different levels:
-         * Metrics calculation on the level of a single batch, either directly or
-           by first chunking the batch in to smaller batch chunks (to reduce memory usage)
+         * Metrics calculation on the level of a single batch
 
          * Metrics calculation on the level of multiple batches, e.g. over a dataset or window of batches
 
@@ -239,8 +228,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
              that is not used any more after gathering the metric inputs. This is useful to optimize memory usage.
 
          4) `combine_metric_inputs_funcs`, a dict with, for each metric, a function that can
-            combine metric inputs from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
-            or of a window of batches.
+            combine metric inputs from multiple batches, e.g. data from micro-batches in an accumulation window,
+            batches of a dataset, or a sliding window of batches.
 
          5) `metric_funcs`, a dict with, for each metric, a function to
             calculate the metric based on the gathered/combined metric inputs
@@ -255,7 +244,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         In case of calculating metrics for a single batch:
             metric = metric_func(batch_metric_inputs)
 
-        In case of calculating metrics over multiple batches, or batch chunks:
+        In case of calculating metrics over multiple batches (or micro-batches):
             combined_metric_inputs = combine_metric_inputs_func([batch_metric_inputs1, ..., batch_metric_inputsM])
             metric = metric_func(combined_metric_inputs)
 
@@ -280,9 +269,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                     return my_training_model(batch_data, evaluate_settings)
 
         :param trainer: An optional trainer instance to evaluate a model.
-            You can provide this instead of a custom model_evaluate_func
-            If no batch_chunk_size and chunkable_batch_wrapper are given in the constructor (see description below)
-            we will get this values from the trainer, if set.
+            You can provide this instead of a custom model_evaluate_func.
 
         :param gather_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
@@ -348,8 +335,8 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param combine_metric_inputs_funcs: A dict with keys representing the metric names
             (e.g. "loss", "classification", etc.), the values are functions that can
-            combine metric inputs from multiple batches, e.g. data from multiple batch chunks, batches of a dataset,
-            or of a window of batches.
+            combine metric inputs from multiple batches, e.g. batches of a dataset or a sliding
+            window of batches.
 
             In general there is no strict signature for the functions here.
             However, for defaults, the following is assumed:
@@ -414,30 +401,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         :param eager_mode: If true, the evaluation is not compiled
 
-        :param batch_chunk_size: If given, batches will be evaluated by chunking it to
-                 smaller batches of size batch_chunk_size
-
-                 When specifying this option, you can specify batch_chunk_metric_reducer_funcs.
-                 The way the batch is evaluated works as follows:
-
-                 for all chunks in batch:
-                    eval chunk
-                    use eval result to calculate batch metrics with batch_metric_funcs
-
-                 Reduce all batch metric results of the chunks using batch_chunk_metric_reducer_funcs
-
-                 If not given, but a trainer is given, the batch_chunk_size of the trainer is used
-
-        :type batch_chunk_size: int
-
-        :param chunkable_batch_wrapper: Optional wrapper, making batches chunkable.
-            This is required when a batch_chunk_size is given and batches are not already chunkable when
-            provided for evaluation
-
-            If not given, but a trainer is given, the chunkable_batch_wrapper of the trainer is used
-
-        :param show_progress If True, the progress of dataset evaluation will be logged
-        :type show_progress
+        :param show_progress: If True, the progress of dataset evaluation will be logged
         """
 
         super().__init__(pybase_logger_name=name, **kwargs)
@@ -526,21 +490,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
         self._eager_mode = eager_mode
 
-        if batch_chunk_size is None and self._trainer is not None:
-            batch_chunk_size = self._trainer.batch_chunk_size
-
-            if batch_chunk_size is not None:
-                self._log.info(f"Using batch_chunk_size of the given trainer: {batch_chunk_size}")
-
-        if chunkable_batch_wrapper is None and self._trainer is not None:
-            chunkable_batch_wrapper = self._trainer.chunkable_batch_wrapper
-
-            if chunkable_batch_wrapper is not None:
-                self._log.info(f"Using chunkable_batch_wrapper of the given trainer: {chunkable_batch_wrapper}")
-
-        self._batch_chunk_size = batch_chunk_size
-        self._chunkable_batch_wrapper = chunkable_batch_wrapper
-
         self._show_progress = show_progress
 
         self._name = name
@@ -561,52 +510,19 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                                    batch_data=None,
                                    model_output: Optional[Dict] = None,
                                    evaluate_settings=None,
-                                   skip_metrics=None,
-                                   no_chunking=False):
+                                   skip_metrics=None):
         """
+        Gather metric inputs from batch data and/or model output.
 
-        :param batch_data:
-        :param model_output: Optional, externally calculated model output
-                              This is used as an alternative to giving the batch_data
-        :type model_output: Optional[Dict]
-
-        :param evaluate_settings:
-        :param skip_metrics: Optional List of metric names to skip calculating the metrics for
-        :param no_chunking:
+        :param batch_data: The batch data to evaluate
+        :param model_output: Optional, externally calculated model output.
+            This is used as an alternative to giving the batch_data
+        :param evaluate_settings: Optional evaluation settings
+        :param skip_metrics: Optional List of metric names to skip
 
         :return: (gathered inputs, success boolean)
-                  gathered inputs is a Dict or None
+            gathered inputs is a Dict or None
         """
-
-        if not no_chunking and model_output is None and self._batch_chunk_size is not None:
-            chunk_dataset = self._create_chunkable_batch_dataset(batch_data)
-
-            gathered_inputs, success = self.gather_dataset_metric_inputs(
-                dataset=chunk_dataset,
-                evaluate_settings=evaluate_settings,
-                skip_metrics=skip_metrics,
-                show_progress=False,
-                no_chunking=True,
-                dataset_name="batch chunks")
-
-            if not success:
-                self._log.error(f"Gathering of metric inputs from batch chunks failed")
-                return gathered_inputs, False
-
-            gathered_inputs, success = self.combine_gathered_metric_inputs(
-                gathered_inputs,
-                "batch chunks",
-                show_progress=False)
-
-            if not success:
-                self._log.error(f"Combining metric inputs of batch chunks failed")
-
-            return gathered_inputs, success
-
-        if is_chunkable(batch_data):
-            # The batch is chunkable but, we are not using the chunks: get the full batch.
-            batch_data = batch_data[:]
-
         if skip_metrics is None:
             skip_metrics = []
 
@@ -662,28 +578,22 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                                      model_outputs: Optional[Iterable[Dict]] = None,
                                      evaluate_settings=None,
                                      skip_metrics=None,
-                                     no_chunking=False,
                                      dataset_name=None,
                                      show_progress=None):
         """
-        Gathers the batch metric inputs over the dataset provided
+        Gathers the batch metric inputs over the dataset provided.
 
         :param dataset: Iterable batch dataset
-
-        :param model_outputs: Optional, externally calculated model outputs
-                              This is used as an alternative to giving the dataset
-        :type model_outputs: Optional[Iterable[Dict]]
-
-        :param evaluate_settings:
-        :param skip_metrics: Optional List of metric names to skip calculating the metrics for
-        :param no_chunking:
-        :param dataset_name:
-        :param show_progress:
+        :param model_outputs: Optional, externally calculated model outputs.
+            This is used as an alternative to giving the dataset
+        :param evaluate_settings: Optional evaluation settings
+        :param skip_metrics: Optional List of metric names to skip
+        :param dataset_name: Optional name for logging
+        :param show_progress: If True, show progress during gathering
 
         :return: Tuple:
-                    Dict with, per metric, list of gathered inputs over dataset
-                    Boolean indicating success
-
+            Dict with, per metric, list of gathered inputs over dataset
+            Boolean indicating success
         """
 
         success = False
@@ -719,8 +629,7 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
                 batch_data=batch,
                 model_output=model_output,
                 evaluate_settings=evaluate_settings,
-                skip_metrics=skip_metrics,
-                no_chunking=no_chunking)
+                skip_metrics=skip_metrics)
 
             if not success:
                 self._log.error(f"Gathering of batch metric inputs failed, will stop gathering "
@@ -795,36 +704,28 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
 
     def calc_batch_metrics_for(self,
                                batch_data=None,
-                               model_outputs: Optional[Union[Dict, BatchChunkingResults[Dict]]] = None,
+                               model_outputs: Optional[Union[Dict, MicroBatchResults]] = None,
                                evaluate_settings=None,
                                return_gathered_inputs=False):
         """
+        Calculate metrics of given batch, optionally applying evaluate_settings.
 
-        Calculate metrics of given batch, optionally applying evaluate_settings
-
-        :param batch_data:
-        :type batch_data:
-
-        :param model_outputs: Optional, externally calculated model outputs
-                              (one model output for a single batch, or multiple outputs for multiple batch chunks)
-        :type model_outputs: Union[Dict, BatchChunkingResults[Dict]]
-
-        :param evaluate_settings:
-        :type evaluate_settings:
-
-        :param return_gathered_inputs: Optional, when True will also return the gathered inputs to
-                                       calculate the metrics
-        :param return_gathered_inputs: bool
+        :param batch_data: Optional batch data to evaluate
+        :param model_outputs: Optional, externally calculated model outputs.
+            Can be a single Dict for a single batch, or MicroBatchResults
+            for multiple micro-batches in an accumulation window.
+        :param evaluate_settings: Optional evaluation settings
+        :param return_gathered_inputs: Optional, when True will also return the gathered
+            inputs to calculate the metrics
 
         :return: Tuple[Dict, bool]
-                    Dict {
-                        "metrics": Dict with calculated metrics,
-                        # Only if return_gathered_inputs:
-                        "inputs": Dict with gathered inputs to calculate the metrics,
-                    }
+            Dict {
+                "metrics": Dict with calculated metrics,
+                # Only if return_gathered_inputs:
+                "inputs": Dict with gathered inputs to calculate the metrics,
+            }
 
-                    bool: success
-
+            bool: success
         """
         results = {
             "metrics": None,
@@ -832,24 +733,23 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         success = False
 
         if batch_data is not None and model_outputs is not None:
-            self._log.error("Either provide a batch data or a list of model outputs, not both")
+            self._log.error("Either provide batch_data or model_outputs, not both")
             return results, success
 
-        evaluate_batch_in_chunks = isinstance(batch_data, ChunkableBatch) and self._batch_chunk_size is not None
-        model_outputs_are_batch_chunking_results = isinstance(model_outputs, BatchChunkingResults)
-        if evaluate_batch_in_chunks or model_outputs_are_batch_chunking_results:
-
-            chunk_dataset = None
-            if not model_outputs_are_batch_chunking_results:
-                chunk_dataset = ChunkableBatchDataset(batch_data, self._batch_chunk_size)
-
-            return self.calc_dataset_metrics_for(
-                dataset=chunk_dataset,
-                model_outputs=model_outputs,
-                evaluate_settings=evaluate_settings,
-                show_progress=False,
-                return_gathered_inputs=return_gathered_inputs,
-                dataset_name="batch chunks")
+        # Handle MicroBatchResults (list of micro-batch outputs from accumulation window)
+        if isinstance(model_outputs, MicroBatchResults):
+            if len(model_outputs) == 1:
+                # Single item - unpack and treat as single Dict
+                model_outputs = model_outputs[0]
+            else:
+                # Multiple items - combine metrics across all micro-batches
+                return self.calc_dataset_metrics_for(
+                    dataset=None,
+                    model_outputs=model_outputs,
+                    evaluate_settings=evaluate_settings,
+                    show_progress=False,
+                    return_gathered_inputs=return_gathered_inputs,
+                    dataset_name="micro-batches")
 
         # model_outputs is a single Dict
         gathered_inputs, success = self.gather_batch_metric_inputs(
@@ -1024,13 +924,6 @@ class MetricEvaluator(Base, metaclass=abc.ABCMeta):
         results["metrics"] = metrics_output
 
         return results, success
-
-    def _create_chunkable_batch_dataset(self, batch_data) -> ChunkableBatchDatasetInterface:
-        return convert_to_chunkable_dataset(
-            batch_data,
-            self._chunkable_batch_wrapper,
-            self._batch_chunk_size
-        )
 
     def _eval_metric_func(self, metric_func, metric_inputs, metric_name=None):
         # By default no special behavior
