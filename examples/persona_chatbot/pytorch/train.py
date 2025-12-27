@@ -381,9 +381,6 @@ if __name__ == '__main__':
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
 
-    if not args.eager_mode and args.activation_checkpointing:
-        raise ValueError("Currently activation checkpointing doesn't work with graph compilation.")
-
     # ############## TRAIN MODEL ##############
     cuda_available = torch.cuda.is_available()
     mps_available = torch.backends.mps.is_available()
