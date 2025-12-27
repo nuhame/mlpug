@@ -123,6 +123,48 @@ class NormalizeEvaluationResults(Base):
             }
 
 
+def calc_gradient_accumulation_steps(batch_size, micro_batch_size):
+    """
+    Calculate gradient accumulation steps from batch_size and micro_batch_size.
+
+    :param batch_size: The effective batch size (semantic batch for metrics/logging).
+        Can be None if no accumulation is needed.
+    :param micro_batch_size: The micro-batch size (what fits in GPU memory).
+        Can be None if no accumulation is needed.
+
+    :return: Tuple of (batch_size, micro_batch_size, gradient_accumulation_steps).
+        All values are normalized (None values are resolved).
+
+    :raises ValueError: If micro_batch_size is provided without batch_size,
+        or if batch_size < micro_batch_size, or if batch_size is not divisible
+        by micro_batch_size.
+    """
+    if batch_size is None and micro_batch_size is None:
+        # No accumulation
+        return None, None, 1
+    elif batch_size is not None and micro_batch_size is None:
+        # batch_size given, assume micro_batch_size = batch_size (no accumulation)
+        return batch_size, batch_size, 1
+    elif micro_batch_size is not None and batch_size is None:
+        # micro_batch_size given without batch_size - cannot calculate accumulation steps
+        raise ValueError(
+            "micro_batch_size is provided but batch_size is not. "
+            "Cannot calculate gradient_accumulation_steps. "
+            "Please provide batch_size or omit micro_batch_size."
+        )
+    else:
+        # Both provided - validate and calculate
+        if batch_size < micro_batch_size:
+            raise ValueError(
+                f"batch_size ({batch_size}) must be >= micro_batch_size ({micro_batch_size})"
+            )
+        if batch_size % micro_batch_size != 0:
+            raise ValueError(
+                f"batch_size ({batch_size}) must be divisible by micro_batch_size ({micro_batch_size})"
+            )
+        return batch_size, micro_batch_size, batch_size // micro_batch_size
+
+
 class TrainingManager(Base, metaclass=abc.ABCMeta):
 
     def __init__(self,
@@ -615,9 +657,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                 if did_update_model:
                     update(call_cb('on_batch_training_completed', training_batch, logs))
                     self.batch_step += 1
+                    self.global_iter += 1
 
                 self.micro_batch_step += 1
-                self.global_iter += 1
 
                 batch_training_end_time = time.time()
                 batch_duration = batch_training_end_time - batch_training_start_time
@@ -1170,36 +1212,8 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         super().__init__(model_components, optimizers, name=name, **kwargs)
 
         # Determine gradient accumulation steps based on provided parameters
-        if batch_size is None and micro_batch_size is None:
-            # No accumulation
-            self.batch_size = None
-            self.micro_batch_size = None
-            self.gradient_accumulation_steps = 1
-        elif batch_size is not None and micro_batch_size is None:
-            # batch_size given, assume micro_batch_size = batch_size (no accumulation)
-            self.batch_size = batch_size
-            self.micro_batch_size = batch_size
-            self.gradient_accumulation_steps = 1
-        elif micro_batch_size is not None and batch_size is None:
-            # micro_batch_size given without batch_size - cannot calculate accumulation steps
-            raise ValueError(
-                "micro_batch_size is provided but batch_size is not. "
-                "Cannot calculate gradient_accumulation_steps. "
-                "Please provide batch_size or omit micro_batch_size."
-            )
-        else:
-            # Both provided - validate and calculate
-            if batch_size < micro_batch_size:
-                raise ValueError(
-                    f"batch_size ({batch_size}) must be >= micro_batch_size ({micro_batch_size})"
-                )
-            if batch_size % micro_batch_size != 0:
-                raise ValueError(
-                    f"batch_size ({batch_size}) must be divisible by micro_batch_size ({micro_batch_size})"
-                )
-            self.batch_size = batch_size
-            self.micro_batch_size = micro_batch_size
-            self.gradient_accumulation_steps = batch_size // micro_batch_size
+        self.batch_size, self.micro_batch_size, self.gradient_accumulation_steps = \
+            calc_gradient_accumulation_steps(batch_size, micro_batch_size)
 
         if self.gradient_accumulation_steps > 1:
             self._log.info(
