@@ -1,7 +1,5 @@
 from statistics import mean
 
-import torch
-
 from mlpug.trainers.callbacks.lr_scheduler_wrapper import LRSchedulerWrapper as LRSchedulerWrapperBase
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
@@ -16,16 +14,11 @@ class LRSchedulerWrapperMixin(LRSchedulerWrapperBase):
     """
 
     def on_training_start(self, *args, **kwargs):
-        success = super().on_training_start(*args, **kwargs)
-
-        eager_mode = self.trainer.eager_mode
-        if not eager_mode:
-            self._log.debug("Enabling compilation of LR scheduling ...")
-
-            compile_kwargs = self.trainer.compile_kwargs
-            self._exec_schedulers = torch.compile(self._exec_schedulers, **compile_kwargs)
-
-        return success
+        # NOTE: We intentionally do NOT compile the LR scheduler execution.
+        # torch.compile caching can cause issues with LR schedulers at epoch boundaries,
+        # resulting in LR going to 0. The overhead of scheduler.step() is negligible
+        # compared to the forward/backward pass, so no performance benefit from compiling.
+        return super().on_training_start(*args, **kwargs)
 
     def get_state(self):
         """
