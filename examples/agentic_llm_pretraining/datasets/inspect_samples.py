@@ -3,8 +3,14 @@
 Inspect random samples from downloaded datasets.
 
 Usage (from repo root):
-    python -m examples.agentic_llm_pretraining.datasets.inspect_samples --data-dir ../data
-    python -m examples.agentic_llm_pretraining.datasets.inspect_samples --data-dir ../data --datasets fineweb-edu wikipedia --num-samples 5
+    python -m examples.agentic_llm_pretraining.datasets.inspect_samples \
+        --data-dir ../data/agentic_llm_pretraining \
+        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json
+
+    python -m examples.agentic_llm_pretraining.datasets.inspect_samples \
+        --data-dir ../data/agentic_llm_pretraining \
+        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json \
+        --datasets fineweb-edu wikipedia --num-samples 5
 """
 
 import argparse
@@ -58,7 +64,13 @@ def load_jsonl_samples(file_path: Path, num_samples: int, seed: int) -> List[Dic
     return samples
 
 
-def inspect_dataset(file_path: Path, num_samples: int, seed: int, max_string: int) -> None:
+def inspect_dataset(
+    file_path: Path,
+    num_samples: int,
+    seed: int = 42,
+    max_string: int = 1024,
+    metadata: Dict[str, Any] | None = None
+) -> None:
     """
     Inspect samples from a single dataset file.
 
@@ -66,12 +78,22 @@ def inspect_dataset(file_path: Path, num_samples: int, seed: int, max_string: in
     :param num_samples: Number of samples to display.
     :param seed: Random seed.
     :param max_string: Maximum string length before truncation.
+    :param metadata: Optional metadata dict with description, primary_purpose, etc.
     """
     _l = module_logger
 
     dataset_name = file_path.stem
     _l.info(f"\n{'='*60}")
     _l.info(f"Dataset: {dataset_name}")
+    if metadata:
+        purpose = metadata.get("primary_purpose", "unknown")
+        description = metadata.get("description", "")
+        also_provides = metadata.get("also_provides", [])
+        _l.info(f"Purpose: {purpose}")
+        if also_provides:
+            _l.info(f"Also provides: {', '.join(also_provides)}")
+        if description:
+            _l.info(f"Description: {description}")
     _l.info(f"{'='*60}")
 
     if not file_path.exists():
@@ -91,6 +113,18 @@ def inspect_dataset(file_path: Path, num_samples: int, seed: int, max_string: in
         _l.info(pretty_repr(sample, max_string=max_string))
 
 
+def load_metadata(metadata_path: Path) -> Dict[str, Any]:
+    """Load metadata from JSON file."""
+    if not metadata_path.exists():
+        return {}
+
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    # Remove comment fields
+    return {k: v for k, v in metadata.items() if not k.startswith("_")}
+
+
 def main():
     _l = module_logger
 
@@ -99,6 +133,10 @@ def main():
         "--data-dir",
         default="../data",
         help="Directory containing downloaded JSONL files (default: ../data)"
+    )
+    parser.add_argument(
+        "--metadata",
+        help="Path to metadata JSON file (for dataset descriptions)"
     )
     parser.add_argument(
         "--datasets",
@@ -120,8 +158,8 @@ def main():
     parser.add_argument(
         "--max-string",
         type=int,
-        default=500,
-        help="Maximum string length before truncation (default: 500)"
+        default=1024,
+        help="Maximum string length before truncation (default: 1024)"
     )
     args = parser.parse_args()
 
@@ -130,6 +168,12 @@ def main():
     if not data_dir.exists():
         _l.error(f"Data directory not found: {data_dir}")
         return
+
+    # Load metadata if provided
+    metadata = {}
+    if args.metadata:
+        metadata = load_metadata(Path(args.metadata))
+        _l.info(f"Loaded metadata for {len(metadata)} datasets")
 
     if args.datasets:
         files = [data_dir / f"{name}.jsonl" for name in args.datasets]
@@ -143,7 +187,9 @@ def main():
     _l.info(f"Inspecting {len(files)} datasets from {data_dir}")
 
     for file_path in files:
-        inspect_dataset(file_path, args.num_samples, args.seed, args.max_string)
+        dataset_name = file_path.stem
+        dataset_metadata = metadata.get(dataset_name)
+        inspect_dataset(file_path, args.num_samples, args.seed, args.max_string, dataset_metadata)
 
 
 if __name__ == "__main__":
