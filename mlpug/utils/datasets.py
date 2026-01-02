@@ -9,9 +9,10 @@ import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Any, Optional
 
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
+from huggingface_hub import hf_hub_download
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
 
@@ -36,37 +37,44 @@ class AcquisitionStats:
         return self.filtered_out / self.seen if self.seen > 0 else 0.0
 
 
+# Type alias for dataset loader functions - must return Dataset for .filter(), .shuffle(), .select()
+LoadDatasetFunc = Callable[..., Dataset]
+
+
 def download_subsample_hf(
-    path: str,
     output_path: str,
-    filter_func: Callable[[Dict], bool] | None = None,
-    filter_config: Dict[str, Any] | None = None,
-    target_count: int | None = None,
+    load_dataset_func: Optional[LoadDatasetFunc] = None,
+    filter_func: Optional[Callable[[Dict], bool]] = None,
+    filter_config: Optional[Dict[str, Any]] = None,
+    target_count: Optional[int] = None,
     seed: int = 42,
     **acquisition_config
 ) -> AcquisitionStats:
     """
-    Download a HuggingFace dataset, optionally filter and subsample, save as JSONL.
+    Download a dataset, optionally filter and subsample, save as JSONL.
 
     Use this for small to medium datasets that fit in memory.
 
-    :param path: HuggingFace dataset path (e.g., "openai/gsm8k")
-    :param output_path: Path to output JSONL file
+    :param output_path: Path to output JSONL file.
+    :param load_dataset_func: Optional custom loader function. If None, uses HuggingFace
+        `load_dataset`. Must accept **acquisition_config and return a `datasets.Dataset`
+        (required for .filter(), .shuffle(), .select() methods).
     :param filter_func: Optional filter function: filter_func(sample, **filter_config) -> bool.
         Returns True to keep sample, False to discard.
     :param filter_config: Keyword arguments passed to filter_func.
     :param target_count: Number of samples to keep after filtering. If None, keep all.
     :param seed: Random seed for reproducibility.
-    :param acquisition_config: Additional kwargs passed to load_dataset
-        (e.g., name="main", split="train").
+    :param acquisition_config: Kwargs passed to load_dataset_func. For HuggingFace datasets,
+        include path (e.g., "openai/gsm8k"), name, split, etc.
 
     :return: AcquisitionStats with seen, kept, and filtered_out counts.
     """
     random.seed(seed)
     filter_config = filter_config or {}
 
-    # Load dataset
-    dataset = load_dataset(path, **acquisition_config)
+    # Load dataset using provided loader or default to HuggingFace
+    loader = load_dataset_func if load_dataset_func is not None else load_dataset
+    dataset = loader(**acquisition_config)
 
     seen = len(dataset)
     filtered_out = 0
@@ -100,32 +108,37 @@ def download_subsample_hf(
 
 
 def stream_subsample_hf(
-    path: str,
     output_path: str,
     keep_probability: float,
-    filter_func: Callable[[Dict, ...], bool] | None = None,
-    filter_config: Dict[str, Any] | None = None,
+    load_dataset_func: Optional[LoadDatasetFunc] = None,
+    target_count: Optional[int] = None,
+    filter_func: Optional[Callable[[Dict, ...], bool]] = None,
+    filter_config: Optional[Dict[str, Any]] = None,
     seed: int = 42,
     log_interval: int = 100_000,
     **acquisition_config
 ) -> AcquisitionStats:
     """
-    Stream a large HuggingFace dataset with probability sampling, save as JSONL.
+    Stream a large dataset with probability sampling, save as JSONL.
 
     Use this for very large datasets that don't fit in memory. Streams through
-    the entire dataset once, making random keep/discard decisions per sample.
+    the dataset making random keep/discard decisions per sample.
 
-    :param path: HuggingFace dataset path (e.g., "HuggingFaceFW/fineweb-edu")
-    :param output_path: Path to output JSONL file
+    :param output_path: Path to output JSONL file.
     :param keep_probability: Probability of keeping each sample (after filtering).
         For example, if dataset has ~10B tokens and you want ~100M, use 0.01.
+    :param load_dataset_func: Optional custom loader function. If None, uses HuggingFace
+        `load_dataset`. Must accept **acquisition_config and return an iterable.
+    :param target_count: Stop after keeping this many samples. If None, stream
+        through the entire dataset.
     :param filter_func: Optional filter function: filter_func(sample, **filter_config) -> bool.
         Returns True to keep sample, False to discard. Applied before probability sampling.
     :param filter_config: Keyword arguments passed to filter_func.
     :param seed: Random seed for reproducibility.
     :param log_interval: Log progress every N samples.
-    :param acquisition_config: Additional kwargs passed to load_dataset
-        (e.g., name="sample-10BT", split="train"). Note: streaming=True is added automatically.
+    :param acquisition_config: Kwargs passed to load_dataset_func. For HuggingFace datasets,
+        include path (e.g., "HuggingFaceFW/fineweb-edu"), name, split, etc.
+        Note: streaming=True is added automatically for HuggingFace datasets.
 
     :return: AcquisitionStats with seen, kept, and filtered_out counts.
     """
@@ -133,8 +146,10 @@ def stream_subsample_hf(
     filter_config = filter_config or {}
 
     # Load dataset in streaming mode
-    acquisition_config["streaming"] = True
-    dataset = load_dataset(path, **acquisition_config)
+    loader = load_dataset_func if load_dataset_func is not None else load_dataset
+    if loader is load_dataset:
+        acquisition_config["streaming"] = True
+    dataset = loader(**acquisition_config)
 
     # Prepare output
     output_path = Path(output_path)
@@ -160,6 +175,10 @@ def stream_subsample_hf(
                 f.write(json.dumps(serializable, ensure_ascii=False) + "\n")
                 kept += 1
 
+                # Early exit if target reached
+                if target_count is not None and kept >= target_count:
+                    break
+
             # Log progress
             if seen % log_interval == 0:
                 module_logger.info(
@@ -170,6 +189,101 @@ def stream_subsample_hf(
     stats = AcquisitionStats(seen=seen, kept=kept, filtered_out=filtered_out)
     module_logger.info(f"Acquisition complete: {stats}")
     return stats
+
+
+def load_with_hf_builder_script(
+    path: str,
+    name: str,
+    split: str,
+    script_name: str,
+    **kwargs  # Ignore extra kwargs for compatibility
+) -> Dataset:
+    """
+    Load a dataset using its HuggingFace GeneratorBasedBuilder script directly.
+
+    Bypasses datasets 4.x restrictions by downloading the loading script from
+    HuggingFace, importing it dynamically, and using the GeneratorBasedBuilder
+    pattern to load the data.
+
+    WARNING: This function executes arbitrary Python code from the dataset repository.
+    Only use this with datasets from sources you trust (e.g., official HuggingFace
+    datasets, well-known organizations like Salesforce, NVIDIA, etc.). The datasets
+    library removed `trust_remote_code=True` support in version 4.x specifically to
+    prevent execution of untrusted code.
+
+    :param path: HuggingFace repo ID (e.g., "Salesforce/dialogstudio").
+    :param name: Dataset subset/config name (e.g., "SODA", "MULTIWOZ2_2").
+    :param split: Data split ("train", "validation", "test").
+    :param script_name: Name of the builder script file (e.g., "dialogstudio.py").
+
+    :return: Dataset object with the loaded samples.
+    """
+    import sys
+    import importlib.util
+    from datasets import GeneratorBasedBuilder
+
+    source = f"{path}/{script_name}"
+    module_logger.warning(
+        f"Executing builder script from {path}. "
+        f"This runs arbitrary code - only use with trusted sources."
+    )
+    module_name = script_name.replace(".py", "")
+
+    # Download the loading script
+    module_logger.info(f"Downloading loading script: {source}")
+    try:
+        script_path = hf_hub_download(
+            repo_id=path,
+            filename=script_name,
+            repo_type="dataset",
+        )
+    except Exception as e:
+        raise Exception(f"[{source}] Failed to download loading script") from e
+
+    # Load the module dynamically
+    module_logger.info(f"Loading module from {script_path}")
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, script_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module  # Register before exec to handle self-references
+        spec.loader.exec_module(module)
+    except Exception as e:
+        raise Exception(f"[{source}] Failed to load module") from e
+
+    # Find the builder class (subclass of GeneratorBasedBuilder)
+    builder_class = None
+    for attr_name in dir(module):
+        attr = getattr(module, attr_name)
+        if (isinstance(attr, type) and
+            issubclass(attr, GeneratorBasedBuilder) and
+            attr is not GeneratorBasedBuilder):
+            builder_class = attr
+            break
+
+    if builder_class is None:
+        raise Exception(f"[{source}] No GeneratorBasedBuilder subclass found in module")
+
+    # Instantiate the builder
+    module_logger.info(f"Instantiating builder {builder_class.__name__} with config '{name}'")
+    try:
+        builder = builder_class(config_name=name)
+    except Exception as e:
+        raise Exception(f"[{source}] Failed to instantiate builder with config '{name}'") from e
+
+    # Download and prepare the data
+    base_url = f"https://huggingface.co/datasets/{path}/resolve/main/"
+    module_logger.info(f"Downloading data from {base_url}")
+    try:
+        builder.download_and_prepare(base_path=base_url)
+    except Exception as e:
+        raise Exception(f"[{source}] Failed to download and prepare data") from e
+
+    # Return the dataset for the requested split
+    module_logger.info(f"Loading split '{split}'")
+    try:
+        return builder.as_dataset(split=split)
+    except Exception as e:
+        raise Exception(f"[{source}] Failed to load split '{split}'") from e
 
 
 def _to_serializable(sample: Dict, warned_fields: set[str]) -> Dict:
