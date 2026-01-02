@@ -453,5 +453,40 @@
     "filter_config": null,
     "transform_func": null,
     "transform_config": null
+  },
+
+  "rag-dataset-12000": {
+    "description": "Context + question + answer pairs (GPT-4 generated from Falcon RefinedWeb)",
+    "primary_purpose": "rag_grounding",
+    "also_provides": ["reading_comprehension"],
+    "license": "Apache 2.0",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "neural-bridge/rag-dataset-12000",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "transform_func": null,
+    "transform_config": null
+  },
+
+  "ragbench-hotpotqa": {
+    "description": "Multi-hop QA with retrieved documents and faithfulness annotations",
+    "primary_purpose": "rag_grounding",
+    "also_provides": ["reasoning", "reading_comprehension"],
+    "license": "CC BY 4.0",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "rungalileo/ragbench",
+      "name": "hotpotqa",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "transform_func": null,
+    "transform_config": null
   }
 }
