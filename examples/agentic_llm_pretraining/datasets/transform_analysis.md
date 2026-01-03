@@ -5,9 +5,9 @@ This document analyzes how to transform each dataset into serialized text for ne
 ## General Principles
 
 1. **Plain text output**: All samples are transformed into plain text sequences
-2. **Natural formatting**: Use markdown-like formatting where appropriate
+2. **Semantic formatting**: Use markdown headings only for actual hierarchy (e.g., document titles), use `Label: content` for flat Q&A/problem-solution structures
 3. **Preserve reasoning structure**: Show step-by-step reasoning when available
-4. **Consistent delimiters**: Use clear section markers (e.g., `###`, `---`)
+4. **Consistent labels**: Use clear section labels (e.g., `Problem:`, `Solution:`, `Question:`, `Answer:`)
 5. **No special tokens yet**: Templates are token-agnostic; EOS tokens added during tokenization
 
 ---
@@ -85,11 +85,9 @@ This document analyzes how to transform each dataset into serialized text for ne
 
 **Template**:
 ```
-### Problem
-{question}
+Problem: {question}
 
-### Solution
-{answer}
+Solution: {answer}
 ```
 
 **Processing**: Parse answer to identify final numeric answer if needed. Keep calculation annotations.
@@ -109,11 +107,9 @@ This document analyzes how to transform each dataset into serialized text for ne
 
 **Template**:
 ```
-### Problem ({type}, {level})
-{problem}
+Problem ({type}, {level}): {problem}
 
-### Solution
-{solution}
+Solution: {solution}
 ```
 
 **Processing**: Include metadata for context. Keep LaTeX notation.
@@ -129,20 +125,16 @@ This document analyzes how to transform each dataset into serialized text for ne
 - `expected_answer`: Correct answer (string)
 - `is_correct`: Whether generated solution is correct (bool)
 
-**Usage**: Shows programmatic problem-solving approach.
+**Usage**: Shows programmatic problem-solving approach. Only use samples where `is_correct=True`.
 
-**Template** (only use `is_correct=True` samples):
+**Template**:
 ```
-### Problem
-{question}
+Problem: {question}
 
-### Solution
-{generated_solution}
-
-The answer is {expected_answer}.
+Correct generated solution: {generated_solution}
 ```
 
-**Processing**: Filter for `is_correct=True`. Extract code from `<llm-code>` tags if cleaner format desired.
+**Processing**: Filter for `is_correct=True`. Keep `<llm-code>` tags as-is (provides HTML/XML syntax exposure and signals LLM-generated content). Answer is already in the solution (in `\boxed{}`).
 
 ---
 
@@ -154,20 +146,16 @@ The answer is {expected_answer}.
 - `generated_solution`: Detailed solution (string)
 - `expected_answer`: Final answer (string)
 
-**Usage**: High-quality reasoning chains.
+**Usage**: High-quality reasoning chains. All solutions are correct (no filtering needed).
 
 **Template**:
 ```
-### Problem
-{problem}
+Problem: {problem}
 
-### Solution
-{generated_solution}
-
-The answer is {expected_answer}.
+Solution: {generated_solution}
 ```
 
-**Processing**: None needed - higher quality than openmath-instruct-1.
+**Processing**: None needed. Answer is already in the solution (in `\boxed{}`).
 
 ---
 
@@ -186,8 +174,7 @@ The answer is {expected_answer}.
 
 **Template**:
 ```
-### Question
-{q_text}
+Question: {q_text}
 
 Options:
 A) {q_op1}
@@ -196,14 +183,16 @@ C) {q_op3}
 D) {q_op4}
 E) {q_op5}
 
-### Reasoning
-{taskB}
+Reasoning:
+{taskA_pos}
+{taskA_neg}
 
-### Answer
-{q_ans}
+Conclusion: {taskB}
+
+Answer: {q_ans}
 ```
 
-**Processing**: Map options to letters. Include explanation before answer.
+**Processing**: Map options to letters. taskA_pos explains why the correct answer is right, taskA_neg explains why other options are wrong.
 
 ---
 
@@ -237,55 +226,30 @@ E) {q_op5}
 
 **Usage**: Technical problem-solving with ranked solutions.
 
-**Template** (use top answer by score):
+**Template** (single best answer):
 ```
-### Question
-{question_cleaned}
+Question: {question}
 
-### Answer
-{best_answer_text}
+Answer: {best_answer_text}
+```
+
+**Template** (multiple tied best answers):
+```
+Question: {question}
+
+Answer 1: {best_answer_text_1}
+
+Answer 2: {best_answer_text_2}
 ```
 
 **Processing**:
-1. Strip HTML tags from question and answers
-2. Select answer with highest `pm_score` or `selected=True`
-3. Could include multiple answers for preference learning
+1. Keep HTML as-is (provides HTML syntax exposure)
+2. Find highest `pm_score`, include all answers with that score
+3. Use single-answer template if one best, multi-answer template if tied
 
 ---
 
-## 4. Debugging/Code Datasets
-
-### swe-bench
-**Purpose**: Real-world debugging from GitHub issues
-
-**Relevant Fields**:
-- `repo`: Repository name (string)
-- `problem_statement`: Issue description (string)
-- `hints_text`: Hints for solution (string)
-- `patch`: Git diff with solution (string)
-
-**Usage**: Teaches understanding bug reports and generating fixes.
-
-**Template**:
-```
-### Repository
-{repo}
-
-### Issue
-{problem_statement}
-
-### Hints
-{hints_text}
-
-### Fix
-```diff
-{patch}
-```
-```
-
-**Processing**: Format patch as diff code block. Filter empty patches.
-
----
+## 4. Code Datasets
 
 ### code-contests
 **Purpose**: Competitive programming with test cases
@@ -293,32 +257,57 @@ E) {q_op5}
 **Relevant Fields**:
 - `name`: Problem name (string)
 - `description`: Problem statement (string)
-- `public_tests`: Input/output test cases (dict)
-- `solutions`: Correct solutions by language (dict)
+- `public_tests`: Input/output test cases (dict with `input` and `output` lists)
+- `solutions`: Correct solutions with `language` (list[int]) and `solution` (list[str])
 - `cf_tags`: Problem categories (list[str])
+
+**Language IDs**: 2=C++, 3=Python3, 4=Java
 
 **Usage**: Algorithmic problem-solving with verified solutions.
 
 **Template**:
 ```
-### Problem: {name}
+Problem: {name}
 
 {description}
 
-### Examples
+Examples:
 Input: {public_tests.input[0]}
 Output: {public_tests.output[0]}
 
-### Solution (Python)
-```python
-{solutions.solution[python_index]}
+Input: {public_tests.input[1]}
+Output: {public_tests.output[1]}
+...
+
+Solution ({language_name}):
+```{language_ext}
+{shortest_solution}
 ```
 ```
 
 **Processing**:
-1. Select one solution (prefer Python for readability)
-2. Include 1-2 example test cases
-3. Filter by language availability
+1. Random language selection with weights: Python3 (0.5), C++ (0.25), Java (0.25)
+2. Select shortest solution in chosen language
+3. Include ALL public test cases
+
+**Selection Code**:
+```python
+import random
+
+LANGUAGE_IDS = {2: ('C++', 'cpp'), 3: ('Python3', 'python'), 4: ('Java', 'java')}
+WEIGHTS = {3: 0.5, 2: 0.25, 4: 0.25}
+
+def select_solution(solutions):
+    available = set(solutions['language'])
+    candidates = [lid for lid in WEIGHTS if lid in available]
+    if not candidates:
+        return None, None
+    weights = [WEIGHTS[lid] for lid in candidates]
+    chosen_id = random.choices(candidates, weights=weights)[0]
+    indices = [i for i, lid in enumerate(solutions['language']) if lid == chosen_id]
+    shortest_idx = min(indices, key=lambda i: len(solutions['solution'][i]))
+    return LANGUAGE_IDS[chosen_id], solutions['solution'][shortest_idx]
+```
 
 ---
 
