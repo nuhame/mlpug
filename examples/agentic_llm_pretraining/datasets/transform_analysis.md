@@ -347,20 +347,32 @@ def select_solution(solutions):
 
 **Relevant Fields**:
 - `system`: System prompt with available functions (string)
-- `conversations`: List of turns with `from` (user/assistant) and `value` (list[dict])
+- `conversations`: List of turns with `from` (user/assistant/tool) and `value` (string)
 
 **Usage**: Teaches function selection and argument construction.
 
-**Template**:
+**Template** (2-turn, most common):
 ```
 {system}
 
-{formatted_conversation}
+User: {conversations[0].value}
+Assistant: {conversations[1].value}
+```
+
+**Template** (multi-turn with tool results):
+```
+{system}
+
+User: {conversations[0].value}
+Assistant: {conversations[1].value}
+Tool: {conversations[2].value}
+Assistant: {conversations[3].value}
+...
 ```
 
 **Processing**:
-1. Format conversation as alternating User:/Assistant: turns
-2. Keep function call format (usually JSON)
+1. Map `from` values to labels: user→User, assistant→Assistant, tool→Tool
+2. Keep function call format (e.g., `[FunctionName(param=value)]`)
 
 ---
 
