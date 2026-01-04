@@ -520,18 +520,33 @@ All DialogStudio datasets share a common structure:
 ### soda
 **Purpose**: Social dialogues with emotional context
 
-**Extra Context**: `original dialog info` contains `head`, `relation`, `tail` (social situation)
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `original dialog info`: JSON string containing `narrative`, `speakers` (string)
+- `prompt`: List of 6 alternative role-play instructions (list[str])
 
 **Template**:
 ```
-### Situation
-{parsed_situation}
+<|im_start|>system
+{original_dialog_info["narrative"]}
 
-### Conversation
-{formatted_dialogue}
+{prompt[random_choice_index]}<|im_end|>
+<|im_start|>user
+{log[0]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[0]["system response"]}<|im_end|}
+<|im_start|>user
+{log[1]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[1]["system response"]}<|im_end|>
+...
 ```
 
-**Processing**: Parse `original dialog info` for context. Format turns as Speaker A/B.
+**Processing**:
+1. Parse `original dialog info` JSON to extract `narrative`
+2. Randomly select one of the 6 prompts
+3. Combine narrative + prompt as system message
+4. Format all turns from `log` as alternating user/assistant
 
 ---
 
