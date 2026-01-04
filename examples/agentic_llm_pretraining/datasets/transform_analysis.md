@@ -553,38 +553,68 @@ All DialogStudio datasets share a common structure:
 ### multiwoz
 **Purpose**: Task-oriented dialogues (booking, info requests)
 
-**Extra Fields**:
-- `dst`: Dialog state tracking
-- `intent knowledge`: Possible intents
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `prompt`: List of 5 alternative task prompts (list[str])
+- `original dialog info`: JSON with `services` (domains like hotel, restaurant, train)
+
+**Note**: This is a "Wizard of Oz" dataset - tool calls (database lookups, bookings) are implicit, not recorded. Teaches task-oriented dialogue patterns without explicit function call syntax.
 
 **Template**:
 ```
-### Conversation
-
-{formatted_dialogue}
+<|im_start|>system
+{prompt[random_choice_index]}<|im_end|>
+<|im_start|>user
+{log[0]["user utterance"]}<|im_end|}
+<|im_start|>assistant
+{log[0]["system response"]}<|im_end|>
+<|im_start|>user
+{log[1]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[1]["system response"]}<|im_end|>
+...
 ```
 
-**Processing**: Format as User/Assistant turns. Optionally include intent/state info.
+**Processing**:
+1. Randomly select one of the 5 prompts as system message
+2. Format all turns from `log` as alternating user/assistant
+3. DST/intent fields are annotation metadata, not included in training text
 
 ---
 
 ### wizard-of-wikipedia
-**Purpose**: Knowledge-grounded conversation
+**Purpose**: Knowledge-grounded conversation (RAG-style)
 
-**Extra Context**: `original dialog info` contains `chosen_topic`, `chosen_topic_passage`
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `original dialog info`: JSON containing `chosen_topic`, `chosen_topic_passage` (list[str]), `persona`
+
+**Note**: ~80% of samples have assistant starting the conversation (empty first user utterance). The wizard uses Wikipedia passages to inform responses - teaches knowledge-grounded dialogue.
 
 **Template**:
 ```
-### Topic: {chosen_topic}
+<|im_start|>system
+You act as a person with the following persona: {persona}
 
-### Background
-{chosen_topic_passage}
+Together with a user you will talk about: {chosen_topic}
 
-### Conversation
-{formatted_dialogue}
+Background info:
+{chosen_topic_passage[0]}
+{chosen_topic_passage[1]}
+{chosen_topic_passage[2]}
+...<|im_end|>
+<|im_start|>user
+{log[i]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[i]["system response"]}<|im_end|>
+...
 ```
 
-**Processing**: Extract Wikipedia passage for context. Show grounding.
+**Processing**:
+1. Parse `original dialog info` JSON to extract `chosen_topic`, `chosen_topic_passage`, `persona`
+2. Build instructional system message with persona, topic, and background passages
+3. For each turn: skip empty user utterances, skip empty system responses
+4. Handles both assistant-initiated (~80%) and user-initiated (~20%) conversations
 
 ---
 
