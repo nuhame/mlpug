@@ -8,7 +8,21 @@ This document analyzes how to transform each dataset into serialized text for ne
 2. **Semantic formatting**: Use markdown headings only for actual hierarchy (e.g., document titles), use `Label: content` for flat Q&A/problem-solution structures
 3. **Preserve reasoning structure**: Show step-by-step reasoning when available
 4. **Consistent labels**: Use clear section labels (e.g., `Problem:`, `Solution:`, `Question:`, `Answer:`)
-5. **No special tokens yet**: Templates are token-agnostic; EOS tokens added during tokenization
+5. **Qwen3 chat format for conversations**: Conversational datasets (agentic, dialogue) use Qwen3 chat syntax with `<|im_start|>role` and `<|im_end|>` tokens. This teaches the model conversation structure during pretraining since we skip separate chat fine-tuning.
+6. **Document separator**: `<|endoftext|>` (ID 151643) separates documents during packing
+
+### Qwen3 Chat Format Reference
+
+```
+<|im_start|>system
+{system_prompt}<|im_end|>
+<|im_start|>user
+{user_message}<|im_end|>
+<|im_start|>assistant
+{assistant_response}<|im_end|>
+```
+
+Token IDs: `<|im_start|>` = 151644, `<|im_end|>` = 151645, `<|endoftext|>` = 151643
 
 ---
 
@@ -353,25 +367,31 @@ def select_solution(solutions):
 
 **Template** (2-turn, most common):
 ```
-{system}
-
-User: {conversations[0].value}
-Assistant: {conversations[1].value}
+<|im_start|>system
+{system}<|im_end|>
+<|im_start|>user
+{conversations[0].value}<|im_end|>
+<|im_start|>assistant
+{conversations[1].value}<|im_end|>
 ```
 
 **Template** (multi-turn with tool results):
 ```
-{system}
-
-User: {conversations[0].value}
-Assistant: {conversations[1].value}
-Tool: {conversations[2].value}
-Assistant: {conversations[3].value}
+<|im_start|>system
+{system}<|im_end|>
+<|im_start|>user
+{conversations[0].value}<|im_end|>
+<|im_start|>assistant
+{conversations[1].value}<|im_end|>
+<|im_start|>tool
+{conversations[2].value}<|im_end|>
+<|im_start|>assistant
+{conversations[3].value}<|im_end|>
 ...
 ```
 
 **Processing**:
-1. Map `from` values to labels: user→User, assistant→Assistant, tool→Tool
+1. Map `from` values to Qwen3 roles: user→user, assistant→assistant, tool→tool
 2. Keep function call format (e.g., `[FunctionName(param=value)]`)
 
 ---
@@ -380,22 +400,25 @@ Assistant: {conversations[3].value}
 **Purpose**: Function calling examples
 
 **Relevant Fields**:
-- `conversations`: List with `from` (human/gpt/function_call/observation) and `value` (list[dict])
-- `category`: Task category (string)
-- `task`: Task description (string)
+- `conversations`: List with `from` (system/human/gpt) and `value` (string)
+- `category`: Task category (string) - metadata, not used in template
+- `task`: Task description (string) - metadata, not used in template
 
 **Usage**: Multi-turn function calling with observations.
 
 **Template**:
 ```
-### Task: {task}
-
-{formatted_conversation}
+<|im_start|>system
+{conversations[0].value}<|im_end|>
+<|im_start|>user
+{conversations[1].value}<|im_end|>
+<|im_start|>assistant
+{conversations[2].value}<|im_end|>
 ```
 
 **Processing**:
-1. Map `from` values to readable roles (Human, Assistant, Function, Result)
-2. Format function calls clearly
+1. Map `from` values to Qwen3 roles: system→system, human→user, gpt→assistant
+2. Keep function call format (e.g., `<tool_call>...</tool_call>`)
 
 ---
 
@@ -403,19 +426,32 @@ Assistant: {conversations[3].value}
 **Purpose**: Function calling examples with system prompts
 
 **Relevant Fields**:
-- `system`: System prompt with function definitions (string)
-- `chat`: Pre-formatted conversation (string)
+- `system`: System prompt with "SYSTEM: " prefix (string)
+- `chat`: Pre-formatted conversation with USER:/ASSISTANT:/FUNCTION RESPONSE: prefixes (string)
 
-**Usage**: Simple function calling patterns.
+**Usage**: Simple function calling patterns. ~58% of samples include function calls and responses.
 
 **Template**:
 ```
-{system}
-
-{chat}
+<|im_start|>system
+{system_content}<|im_end|>
+<|im_start|>user
+{user_message}<|im_end|>
+<|im_start|>assistant
+{assistant_response}<|im_end|>
+<|im_start|>tool
+{function_response}<|im_end|>
+<|im_start|>assistant
+{next_assistant_response}<|im_end|>
+...
 ```
 
-**Processing**: Already formatted. Use as-is or clean SYSTEM:/USER:/ASSISTANT: prefixes.
+**Processing**:
+1. Strip "SYSTEM: " prefix from system field
+2. Parse chat field by splitting on `USER:`, `ASSISTANT:`, `FUNCTION RESPONSE:`
+3. Map to Qwen3 roles: USER→user, ASSISTANT→assistant, FUNCTION RESPONSE→tool
+4. Remove existing `<|endoftext|>` tokens (added at document packing level)
+5. Keep `<functioncall>` format as-is
 
 ---
 
