@@ -621,73 +621,95 @@ Background info:
 ### sharegpt
 **Purpose**: General user-assistant conversations
 
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `original dialog info`: Contains `model` (e.g., "gpt-3.5-turbo") - metadata only
+
+**Note**: No system prompt in data. Real user↔GPT conversations teaching general helpful assistant behavior.
+
 **Template**:
 ```
-User: {turn_1_user}
-Assistant: {turn_1_assistant}
-User: {turn_2_user}
+<|im_start|>user
+{log[0]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[0]["system response"]}<|im_end|>
+<|im_start|>user
+{log[1]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[1]["system response"]}<|im_end|>
 ...
 ```
 
-**Processing**: Simple alternating User/Assistant format.
+**Processing**:
+1. No system message - model learns helpful behavior from conversations
+2. Format all turns as alternating user/assistant
+3. Skip empty utterances/responses
 
 ---
 
 ### empathetic-dialogues
-**Purpose**: Emotionally aware conversations
+**Purpose**: Emotionally aware peer conversations + emotion recognition
 
-**Extra Context**: `original dialog info` contains `context` (emotion like "excited", "sad")
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `original dialog info`: JSON containing `context` (emotion like "excited", "sad", "guilty")
+
+**Note**: Peer-to-peer conversations where both parties share experiences and relate to each other. Not traditional user↔assistant dynamic.
 
 **Template**:
 ```
-### Emotional Context: {emotion}
+<|im_start|>user
+{log[0]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[0]["system response"]}<|im_end|>
+<|im_start|>user
+{log[1]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[1]["system response"]}<|im_end|>
+...
 
-### Conversation
-{formatted_dialogue}
+Question: How does the user feel in the above conversation?
+Answer: {emotion}
 ```
 
-**Processing**: Extract emotion label. Format as Speaker A/B or User/Assistant.
+**Processing**:
+1. Parse `original dialog info` JSON to extract `context` (emotion)
+2. Format conversation as user/assistant turns (skip empty utterances/responses)
+3. Append emotion recognition Q&A outside chat format
+4. Teaches both peer conversation skills and emotion identification
 
 ---
 
 ### samsum
-**Purpose**: Dialogue with summarization
+**Purpose**: Dialogue summarization
 
-**Extra Context**: `original dialog info` contains `summary`
+**Relevant Fields**:
+- `log`: List of turns with `user utterance`, `system response` (list[dict])
+- `original dialog info`: JSON containing `summary`
 
-**Template**:
-```
-### Conversation
-{formatted_dialogue}
-
-### Summary
-{summary}
-```
-
-**Processing**: Include summary as a generation target. Teaches summarization.
-
----
-
-### coqa
-**Purpose**: Conversational question answering
-
-**Extra Context**: `original dialog info` contains `story` (the passage being discussed)
+**Note**: Peer conversations (like empathetic-dialogues) followed by summarization task.
 
 **Template**:
 ```
-### Passage
-{story}
-
-### Questions and Answers
-Q: {question_1}
-A: {answer_1}
-
-Q: {question_2}
-A: {answer_2}
+<|im_start|>user
+{log[0]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[0]["system response"]}<|im_end|>
+<|im_start|>user
+{log[1]["user utterance"]}<|im_end|>
+<|im_start|>assistant
+{log[1]["system response"]}<|im_end|>
 ...
+
+Question: Summarize the above conversation.
+Summary: {summary}
 ```
 
-**Processing**: Extract passage from context. Format Q&A pairs sequentially.
+**Processing**:
+1. Parse `original dialog info` JSON to extract `summary`
+2. Format conversation as user/assistant turns (skip empty utterances/responses)
+3. Append summarization Q&A outside chat format
+4. Teaches both peer conversation and dialogue summarization
 
 ---
 
@@ -785,7 +807,6 @@ def format_documents(documents: list[str]) -> str:
 | sharegpt | Dialogue | Format turns | log |
 | empathetic-dialogues | Dialogue | Extract emotion | log, original dialog info |
 | samsum | Dialogue | Include summary | log, original dialog info |
-| coqa | Dialogue | Extract passage | log, original dialog info |
 | rag-dataset-12000 | RAG | None | context, question, answer |
 | ragbench-hotpotqa | RAG | Format documents | question, documents, response |
 
