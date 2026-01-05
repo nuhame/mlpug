@@ -24,6 +24,15 @@ This document analyzes how to transform each dataset into serialized text for ne
 
 Token IDs: `<|im_start|>` = 151644, `<|im_end|>` = 151645, `<|endoftext|>` = 151643
 
+### Data Mixing: Structure vs Free Text
+
+When using finetuning datasets during pretraining (NTP), the model learns all patterns including template structures. Unlike finetuning where loss masking hides the structure, pretraining learns everything. To prevent over-fitting to structured formats:
+
+- **Free text should be 30-50% of the dataset** (fineweb-edu, wikipedia, simple-wikipedia, codesearchnet, generics-kb)
+- Structured formats (Q&A, chat, problem/solution) provide useful signal but create learned patterns
+- The diversity across ~26 datasets provides natural regularization
+- Repeated structures (e.g., "Question: ... Answer: ...") are acceptable as they represent natural patterns
+
 ---
 
 ## 1. Grammar/Language Datasets
@@ -326,31 +335,22 @@ def select_solution(solutions):
 ---
 
 ### codesearchnet
-**Purpose**: Code documentation patterns
+**Purpose**: Code with documentation patterns
 
 **Relevant Fields**:
-- `func_name`: Function name (string)
-- `func_code_string`: Full function code (string)
-- `func_documentation_string`: Docstring (string)
+- `whole_func_string`: Complete function code with docstring (string)
+- `repository_name`: Source repository (string)
+- `func_path_in_repository`: File path (string)
 - `language`: Programming language (string)
 
-**Usage**: Teaches code-documentation alignment.
+**Note**: Originally designed for code search (retrieval). We use it for natural code exposure - teaching code structure and documentation patterns.
 
 **Template**:
 ```
-### Function
-{func_name}
-
-### Documentation
-{func_documentation_string}
-
-### Implementation
-```{language}
-{func_code_string}
-```
+{whole_func_string}
 ```
 
-**Processing**: None needed. Already clean.
+**Processing**: None - just output the function code with embedded docstring as-is.
 
 ---
 
@@ -462,25 +462,18 @@ def select_solution(solutions):
 
 **Relevant Fields**:
 - `generic_sentence`: Factual statement (string)
-- `term`: Subject term (string)
 - `score`: Confidence score (float)
 
-**Usage**: Short factual statements. Bundle multiple for context.
+**Note**: Self-contained factual sentences. Term is already embedded in the sentence.
 
-**Template** (bundle 5-10 related facts):
+**Template**:
 ```
-### Facts about {common_term_or_topic}
-
-- {generic_sentence_1}
-- {generic_sentence_2}
-- {generic_sentence_3}
-...
+{generic_sentence}
 ```
 
 **Processing**:
-1. Group by `term` or topic
-2. Filter by `score > 0.5` for quality
-3. Bundle into paragraph-length sequences
+1. Output sentence as-is
+2. Optionally filter by `score > 0.5` for quality
 
 ---
 
@@ -492,20 +485,19 @@ def select_solution(solutions):
 - `choices`: Answer options with `text` and `label` (dict)
 - `answerKey`: Correct answer label (string)
 
-**Usage**: Science reasoning in Q&A format.
-
 **Template**:
 ```
-### Question
-{question_stem}
+Question: {question_stem}
 
-{formatted_choices}
+A) {choices.text[0]}
+B) {choices.text[1]}
+C) {choices.text[2]}
+D) {choices.text[3]}
 
-### Answer
-{answerKey}) {correct_choice_text}
+Answer: {answerKey}) {correct_choice_text}
 ```
 
-**Processing**: Format choices as A) B) C) D). Include correct answer with text.
+**Processing**: Format choices as A) B) C) D). Include correct answer with label and text.
 
 ---
 
