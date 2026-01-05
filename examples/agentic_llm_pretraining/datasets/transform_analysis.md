@@ -708,66 +708,55 @@ Summary: {summary}
 ## 8. RAG Datasets
 
 ### rag-dataset-12000
-**Purpose**: Context-grounded question answering
+**Purpose**: Reading comprehension (context-grounded QA)
 
 **Relevant Fields**:
-- `context`: Source passage from Falcon RefinedWeb (string, variable length)
+- `context`: Source passage from Falcon RefinedWeb (string)
 - `question`: Question about the context (string)
 - `answer`: Answer derived from context (string)
 
-**Usage**: Teaches reading comprehension and answer extraction from provided context. Clean RAG format.
+**Note**: Reading comprehension format - context is given, not retrieved. Read passage first, then answer questions about it.
 
 **Template**:
 ```
-### Context
+Context:
 {context}
 
-### Question
-{question}
+Question: {question}
 
-### Answer
-{answer}
+Answer: {answer}
 ```
 
-**Processing**: None needed. Already clean format.
+**Processing**: None needed. Output fields as-is.
 
 ---
 
 ### ragbench-hotpotqa
-**Purpose**: Multi-hop QA with multiple retrieved documents
+**Purpose**: RAG workflow with multi-hop reasoning
 
 **Relevant Fields**:
 - `question`: Query requiring multi-hop reasoning (string)
 - `documents`: List of retrieved passages (list[str])
 - `response`: Generated answer (string)
 
-**Usage**: Teaches reasoning across multiple documents and synthesizing information.
+**Note**: True RAG workflow - question triggers retrieval, documents are fetched based on query, then answer is synthesized. Order reflects actual RAG pipeline.
 
 **Template**:
 ```
-### Documents
+Question: {question}
 
-{formatted_documents}
+Retrieved documents:
+[1] {documents[0]}
+[2] {documents[1]}
+[3] {documents[2]}
+[4] {documents[3]}
 
-### Question
-{question}
-
-### Answer
-{response}
+Answer: {response}
 ```
 
 **Processing**:
-1. Format documents as numbered list or separate sections
-2. Optionally include document headers (Document 1, Document 2, etc.)
-
-**Example Document Formatting**:
-```python
-def format_documents(documents: list[str]) -> str:
-    parts = []
-    for i, doc in enumerate(documents, 1):
-        parts.append(f"**Document {i}:**\n{doc}")
-    return "\n\n".join(parts)
-```
+1. Format documents as numbered list with [1], [2], etc.
+2. Variable number of documents per sample
 
 ---
 
