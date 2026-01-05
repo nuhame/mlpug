@@ -776,11 +776,11 @@ Answer: {response}
 | stackexchange | Procedural | HTML strip, select best | question, answers |
 | swe-bench | Debugging | Format diff | problem_statement, patch |
 | code-contests | Debugging | Select solution | description, solutions |
-| codesearchnet | Code | Minimal | func_code_string, func_documentation_string |
+| codesearchnet | Code | None | whole_func_string |
 | toolace | Agentic | Format conversation | system, conversations |
 | hermes-function-calling | Agentic | Format conversation | conversations |
 | glaive-function-calling | Agentic | None/minimal | system, chat |
-| generics-kb | Knowledge | Bundle facts | generic_sentence, term |
+| generics-kb | Knowledge | None | generic_sentence |
 | openbookqa | Knowledge | Format choices | question_stem, choices, answerKey |
 | soda | Dialogue | Parse context, format | log, original dialog info |
 | multiwoz | Dialogue | Format turns | log |
@@ -827,7 +827,7 @@ def transform_sample(sample, dataset_name, config=None):
 ### DialogStudio Common Transform
 ```python
 def transform_dialogstudio(sample: dict, config: dict) -> str:
-    """Common transform for all DialogStudio datasets."""
+    """Common transform for DialogStudio datasets using Qwen3 chat format."""
     log = sample.get("log", [])
 
     turns = []
@@ -835,12 +835,14 @@ def transform_dialogstudio(sample: dict, config: dict) -> str:
         user = turn.get("user utterance", "")
         system = turn.get("system response", "")
         if user:
-            turns.append(f"User: {user}")
+            turns.append(f"<|im_start|>user\n{user}<|im_end|>")
         if system:
-            turns.append(f"Assistant: {system}")
+            turns.append(f"<|im_start|>assistant\n{system}<|im_end|>")
 
     return "\n".join(turns)
 ```
+
+**Note**: Individual DialogStudio datasets may add system prompts or post-conversation Q&A (e.g., empathetic-dialogues adds emotion recognition, samsum adds summarization).
 
 ### Quality Filtering
 Some datasets benefit from filtering:
