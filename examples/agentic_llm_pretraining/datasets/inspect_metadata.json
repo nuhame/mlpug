@@ -16,8 +16,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": "preprocess_fineweb_edu",
-    "transform_config": null
+    "preprocess_func": "preprocess_fineweb_edu",
+    "preprocess_config": null
   },
 
   "wikipedia": {
@@ -34,8 +34,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "openmath-instruct-1": {
@@ -51,8 +51,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "openmath-instruct-2": {
@@ -68,8 +68,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "gsm8k": {
@@ -86,8 +86,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": "preprocess_gsm8k",
-    "transform_config": null
+    "preprocess_func": "preprocess_gsm8k",
+    "preprocess_config": null
   },
 
   "math": {
@@ -103,8 +103,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "cosmopedia-wikihow": {
@@ -121,8 +121,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "stackexchange": {
@@ -139,8 +139,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "swe-bench": {
@@ -156,8 +156,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "code-contests": {
@@ -173,8 +173,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "toolace": {
@@ -190,8 +190,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": "preprocess_toolace",
-    "transform_config": null
+    "preprocess_func": "preprocess_toolace",
+    "preprocess_config": null
   },
 
   "hermes-function-calling": {
@@ -207,8 +207,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "glaive-function-calling": {
@@ -224,8 +224,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "codesearchnet": {
@@ -242,8 +242,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "ecqa": {
@@ -259,8 +259,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "soda": {
@@ -279,8 +279,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": "preprocess_soda",
-    "transform_config": null
+    "preprocess_func": "preprocess_soda",
+    "preprocess_config": null
   },
 
   "multiwoz": {
@@ -299,8 +299,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "simple-wikipedia": {
@@ -317,8 +317,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "generics-kb": {
@@ -334,8 +334,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "openbookqa": {
@@ -351,8 +351,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "wizard-of-wikipedia": {
@@ -371,8 +371,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "sharegpt": {
@@ -391,8 +391,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "empathetic-dialogues": {
@@ -411,8 +411,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "samsum": {
@@ -431,8 +431,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "coqa": {
@@ -451,8 +451,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "rag-dataset-12000": {
@@ -468,8 +468,8 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   },
 
   "ragbench-hotpotqa": {
@@ -486,7 +486,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
-    "transform_config": null
+    "preprocess_func": null,
+    "preprocess_config": null
   }
 }
