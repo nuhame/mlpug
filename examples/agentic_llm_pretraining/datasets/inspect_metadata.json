@@ -16,7 +16,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
+    "transform_func": "preprocess_fineweb_edu",
     "transform_config": null
   },
 
@@ -86,7 +86,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
+    "transform_func": "preprocess_gsm8k",
     "transform_config": null
   },
 
@@ -190,7 +190,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
+    "transform_func": "preprocess_toolace",
     "transform_config": null
   },
 
@@ -279,7 +279,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "transform_func": null,
+    "transform_func": "preprocess_soda",
     "transform_config": null
   },
 
