@@ -22,7 +22,8 @@ from typing import Any, Optional
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
 
 from .transform_functions import transform, TransformStats
-from .dataset_templates import PREPROCESS_FUNCTIONS, TEMPLATES
+from . import preprocessing
+from .dataset_templates import TEMPLATES
 
 
 use_fancy_colors()
@@ -100,26 +101,27 @@ def transform_dataset(
     # Load raw samples
     samples = load_raw_samples(data_dir, dataset_name, num_samples, logger)
 
-    # Resolve transform function
-    transform_func_name = config.get("transform_func")
-    if transform_func_name:
-        preprocess_fn = PREPROCESS_FUNCTIONS.get(transform_func_name)
+    # Resolve preprocess function from preprocessing module
+    preprocess_func_name = config.get("preprocess_func")
+    if preprocess_func_name:
+        preprocess_fn = getattr(preprocessing, preprocess_func_name, None)
         if preprocess_fn is None:
             raise ValueError(
-                f"{dataset_name}: transform_func '{transform_func_name}' not found in registry"
+                f"{dataset_name}: preprocess_func '{preprocess_func_name}' not found in preprocessing module"
             )
-        logger.info(f"{dataset_name}: using transform_func '{transform_func_name}'")
+        logger.info(f"{dataset_name}: using preprocess_func '{preprocess_func_name}'")
     else:
-        # Try lookup by dataset name
-        preprocess_fn = PREPROCESS_FUNCTIONS.get(dataset_name)
+        # Try lookup by dataset name convention: preprocess_{dataset_name with - replaced by _}
+        default_func_name = f"preprocess_{dataset_name.replace('-', '_')}"
+        preprocess_fn = getattr(preprocessing, default_func_name, None)
         if preprocess_fn:
             logger.info(
-                f"{dataset_name}: no transform_func in metadata, "
-                f"using registry lookup by name"
+                f"{dataset_name}: no preprocess_func in metadata, "
+                f"using default '{default_func_name}'"
             )
         else:
             logger.info(
-                f"{dataset_name}: no transform_func found, using default passthrough"
+                f"{dataset_name}: no preprocess_func found, using default passthrough"
             )
             preprocess_fn = None
 
