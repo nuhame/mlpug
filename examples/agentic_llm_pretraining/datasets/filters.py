@@ -83,3 +83,33 @@ def filter_stackexchange(
         return False
 
     return any(ans.get("pm_score", 0) > min_pm_score for ans in answers)
+
+
+# Language IDs for code-contests
+CODE_CONTESTS_TARGET_LANGUAGES = {2, 3, 4}  # C++, Python3, Java
+
+
+def filter_code_contests(
+    sample: dict,
+    require_languages: set = None,
+    **kwargs,
+) -> bool:
+    """
+    Filter code-contests samples by available solution languages.
+
+    Only keep samples that have at least one solution in the target languages.
+
+    :param sample: Sample dict from dataset.
+    :param require_languages: Set of language IDs to require (default: {2, 3, 4} for C++/Python3/Java).
+        Language IDs: 0=Unknown, 1=Python2, 2=C++, 3=Python3, 4=Java
+
+    :return: True to keep, False to discard.
+    """
+    if require_languages is None:
+        require_languages = CODE_CONTESTS_TARGET_LANGUAGES
+
+    solutions = sample.get("solutions", {})
+    available_languages = set(solutions.get("language", []))
+
+    # Keep if any target language is available
+    return bool(available_languages & require_languages)

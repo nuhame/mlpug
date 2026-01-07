@@ -171,7 +171,7 @@
       "split": "train",
       "target_count": 500
     },
-    "filter_func": null,
+    "filter_func": "filter_code_contests",
     "filter_config": null,
     "preprocess_func": "preprocess_code_contests",
     "preprocess_config": null

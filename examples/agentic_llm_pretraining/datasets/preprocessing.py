@@ -549,6 +549,15 @@ def preprocess_swe_bench(
 
 
 # Language ID mapping for code-contests
+# Full mapping for logging purposes
+CODE_CONTESTS_ALL_LANGUAGES = {
+    0: "Unknown",
+    1: "Python2",
+    2: "C++",
+    3: "Python3",
+    4: "Java",
+}
+# Target languages with output format
 CODE_CONTESTS_LANGUAGE_IDS = {
     2: ("C++", "cpp"),
     3: ("Python3", "python"),
@@ -601,7 +610,15 @@ def preprocess_code_contests(
     candidates = [lid for lid in CODE_CONTESTS_WEIGHTS if lid in available_langs]
 
     if not candidates:
-        logger.warning(f"{dataset_name}[{index}]: no Python3/C++/Java solutions")
+        # Log what languages are actually available
+        lang_names = [
+            CODE_CONTESTS_ALL_LANGUAGES.get(lid, f"Unknown language ID:{lid}")
+            for lid in available_langs
+        ]
+        logger.warning(
+            f"{dataset_name}[{index}]: no Python3/C++/Java solutions, "
+            f"available: {', '.join(lang_names)}"
+        )
         return None
 
     # Weighted random selection
