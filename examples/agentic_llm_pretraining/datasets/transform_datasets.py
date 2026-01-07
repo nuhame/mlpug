@@ -34,6 +34,28 @@ module_logger = get_logger(os.path.basename(__file__))
 DEFAULT_TEMPLATE = "{text}"
 
 
+def describe_config(
+    metadata: str,
+    data_dir: str,
+    output_dir: str,
+    datasets: list[str] | None,
+    num_samples: int | None,
+) -> None:
+    """Log script configuration."""
+    module_logger.info("Configuration:")
+    module_logger.info(f"  metadata: {metadata}")
+    module_logger.info(f"  data_dir: {data_dir}")
+    module_logger.info(f"  output_dir: {output_dir}")
+    module_logger.info(f"  datasets: {datasets}")
+    module_logger.info(f"  num_samples: {num_samples}")
+
+
+def describe_dataset_config(name: str, config: dict[str, Any]) -> None:
+    """Log per-dataset configuration from metadata."""
+    from rich.pretty import pretty_repr
+    module_logger.info(f"  [{name}] config: {pretty_repr(config)}")
+
+
 def load_metadata(metadata_path: str) -> dict[str, Any]:
     """Load metadata from JSON file, excluding comment fields."""
     with open(metadata_path, "r", encoding="utf-8") as f:
@@ -216,6 +238,9 @@ def main():
     )
     args = parser.parse_args()
 
+    config = vars(args)
+    describe_config(**config)
+
     metadata = load_metadata(args.metadata)
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
@@ -224,10 +249,6 @@ def main():
     datasets_to_transform = args.datasets if args.datasets else list(metadata.keys())
 
     module_logger.info(f"Transforming {len(datasets_to_transform)} datasets")
-    module_logger.info(f"  Data dir: {data_dir}")
-    module_logger.info(f"  Output dir: {output_dir}")
-    if args.num_samples:
-        module_logger.info(f"  Samples per dataset: {args.num_samples}")
 
     results: dict[str, TransformStats] = {}
     failed_datasets: list[str] = []
@@ -237,10 +258,13 @@ def main():
             module_logger.warning(f"Dataset '{name}' not found in metadata, skipping")
             continue
 
+        dataset_metadata = metadata[name]
+        describe_dataset_config(name, dataset_metadata)
+
         try:
             stats = transform_dataset(
                 dataset_name=name,
-                config=metadata[name],
+                config=dataset_metadata,
                 data_dir=data_dir,
                 output_dir=output_dir,
                 num_samples=args.num_samples,

@@ -27,6 +27,24 @@ ACQUISITION_METHODS: Dict[str, Callable[..., Any]] = {
 }
 
 
+def describe_config(
+    metadata: str,
+    output: str,
+    datasets: list[str] | None,
+) -> None:
+    """Log script configuration."""
+    module_logger.info("Configuration:")
+    module_logger.info(f"  metadata: {metadata}")
+    module_logger.info(f"  output: {output}")
+    module_logger.info(f"  datasets: {datasets}")
+
+
+def describe_dataset_config(name: str, config: Dict[str, Any]) -> None:
+    """Log per-dataset configuration from metadata."""
+    from rich.pretty import pretty_repr
+    module_logger.info(f"  [{name}] config: {pretty_repr(config)}")
+
+
 def load_metadata(metadata_path: str) -> Dict[str, Any]:
     """Load metadata from JSON file."""
     with open(metadata_path, "r", encoding="utf-8") as f:
@@ -103,6 +121,9 @@ def main():
     )
     args = parser.parse_args()
 
+    config = vars(args)
+    describe_config(**config)
+
     metadata = load_metadata(args.metadata)
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -117,8 +138,11 @@ def main():
             module_logger.warning(f"Dataset '{name}' not found in metadata, skipping")
             continue
 
+        dataset_metadata = metadata[name]
+        describe_dataset_config(name, dataset_metadata)
+
         try:
-            download_dataset(name, metadata[name], output_dir)
+            download_dataset(name, dataset_metadata, output_dir)
         except Exception as e:
             module_logger.error(f"Failed to download '{name}': {e}")
             failed.append(name)
