@@ -34,7 +34,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_wikipedia",
     "preprocess_config": null
   },
 
@@ -49,9 +49,9 @@
       "split": "train",
       "target_count": 500
     },
-    "filter_func": null,
-    "filter_config": null,
-    "preprocess_func": null,
+    "filter_func": "filter_openmath_instruct_1",
+    "filter_config": {"is_correct": true},
+    "preprocess_func": "preprocess_openmath_instruct_1",
     "preprocess_config": null
   },
 
@@ -68,7 +68,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_openmath_instruct_2",
     "preprocess_config": null
   },
 
@@ -103,7 +103,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_math",
     "preprocess_config": null
   },
 
@@ -121,7 +121,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_cosmopedia_wikihow",
     "preprocess_config": null
   },
 
@@ -139,7 +139,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_stackexchange",
     "preprocess_config": null
   },
 
@@ -156,7 +156,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_swe_bench",
     "preprocess_config": null
   },
 
@@ -173,7 +173,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_code_contests",
     "preprocess_config": null
   },
 
@@ -207,7 +207,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_hermes_function_calling",
     "preprocess_config": null
   },
 
@@ -224,7 +224,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_glaive_function_calling",
     "preprocess_config": null
   },
 
@@ -242,7 +242,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_codesearchnet",
     "preprocess_config": null
   },
 
@@ -259,7 +259,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_ecqa",
     "preprocess_config": null
   },
 
@@ -299,7 +299,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_multiwoz",
     "preprocess_config": null
   },
 
@@ -317,7 +317,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_wikipedia",
     "preprocess_config": null
   },
 
@@ -334,7 +334,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_generics_kb",
     "preprocess_config": null
   },
 
@@ -351,7 +351,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_openbookqa",
     "preprocess_config": null
   },
 
@@ -371,7 +371,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_wizard_of_wikipedia",
     "preprocess_config": null
   },
 
@@ -391,7 +391,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_sharegpt",
     "preprocess_config": null
   },
 
@@ -411,7 +411,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_empathetic_dialogues",
     "preprocess_config": null
   },
 
@@ -431,27 +431,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
-    "preprocess_config": null
-  },
-
-  "coqa": {
-    "description": "Conversational question answering (from DialogStudio)",
-    "primary_purpose": "dialogue",
-    "also_provides": ["reasoning", "knowledge", "reading_comprehension", "rag_grounding"],
-    "license": "Apache 2.0",
-    "acquisition_method": "download_subsample_hf",
-    "use_custom_loader": true,
-    "acquisition_config": {
-      "path": "Salesforce/dialogstudio",
-      "name": "CoQA",
-      "split": "train",
-      "script_name": "dialogstudio.py",
-      "target_count": 500
-    },
-    "filter_func": null,
-    "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_samsum",
     "preprocess_config": null
   },
 
@@ -468,7 +448,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_rag_dataset_12000",
     "preprocess_config": null
   },
 
@@ -486,7 +466,7 @@
     },
     "filter_func": null,
     "filter_config": null,
-    "preprocess_func": null,
+    "preprocess_func": "preprocess_ragbench_hotpotqa",
     "preprocess_config": null
   }
 }
