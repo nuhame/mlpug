@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
+from mlpug.utils.git_logging import log_git_state
 
 from .transform_functions import transform, TransformStats
 from . import preprocessing
@@ -207,6 +208,8 @@ def print_summary(results: dict[str, TransformStats], logger=None):
 
 
 def main():
+    log_git_state()
+
     parser = argparse.ArgumentParser(
         description="Transform datasets from raw JSONL to training format"
     )
