@@ -59,10 +59,14 @@ def download_dataset(name: str, config: Dict[str, Any], output_dir: Path) -> Non
         kwargs["load_dataset_func"] = load_with_hf_builder_script
 
     # Add filter config if present
-    filter_func = config.get("filter_func")
+    filter_func_name = config.get("filter_func")
     filter_config = config.get("filter_config")
-    if filter_func is not None:
-        # TODO: resolve filter_func from string to actual function
+    if filter_func_name is not None:
+        # Resolve filter_func from string to actual function
+        from . import filters
+        filter_func = getattr(filters, filter_func_name, None)
+        if filter_func is None:
+            raise ValueError(f"Unknown filter function: {filter_func_name}")
         kwargs["filter_func"] = filter_func
     if filter_config is not None:
         kwargs["filter_config"] = filter_config
