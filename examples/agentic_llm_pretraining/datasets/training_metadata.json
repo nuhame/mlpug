@@ -126,7 +126,7 @@
     "license": "Other",
     "acquisition_method": "download_subsample_hf",
     "acquisition_config": {
-      "path": "code_search_net",
+      "path": "claudios/code_search_net",
       "name": "python",
       "split": "train",
       "target_count": 412178
@@ -159,10 +159,11 @@
     "primary_purpose": "reasoning",
     "also_provides": [],
     "license": "CC BY 4.0",
-    "acquisition_method": "download_subsample_hf",
+    "acquisition_method": "stream_subsample_hf",
     "acquisition_config": {
       "path": "nvidia/OpenMathInstruct-2",
       "split": "train",
+      "keep_probability": 0.02,
       "target_count": 262060
     },
     "filter_func": null,
