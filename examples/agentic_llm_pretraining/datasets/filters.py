@@ -63,6 +63,29 @@ def filter_fineweb_edu(
     return score >= min_int_score
 
 
+def filter_fineweb_edu_long(
+    sample: dict,
+    min_chars: int = 120_000,
+    min_int_score: int = 3,
+    **kwargs,
+) -> bool:
+    """
+    Filter fineweb-edu samples for long-context training.
+
+    Keeps samples with text length >= min_chars AND quality score >= min_int_score.
+    Default min_chars of 120K approximates 32K tokens (factor of ~3.75 chars/token).
+
+    :param sample: Sample dict from dataset.
+    :param min_chars: Minimum text length in characters (default: 120,000).
+    :param min_int_score: Minimum int_score threshold (default: 3).
+
+    :return: True to keep, False to discard.
+    """
+    text = sample.get("text", "")
+    score = sample.get("int_score", 0)
+    return len(text) >= min_chars and score >= min_int_score
+
+
 def filter_stackexchange(
     sample: dict,
     min_pm_score: int = 0,
