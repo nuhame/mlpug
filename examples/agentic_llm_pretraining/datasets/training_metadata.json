@@ -34,9 +34,9 @@
     "acquisition_method": "stream_subsample_hf",
     "acquisition_config": {
       "path": "HuggingFaceFW/fineweb-edu",
-      "name": "sample-10BT",
+      "name": "sample-100BT",
       "split": "train",
-      "keep_probability": 0.12,
+      "keep_probability": 0.1,
       "target_count": 5094
     },
     "filter_func": "filter_fineweb_edu_long",
