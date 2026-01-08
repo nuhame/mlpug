@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable, Dict, Any
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
-from mlpug.utils.datasets import download_subsample_hf, stream_subsample_hf, load_with_hf_builder_script
+from mlpug.utils.hf_datasets import download_subsample_hf, stream_subsample_hf, load_with_hf_builder_script
 from mlpug.utils.git_logging import log_git_state
 
 
