@@ -62,6 +62,10 @@ module_logger = get_logger(os.path.basename(__file__))
 # - code_search_net (python): ~412K (2M total across 6 languages)
 DATASET_SIZES = {
     "fineweb-edu": 97_300_000,  # HuggingFaceFW/fineweb-edu sample-10BT
+    # fineweb-edu-long: filtered subset with >= 120K chars (~32K tokens)
+    # Verified from inspection download: 500/895,253 pass = 0.056% pass rate
+    # Full dataset: 97.3M * 0.056% ≈ 54,000 samples
+    "fineweb-edu-long": 54_000,  # HuggingFaceFW/fineweb-edu sample-10BT (filtered)
     "wikipedia": 6_410_000,  # wikimedia/wikipedia 20231101.en
     "simple-wikipedia": 242_000,  # wikimedia/wikipedia 20231101.simple
     "cosmopedia-wikihow": 179_000,  # HuggingFaceTB/cosmopedia wikihow
@@ -89,9 +93,9 @@ DATASET_SIZES = {
     "ragbench-hotpotqa": 2_700,  # rungalileo/ragbench hotpotqa
 }
 
-# Generic datasets (50% of corpus)
+# Generic datasets (60% of corpus by default)
 GENERIC_DATASETS = [
-    "fineweb-edu", "wikipedia", "simple-wikipedia",
+    "fineweb-edu", "fineweb-edu-long", "wikipedia", "simple-wikipedia",
     "cosmopedia-wikihow", "generics-kb", "codesearchnet"
 ]
 
@@ -99,11 +103,13 @@ GENERIC_DATASETS = [
 def describe_config(
     transforms_dir: str,
     output: str | None,
+    generic_fraction: float,
 ) -> None:
     """Log script configuration."""
     module_logger.info("Configuration:")
     module_logger.info(f"  transforms_dir: {transforms_dir}")
     module_logger.info(f"  output: {output}")
+    module_logger.info(f"  generic_fraction: {generic_fraction}")
 
 
 def analyze_dataset(
@@ -403,6 +409,12 @@ def main():
         default=None,
         help="Path to save token analysis JSON (default: transforms_dir/../token_analysis.json)",
     )
+    parser.add_argument(
+        "--generic-fraction",
+        type=float,
+        default=0.6,
+        help="Fraction of token budget for generic datasets (default: 0.6)",
+    )
     args = parser.parse_args()
 
     config = vars(args)
@@ -421,7 +433,11 @@ def main():
     module_logger.info("Analyzing transformed datasets...")
     results = analyze_all_datasets(transforms_dir, tokenizer, module_logger)
 
-    allocations = calculate_allocations(results, logger=module_logger)
+    allocations = calculate_allocations(
+        results,
+        generic_fraction=args.generic_fraction,
+        logger=module_logger,
+    )
     print_final_summary(allocations, results, module_logger)
 
     # Save results
