@@ -1,3 +1,4 @@
 # Dependencies for agentic LLM pretraining example
 zstandard  # For reading zstd-compressed datasets (e.g., The Pile)
 gitpython  # For git state logging (reproducibility)
+rich       # For pretty-printing sample inspection and config logging
