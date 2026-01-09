@@ -92,9 +92,6 @@ Problem: {name}
 
 {description}
 
-Examples:
-{examples}
-
 Solution ({language}):
 ```{language_ext}
 {solution}
