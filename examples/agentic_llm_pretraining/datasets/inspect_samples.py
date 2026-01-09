@@ -69,7 +69,7 @@ def inspect_dataset(
     num_samples: int,
     seed: int = 42,
     max_string: int = 1024,
-    metadata: Dict[str, Any] | None = None
+    metadata: Dict[str, Any] | None = None,
 ) -> None:
     """
     Inspect samples from a single dataset file.
@@ -110,7 +110,16 @@ def inspect_dataset(
 
     for i, sample in enumerate(samples, 1):
         _l.info(f"\n--- Sample {i} ---")
-        _l.info(pretty_repr(sample, max_string=max_string))
+        for key, value in sample.items():
+            if isinstance(value, str):
+                text = value
+                if max_string and len(text) > max_string:
+                    text = text[:max_string] + f"\n... [truncated, {len(text) - max_string} chars remaining]"
+                _l.info(f"=== {key} ===")
+                _l.info(text)
+                _l.info(f"=== end {key} ===")
+            else:
+                _l.info(f"{key}: {pretty_repr(value, max_string=max_string)}")
 
 
 def load_metadata(metadata_path: Path) -> Dict[str, Any]:
