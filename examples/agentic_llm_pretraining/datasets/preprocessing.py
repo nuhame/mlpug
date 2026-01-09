@@ -1099,9 +1099,9 @@ def preprocess_empathetic_dialogues(
     # Format conversation
     chat_text = format_chat(messages, system=None)
 
-    # Append emotion recognition Q&A
+    # Append emotion recognition task
     if emotion:
-        text = f"{chat_text}\n\nQuestion: How does the user feel in the above conversation?\nAnswer: {emotion}"
+        text = f"{chat_text}\n\nTask: Identify how the user feels in the above conversation.\nEmotion: {emotion}"
     else:
         text = chat_text
 
@@ -1141,9 +1141,9 @@ def preprocess_samsum(
     # Format conversation
     chat_text = format_chat(messages, system=None)
 
-    # Append summarization Q&A
+    # Append summarization task
     if summary:
-        text = f"{chat_text}\n\nQuestion: Summarize the above conversation.\nSummary: {summary}"
+        text = f"{chat_text}\n\nTask: Summarize the above conversation.\nSummary: {summary}"
     else:
         logger.warning(f"{dataset_name}[{index}]: empty summary")
         text = chat_text
