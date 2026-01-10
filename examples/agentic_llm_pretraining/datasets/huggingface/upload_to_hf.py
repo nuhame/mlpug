@@ -2,11 +2,13 @@
 """
 Upload the agentic LLM pretraining dataset to HuggingFace.
 
+The repository must already exist on HuggingFace. Create it first at:
+https://huggingface.co/new-dataset
+
 Usage:
     python -m examples.agentic_llm_pretraining.datasets.huggingface.upload_to_hf \
         --splits-dir /data/agentic_llm_pretraining/full-08012026/splits \
-        --repo-id visionscaper/agentic-llm-pretraining-1.7b \
-        --private
+        --repo-id visionscaper/agentic-llm-pretraining-1.7b
 """
 
 import argparse
@@ -14,7 +16,7 @@ import os
 from pathlib import Path
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
-from huggingface_hub import HfApi, create_repo
+from huggingface_hub import HfApi, repo_exists
 
 use_fancy_colors()
 module_logger = get_logger(os.path.basename(__file__))
@@ -24,14 +26,12 @@ def describe_config(
     splits_dir: str,
     readme_path: str,
     repo_id: str,
-    private: bool,
 ) -> None:
     """Log script configuration."""
     module_logger.info("Configuration:")
     module_logger.info(f"  splits_dir: {splits_dir}")
     module_logger.info(f"  readme_path: {readme_path}")
     module_logger.info(f"  repo_id: {repo_id}")
-    module_logger.info(f"  private: {private}")
 
 
 def main() -> None:
@@ -56,11 +56,6 @@ def main() -> None:
         default="visionscaper/agentic-llm-pretraining-1.7b",
         help="HuggingFace repository ID",
     )
-    parser.add_argument(
-        "--private",
-        action="store_true",
-        help="Create as private repository",
-    )
     args = parser.parse_args()
 
     # Default README path - same directory as this script
@@ -72,7 +67,6 @@ def main() -> None:
         splits_dir=args.splits_dir,
         readme_path=args.readme_path,
         repo_id=args.repo_id,
-        private=args.private,
     )
 
     splits_dir = Path(args.splits_dir)
@@ -93,19 +87,13 @@ def main() -> None:
     # Initialize HuggingFace API
     hf_api = HfApi()
 
-    # Create repository
-    module_logger.info(f"Creating repository: {args.repo_id}")
-    try:
-        create_repo(
-            repo_id=args.repo_id,
-            repo_type="dataset",
-            private=args.private,
-            exist_ok=True,
-        )
-        module_logger.info(f"Repository ready: https://huggingface.co/datasets/{args.repo_id}")
-    except Exception as e:
-        module_logger.error(f"Failed to create repository: {e}")
-        raise
+    # Verify repository exists
+    module_logger.info(f"Checking repository: {args.repo_id}")
+    if not repo_exists(repo_id=args.repo_id, repo_type="dataset"):
+        module_logger.error(f"Repository does not exist: {args.repo_id}")
+        module_logger.error(f"Please create it first at: https://huggingface.co/new-dataset")
+        raise RuntimeError(f"Repository not found: {args.repo_id}")
+    module_logger.info(f"Repository found: https://huggingface.co/datasets/{args.repo_id}")
 
     # Upload README first
     module_logger.info("Uploading README.md...")
