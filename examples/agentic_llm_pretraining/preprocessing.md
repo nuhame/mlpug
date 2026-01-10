@@ -134,7 +134,7 @@ Our datasets map to Qwen3's stages:
 ### Tokenization and Indexing
 
 ```python
-from forager.indexers.tokenization_indexer import create_tokenize_and_index_jsonl_text_func
+from data_forager.indexers.tokenization_indexer import create_tokenize_and_index_jsonl_text_func
 from transformers import AutoTokenizer
 
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-1.7B")
@@ -145,7 +145,7 @@ tokenize_and_index = create_tokenize_and_index_jsonl_text_func(
     input_base_path='./corpus',
     tokenizer_func=tokenizer.encode,
     eos_idx=EOD_TOKEN_ID,  # <|endoftext|> as document separator
-    sample_size=32768,      # 32K context length
+    sample_size=32768,  # 32K context length
 )
 tokenize_and_index()
 ```
@@ -153,7 +153,7 @@ tokenize_and_index()
 ### Training with Random Access
 
 ```python
-from forager.datasets.tokens import TokensDataset
+from data_forager.datasets.tokens import TokensDataset
 from torch.utils.data import DataLoader
 
 dataset = TokensDataset.create_from_index_on_filesystem('./corpus')
