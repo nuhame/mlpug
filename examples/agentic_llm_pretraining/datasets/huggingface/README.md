@@ -7,7 +7,6 @@ size_categories:
 task_categories:
 - text-generation
 - question-answering
-- conversational
 tags:
 - pretraining
 - agentic
