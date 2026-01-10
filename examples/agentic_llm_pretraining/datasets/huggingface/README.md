@@ -21,7 +21,7 @@ pretty_name: Agentic LLM Pretraining Dataset (1.7B tokens)
 
 # Agentic LLM Pretraining Dataset
 
-A pretraining corpus for small language models (1-3B parameters) optimized for agentic tasks. The corpus emphasizes learning to reason, follow instructions, and use tools over memorizing factual knowledge — the assumption is that domain knowledge will be provided at runtime via RAG.
+A pretraining corpus for small language models (1-3B parameters) optimized for agentic tasks. The corpus emphasizes learning to comprehend language, reason, follow instructions, and use tools over memorizing factual knowledge — the assumption is that domain knowledge will be provided at runtime via RAG. The idea is that this could enable much smaller pretraining corpora by omitting the large volumes of text typically needed to memorize facts.
 
 ## Dataset Summary
 
