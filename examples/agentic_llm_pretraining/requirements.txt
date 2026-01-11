@@ -2,4 +2,5 @@
 zstandard    # For reading zstd-compressed datasets (e.g., The Pile)
 gitpython    # For git state logging (reproducibility)
 rich         # For pretty-printing sample inspection and config logging
-data-forager # For JSONL indexing and random access (global shuffling)
+data-forager>=0.1.2  # For JSONL indexing, tokenization, and random access
+transformers # For tokenizers (Qwen3, etc.)
