@@ -16,7 +16,22 @@ import mlpug.abstract_interface as mlp_interface
 from mlpug.lr_scheduler_configs import LRSchedulerConfig
 from mlpug.scheduler_funcs import create_lr_schedule, LRScheduleFunc
 from mlpug.trainers.callbacks.callback import Callback
-from mlpug.trainers.training import Trainer
+from mlpug.trainers.training import Trainer, TrainingManager
+
+
+class TrainingProcessSetupFailed(Exception):
+    """Raised when a setup step fails in TrainingProcess.setup()."""
+
+    def __init__(self, step_name: str, message: str | None = None):
+        """
+        :param step_name: Name of the setup step that failed.
+        :param message: Optional additional context.
+        """
+        self.step_name = step_name
+        msg = f"Setup failed at step '{step_name}'"
+        if message:
+            msg += f": {message}"
+        super().__init__(msg)
 
 
 class TrainingProcess(Base, metaclass=abc.ABCMeta):
@@ -31,14 +46,13 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
     2. _setup_compute() - device/distributed setup
     3. _setup_datasets() - data loading
     4. _build_model() - model creation
-    5. _build_training_model() - training model wrapper creation
-    6. _setup_training_model() - move to device, distributed setup
-    7. _build_optimizer() - optimizer creation
-    8. _setup_lr_scheduler() - LR scheduling
-    9. _setup_trainer() - trainer creation
-    10. _setup_callbacks() - callback setup (includes LR scheduler callback, if configured)
-    11. _setup_training_manager() - training manager setup
-    12. _prepare_training() - final preparation hook
+    5. _build_training_model() + _setup_training_model() - wrapper creation and device setup
+    6. _build_optimizer() - optimizer creation
+    7. _setup_lr_scheduler() - LR scheduling
+    8. _setup_trainer() - trainer creation
+    9. _setup_callbacks() - callback setup (includes LR scheduler callback, if configured)
+    10. _setup_training_manager() - training manager setup
+    11. _prepare_training() - final preparation hook
 
     To create a training model wrapper, implement _build_training_model().
     """
@@ -134,7 +148,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._lr_scheduling_func: LRScheduleFunc | None = None
         self._trainer: object | None = None
         self._callbacks: list[Callback] | None = None
-        self._training_manager: object | None = None
+        self._training_manager: TrainingManager | None = None
 
     @staticmethod
     def get_logger_info(
@@ -225,58 +239,22 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         Initialize all training components.
 
         Call this after construction before start().
+
+        Override _do_* methods to customize individual steps.
+        Each step is wrapped in exception handling that raises
+        TrainingProcessSetupFailed with the step name on failure.
         """
-        self._set_random_seed()
-
-        # Setup compute - returns device
-        self._device = self._setup_compute()
-        if self._device is None:
-            raise RuntimeError("_setup_compute() must return a device")
-
-        # Setup datasets - returns (training_set, validation_set)
-        self._training_set, self._validation_set = self._setup_datasets()
-        if self._training_set is None:
-            raise RuntimeError("_setup_datasets() must return a training set")
-
-        # Build model - returns model
-        self._model = self._build_model()
-        if self._model is None:
-            raise RuntimeError("_build_model() must return a model")
-
-        # Build training model wrapper
-        training_model = self._build_training_model()
-        if training_model is None:
-            raise RuntimeError("_build_training_model() must return a training model")
-
-        # Setup training model (move to device, DDP, etc.)
-        self._training_model = self._setup_training_model(training_model)
-        if self._training_model is None:
-            raise RuntimeError("_setup_training_model() must return a training model")
-
-        # Build optimizer - returns optimizer
-        self._optimizer = self._build_optimizer()
-        if self._optimizer is None:
-            raise RuntimeError("_build_optimizer() must return an optimizer")
-
-        # Setup LR scheduler - may return None
-        self._lr_scheduling_func = self._setup_lr_scheduler()
-
-        # Setup trainer - returns trainer
-        self._trainer = self._setup_trainer()
-        if self._trainer is None:
-            raise RuntimeError("_setup_trainer() must return a trainer")
-
-        # Setup callbacks - returns list
-        self._callbacks = self._setup_callbacks()
-        if self._callbacks is None:
-            raise RuntimeError("_setup_callbacks() must return a list")
-
-        # Setup training manager - returns training manager
-        self._training_manager = self._setup_training_manager()
-        if self._training_manager is None:
-            raise RuntimeError("_setup_training_manager() must return a training manager")
-
-        self._prepare_training()
+        self._do_set_random_seed()
+        self._do_setup_compute()
+        self._do_setup_datasets()
+        self._do_build_model()
+        self._do_build_and_setup_training_model()
+        self._do_build_optimizer()
+        self._do_setup_lr_scheduler()
+        self._do_setup_trainer()
+        self._do_setup_callbacks()
+        self._do_setup_training_manager()
+        self._do_prepare_training()
 
     def start(self) -> None:
         """Start training. Call setup() first."""
@@ -448,3 +426,128 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :return: Total number of optimizer steps across all epochs.
         """
         raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Setup step wrappers (_do_* methods)
+    #
+    # These methods wrap each setup step with exception handling and validation.
+    # Override these to customize specific steps while preserving error handling.
+    # -------------------------------------------------------------------------
+
+    def _do_set_random_seed(self) -> None:
+        """Wrapper for _set_random_seed step."""
+        try:
+            self._set_random_seed()
+        except Exception as e:
+            raise TrainingProcessSetupFailed("set_random_seed") from e
+
+    def _do_setup_compute(self) -> None:
+        """Wrapper for _setup_compute step."""
+        try:
+            self._device = self._setup_compute()
+            if self._device is None:
+                raise ValueError("_setup_compute() must return a device")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_compute") from e
+
+    def _do_setup_datasets(self) -> None:
+        """Wrapper for _setup_datasets step."""
+        try:
+            self._training_set, self._validation_set = self._setup_datasets()
+            if self._training_set is None:
+                raise ValueError("_setup_datasets() must return a training set")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_datasets") from e
+
+    def _do_build_model(self) -> None:
+        """Wrapper for _build_model step."""
+        try:
+            self._model = self._build_model()
+            if self._model is None:
+                raise ValueError("_build_model() must return a model")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("build_model") from e
+
+    def _do_build_and_setup_training_model(self) -> None:
+        """Wrapper for _build_training_model and _setup_training_model steps."""
+        try:
+            training_model = self._build_training_model()
+            if training_model is None:
+                raise ValueError("_build_training_model() must return a training model")
+
+            self._training_model = self._setup_training_model(training_model)
+            if self._training_model is None:
+                raise ValueError("_setup_training_model() must return a training model")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("build_and_setup_training_model") from e
+
+    def _do_build_optimizer(self) -> None:
+        """Wrapper for _build_optimizer step."""
+        try:
+            self._optimizer = self._build_optimizer()
+            if self._optimizer is None:
+                raise ValueError("_build_optimizer() must return an optimizer")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("build_optimizer") from e
+
+    def _do_setup_lr_scheduler(self) -> None:
+        """Wrapper for _setup_lr_scheduler step."""
+        try:
+            self._lr_scheduling_func = self._setup_lr_scheduler()
+            # No validation - None is valid (no scheduling)
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_lr_scheduler") from e
+
+    def _do_setup_trainer(self) -> None:
+        """Wrapper for _setup_trainer step."""
+        try:
+            self._trainer = self._setup_trainer()
+            if self._trainer is None:
+                raise ValueError("_setup_trainer() must return a trainer")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_trainer") from e
+
+    def _do_setup_callbacks(self) -> None:
+        """Wrapper for _setup_callbacks step."""
+        try:
+            self._callbacks = self._setup_callbacks()
+            if self._callbacks is None:
+                raise ValueError("_setup_callbacks() must return a list")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_callbacks") from e
+
+    def _do_setup_training_manager(self) -> None:
+        """Wrapper for _setup_training_manager step."""
+        try:
+            self._training_manager = self._setup_training_manager()
+            if self._training_manager is None:
+                raise ValueError("_setup_training_manager() must return a training manager")
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("setup_training_manager") from e
+
+    def _do_prepare_training(self) -> None:
+        """Wrapper for _prepare_training step."""
+        try:
+            self._prepare_training()
+        except TrainingProcessSetupFailed:
+            raise
+        except Exception as e:
+            raise TrainingProcessSetupFailed("prepare_training") from e
