@@ -11,7 +11,7 @@ from typing import Any, Callable
 import torch
 import torch.distributed as dist
 from torch.nn import Module
-from torch.optim import AdamW
+from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 
 import mlpug.pytorch as mlp
@@ -50,6 +50,11 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         super().__init__(rank, num_devices, **kwargs)
 
         self._force_on_cpu = force_on_cpu
+
+        # Narrow types from base class (object | None -> PyTorch types)
+        self._model: Module | None
+        self._training_model: Module | None
+        self._optimizer: Optimizer | None
 
         # Set during _setup_compute()
         self._device: torch.device | None = None
