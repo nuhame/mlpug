@@ -21,6 +21,9 @@ from mlpug.lr_scheduler_configs import (
     DecayType,
 )
 
+# Type alias for LR schedule functions
+LRScheduleFunc = Callable[[int], float]
+
 
 def _cosine_decay(progress: float, min_lr_ratio: float) -> float:
     """
