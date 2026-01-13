@@ -146,7 +146,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         self._training_model: object | None = None
         self._optimizer: object | None = None
         self._lr_scheduling_func: LRScheduleFunc | None = None
-        self._trainer: object | None = None
+        self._trainer: Trainer | None = None
         self._callbacks: list[Callback] | None = None
         self._training_manager: TrainingManager | None = None
 
@@ -305,7 +305,7 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         """
         return []
 
-    def _setup_training_manager(self) -> object:
+    def _setup_training_manager(self) -> TrainingManager:
         """
         Setup MLPug TrainingManager.
 
