@@ -96,7 +96,6 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         else:
             device = self._setup_single_device(cuda_available, mps_available)
 
-        self._device = device
         return device
 
     def _setup_distributed(self, cuda_available: bool) -> torch.device:
@@ -154,7 +153,7 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         return device
 
-    def _build_optimizer(self) -> AdamW:
+    def _build_optimizer(self) -> Optimizer:
         """
         As a default implementation, builds AdamW optimizer with sensible defaults.
 
