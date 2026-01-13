@@ -307,14 +307,17 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
             return
 
         num_iters_per_epoch = self.num_batches_training_set
-        num_warmup_iters = self._args.lr_warmup_epochs*num_iters_per_epoch
-        total_iters = self._args.num_epochs*num_iters_per_epoch
+        total_iters = self._args.num_epochs * num_iters_per_epoch
+        warmup_ratio = self._args.lr_warmup_epochs / self._args.num_epochs
 
-        self._log.info(f"Applying LR warmup schedule: \n"
-                       f"num_warmup_iters = {num_warmup_iters}\n"
-                       f"total_iters      = {total_iters}")
+        self._log.info(f"Applying LR linear decay schedule: \n"
+                       f"total_iters  = {total_iters}\n"
+                       f"warmup_ratio = {warmup_ratio:.3f}")
 
-        self._lr_scheduling_func = mlp.scheduler_funcs.LRWarmupSchedule(num_warmup_iters, total_iters)
+        self._lr_scheduling_func = mlp.scheduler_funcs.LinearDecaySchedule(
+            total_steps=total_iters,
+            warmup_ratio=warmup_ratio,
+        )
 
     @abc.abstractmethod
     def _setup_training_model(self):
