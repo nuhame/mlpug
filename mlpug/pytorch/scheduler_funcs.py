@@ -1,7 +1,30 @@
-from mlpug.scheduler_funcs import LRWarmupSchedule as LRWarmupScheduleBase
+"""
+PyTorch-specific LR schedule implementations.
+
+These add MultiProcessingMixin to ensure only device 0 shows logs in distributed training.
+"""
+from mlpug.scheduler_funcs import (
+    LinearDecaySchedule as LinearDecayScheduleBase,
+    CosineDecaySchedule as CosineDecayScheduleBase,
+    WSDSchedule as WSDScheduleBase,
+    ConstantLRSchedule as ConstantLRScheduleBase,
+    create_lr_schedule,
+)
 
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
-class LRWarmupSchedule(MultiProcessingMixin, LRWarmupScheduleBase):
+class LinearDecaySchedule(MultiProcessingMixin, LinearDecayScheduleBase):
+    pass
+
+
+class CosineDecaySchedule(MultiProcessingMixin, CosineDecayScheduleBase):
+    pass
+
+
+class WSDSchedule(MultiProcessingMixin, WSDScheduleBase):
+    pass
+
+
+class ConstantLRSchedule(MultiProcessingMixin, ConstantLRScheduleBase):
     pass
