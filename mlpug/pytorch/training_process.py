@@ -51,11 +51,6 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         self._force_on_cpu = force_on_cpu
 
-        # Narrow types from base class (object | None -> PyTorch types)
-        self._model: Module | None
-        self._training_model: Module | None
-        self._optimizer: Optimizer | None
-
         # Set during _setup_compute()
         self._device: torch.device | None = None
         self._model_wrapper_func: Callable | None = None
@@ -162,6 +157,10 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         :return: AdamW optimizer.
         """
+        # Assert narrows type from object to Module (base class uses object for
+        # framework independence), and guards against incorrect setup() ordering
+        assert isinstance(self._model, Module)
+
         # Separate parameters into weight decay and no weight decay groups
         decay_params = []
         no_decay_params = []
@@ -232,6 +231,10 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         """
         if self._lr_scheduling_func is None:
             return []
+
+        # Assert narrows type from object to Optimizer (base class uses object for
+        # framework independence), and guards against incorrect setup() ordering
+        assert isinstance(self._optimizer, Optimizer)
 
         # Wrap in tensor for torch.compile compatibility
         # See https://github.com/pytorch/pytorch/issues/120934#issuecomment-1973390203
