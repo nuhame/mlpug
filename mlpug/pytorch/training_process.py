@@ -17,6 +17,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import mlpug.pytorch as mlp
 from mlpug.training_process import TrainingProcess as TrainingProcessBase
 from mlpug.trainers.callbacks.callback import Callback
+from mlpug.trainers.training import Trainer
 from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 
 
@@ -200,7 +201,7 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         return training_model
 
-    def _setup_trainer(self) -> mlp.trainers.Trainer:
+    def _setup_trainer(self) -> Trainer:
         """
         Setup MLPug DefaultTrainer.
 
