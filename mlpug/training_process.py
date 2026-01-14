@@ -324,9 +324,10 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         """
         Final preparation before training starts.
 
-        Override to add custom preparation logic.
+        Sets the training model on the trainer. Override to add custom
+        preparation logic (call super() to preserve this behavior).
         """
-        pass
+        self._trainer.set_training_model(self._training_model)
 
     # -------------------------------------------------------------------------
     # Abstract methods (must implement in derived class)
