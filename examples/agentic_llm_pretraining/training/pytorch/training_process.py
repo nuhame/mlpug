@@ -234,6 +234,7 @@ class NTPTrainingProcess(TrainingProcess):
 
         return NTPTrainModel(
             self._model,
+            device=self._device,
             activation_checkpointing=self._activation_checkpointing,
         )
 

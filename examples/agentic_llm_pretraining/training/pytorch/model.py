@@ -20,6 +20,7 @@ class NTPTrainModel(nn.Module):
 
     :param model: Causal language model (e.g., Qwen3ForCausalLM). Must support
         forward(input_ids, labels, use_cache) and return an object with .loss attribute.
+    :param device: Device to run the model on (e.g., torch.device("cuda")).
     :param activation_checkpointing: Enable gradient checkpointing to reduce
         memory usage at the cost of recomputing activations during backward pass.
     """
@@ -27,10 +28,12 @@ class NTPTrainModel(nn.Module):
     def __init__(
         self,
         model: Module,
+        device: torch.device,
         activation_checkpointing: bool = False,
     ):
         super().__init__()
         self.model = model
+        self.device = device
         self._activation_checkpointing = activation_checkpointing
 
         if activation_checkpointing:
@@ -54,7 +57,9 @@ class NTPTrainModel(nn.Module):
         :return: Dict with 'loss', 'num_samples', and 'auxiliary_results'.
             auxiliary_results contains 'perplexity' computed from the loss.
         """
-        input_ids = batch_data
+        # Move to device and convert to long for embedding layer compatibility
+        # (PyTorch embeddings require Long/Int, not unsigned types like uint32)
+        input_ids = batch_data.to(self.device).long()
 
         # NTP: predict next token, labels are shifted input_ids
         # HuggingFace CausalLM handles the shift internally:
