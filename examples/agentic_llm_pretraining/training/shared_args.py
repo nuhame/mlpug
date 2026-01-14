@@ -6,9 +6,18 @@ Backend-specific arguments (e.g., num_dataloader_workers for PyTorch) are added
 in the respective backend modules.
 """
 import argparse
+import logging
+import os
+
+from basics.logging import get_logger
+
+import mlpug.pytorch as mlp
 
 from examples.shared_args import create_arg_parser as create_base_arg_parser
 from examples.shared_args import describe_config as describe_base_config
+
+mlp.logging.use_fancy_colors()
+module_logger = get_logger(os.path.basename(__file__))
 
 
 def create_arg_parser(
@@ -150,6 +159,7 @@ def describe_config(
     beta1: float,
     beta2: float,
     activation_checkpointing: bool,
+    logger: logging.Logger | None = None,
     **kwargs,
 ) -> None:
     """
@@ -168,13 +178,16 @@ def describe_config(
     :param beta1: AdamW beta1.
     :param beta2: AdamW beta2.
     :param activation_checkpointing: Whether to use gradient checkpointing.
+    :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments passed to base describe_config.
     """
+    if logger is None:
+        logger = module_logger
+
     # Log base config (includes "Configuration:" header)
-    describe_base_config(**kwargs)
+    describe_base_config(logger=logger, **kwargs)
 
     # Log NTP-specific config
-    logger = kwargs["logger"]
     logger.info(f"  train_data_path: {train_data_path}")
     logger.info(f"  val_data_path: {val_data_path}")
     logger.info(f"  model_name: {model_name}")

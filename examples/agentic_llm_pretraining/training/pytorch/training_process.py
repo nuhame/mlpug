@@ -207,7 +207,10 @@ class NTPTrainingProcess(TrainingProcess):
                        f"  max_position_embeddings: {config.max_position_embeddings}")
 
         # Initialize model with random weights (not from pretrained checkpoint)
-        model = AutoModelForCausalLM.from_config(
+        # Wrap in execute_for_primary_device_first because trust_remote_code=True
+        # may trigger downloading model code from HuggingFace
+        model = self.execute_for_primary_device_first(
+            AutoModelForCausalLM.from_config,
             config,
             trust_remote_code=True,
         )
@@ -273,8 +276,22 @@ class NTPTrainingProcess(TrainingProcess):
             return batch_step % self._log_frequency == 0
 
         # Calculate sliding window length for metrics averaging
+        # The sliding window averages metrics over recent batches to smooth noise.
+        # Formula: avg_window_length ≈ log_frequency / 2
+        #
+        # Rationale:
+        # - We log every `log_frequency` batches
+        # - Setting window to ~half the log frequency means:
+        #   - ~50% of batches in each window are new since last log (shows trends)
+        #   - ~50% overlap provides continuity and noise smoothing
+        # - This balances responsiveness to changes vs stability of metrics
+        #
+        # Example: log_frequency=100, batches_per_epoch=1000
+        #   → logs_per_epoch = 10
+        #   → avg_window_length = 1000 / (2 * 10) = 50 batches
         num_batches_per_epoch = self._calculate_batches_per_epoch()
-        avg_window_length = max(1, num_batches_per_epoch // (2 * max(1, num_batches_per_epoch // self._log_frequency)))
+        num_logs_per_epoch = max(1, num_batches_per_epoch // self._log_frequency)
+        avg_window_length = max(1, num_batches_per_epoch // (2 * num_logs_per_epoch))
 
         # Training metrics logger (batch-level)
         callbacks.append(
