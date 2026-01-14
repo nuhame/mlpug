@@ -1,4 +1,14 @@
 import argparse
+import logging
+import os
+from argparse import Namespace
+
+from basics.logging import get_logger
+
+import mlpug.pytorch as mlp
+
+mlp.logging.use_fancy_colors()
+module_logger = get_logger(os.path.basename(__file__))
 
 
 def create_arg_parser(parser=None, description="Train model using MLPug"):
@@ -75,7 +85,7 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
     return parser
 
 
-def describe_args(args, logger):
+def describe_args(args: Namespace, logger: logging.Logger) -> None:
     """
     Log parsed arguments (legacy function for compatibility).
 
@@ -111,7 +121,7 @@ def describe_config(
     eager_mode: bool,
     use_mixed_precision: bool,
     force_on_cpu: bool,
-    logger,
+    logger: logging.Logger | None = None,
     **kwargs,
 ) -> None:
     """
@@ -130,9 +140,12 @@ def describe_config(
     :param eager_mode: Whether to disable torch.compile.
     :param use_mixed_precision: Whether to use AMP.
     :param force_on_cpu: Whether to force CPU training.
-    :param logger: Logger to use.
+    :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments (absorbed, not logged).
     """
+    if logger is None:
+        logger = module_logger
+
     logger.info("Configuration:")
     logger.info(f"  experiment_name: {experiment_name}")
     logger.info(f"  batch_size: {batch_size}")
