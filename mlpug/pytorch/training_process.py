@@ -31,6 +31,12 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
     MLPUG_MODULE = mlp
 
+    # Default AdamW configuration (used in default _build_optimizer)
+    DEFAULT_ADAMW_OPTIMIZER_CONFIG: dict = {
+        "betas": (0.9, 0.999),
+        "eps": 1e-8,
+    }
+
     def __init__(
         self,
         rank: int,
@@ -38,6 +44,7 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         *,
         # PyTorch-specific settings
         force_on_cpu: bool = False,
+        optimizer_config: dict | None = None,
         # Base class params
         **kwargs,
     ):
@@ -45,11 +52,15 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         :param rank: Device rank (0 for single device, 0..N-1 for distributed).
         :param num_devices: Total number of devices.
         :param force_on_cpu: Force CPU even if GPU available.
+        :param optimizer_config: Optional dict of optimizer parameters. The default
+            _build_optimizer uses AdamW and merges this with DEFAULT_OPTIMIZER_CONFIG.
+            Subclasses can use this config however they need.
         :param kwargs: Arguments passed to base TrainingProcess.
         """
         super().__init__(rank, num_devices, **kwargs)
 
         self._force_on_cpu = force_on_cpu
+        self._optimizer_config = optimizer_config
 
         # Set during _setup_compute()
         self._device: torch.device | None = None
@@ -155,6 +166,9 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
         Excludes bias and LayerNorm parameters from weight decay following
         best practices for transformer training.
 
+        Merges DEFAULT_ADAMW_OPTIMIZER_CONFIG with self._optimizer_config,
+        allowing users to override defaults (e.g., betas=(0.9, 0.95) for LLMs).
+
         :return: AdamW optimizer.
         """
         # Assert narrows type from object to Module (base class uses object for
@@ -180,11 +194,16 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
             {"params": no_decay_params, "weight_decay": 0.0},
         ]
 
+        # Merge default config with user-provided config
+        optimizer_config = {
+            **self.DEFAULT_ADAMW_OPTIMIZER_CONFIG,
+            **(self._optimizer_config or {}),
+        }
+
         return AdamW(
             param_groups,
             lr=self._learning_rate,
-            betas=(0.9, 0.999),
-            eps=1e-8,
+            **optimizer_config,
         )
 
     def _setup_training_model(self, training_model: Module) -> Module:

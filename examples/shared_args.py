@@ -76,6 +76,12 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
 
 
 def describe_args(args, logger):
+    """
+    Log parsed arguments (legacy function for compatibility).
+
+    :param args: Parsed argparse namespace.
+    :param logger: Logger to use.
+    """
     logger.info(f"Experiment name: {args.experiment_name}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Micro-batch size (for gradient accumulation): {args.micro_batch_size}")
@@ -92,4 +98,50 @@ def describe_args(args, logger):
     logger.info(f"Force on CPU: {args.force_on_cpu}")
 
     logger.info(f"Remote debug with PyCharm at: {args.remote_debug_ip}")
+
+
+def describe_config(
+    experiment_name: str,
+    batch_size: int,
+    micro_batch_size: int | None,
+    learning_rate: float,
+    num_epochs: int,
+    seed: int,
+    progress_log_period: int,
+    eager_mode: bool,
+    use_mixed_precision: bool,
+    force_on_cpu: bool,
+    logger,
+    **kwargs,
+) -> None:
+    """
+    Log training configuration.
+
+    This function logs the common training arguments. Task-specific describe_config
+    functions should call this and then log their additional arguments.
+
+    :param experiment_name: Experiment name.
+    :param batch_size: Effective batch size per device.
+    :param micro_batch_size: Micro-batch size for gradient accumulation.
+    :param learning_rate: Learning rate.
+    :param num_epochs: Number of training epochs.
+    :param seed: Random seed.
+    :param progress_log_period: Logging frequency in batch steps.
+    :param eager_mode: Whether to disable torch.compile.
+    :param use_mixed_precision: Whether to use AMP.
+    :param force_on_cpu: Whether to force CPU training.
+    :param logger: Logger to use.
+    :param kwargs: Additional arguments (absorbed, not logged).
+    """
+    logger.info("Configuration:")
+    logger.info(f"  experiment_name: {experiment_name}")
+    logger.info(f"  batch_size: {batch_size}")
+    logger.info(f"  micro_batch_size: {micro_batch_size}")
+    logger.info(f"  learning_rate: {learning_rate}")
+    logger.info(f"  num_epochs: {num_epochs}")
+    logger.info(f"  seed: {seed}")
+    logger.info(f"  progress_log_period: {progress_log_period}")
+    logger.info(f"  eager_mode: {eager_mode}")
+    logger.info(f"  use_mixed_precision: {use_mixed_precision}")
+    logger.info(f"  force_on_cpu: {force_on_cpu}")
 

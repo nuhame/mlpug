@@ -1,0 +1,188 @@
+"""
+Shared CLI arguments for NTP training.
+
+This module provides argument parsing for NTP training that is backend-agnostic.
+Backend-specific arguments (e.g., num_dataloader_workers for PyTorch) are added
+in the respective backend modules.
+"""
+import argparse
+
+from examples.shared_args import create_arg_parser as create_base_arg_parser
+from examples.shared_args import describe_config as describe_base_config
+
+
+def create_arg_parser(
+    description: str = "Train a language model from scratch using Next-Token Prediction",
+) -> argparse.ArgumentParser:
+    """
+    Create argument parser for NTP training.
+
+    Extends the base argument parser with NTP-specific arguments.
+    Backend-specific arguments should be added by the backend module.
+
+    :param description: Parser description.
+
+    :return: Configured argument parser.
+    """
+    parser = create_base_arg_parser(description=description)
+
+    # -------------------------------------------------------------------------
+    # Data paths
+    # -------------------------------------------------------------------------
+    parser.add_argument(
+        "--train-data-path",
+        type=str,
+        required=True,
+        help="Path to tokenized training data directory (must contain Data Forager index)",
+    )
+
+    parser.add_argument(
+        "--val-data-path",
+        type=str,
+        required=False,
+        default=None,
+        help="Path to tokenized validation data directory (optional)",
+    )
+
+    # -------------------------------------------------------------------------
+    # Model configuration
+    # -------------------------------------------------------------------------
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        required=False,
+        default="Qwen/Qwen3-1.7B-Base",
+        help="HuggingFace model name for architecture config (default: Qwen/Qwen3-1.7B-Base)",
+    )
+
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        required=False,
+        default="../trained-models",
+        help="Directory for saving model checkpoints",
+    )
+
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        required=False,
+        default="../training-logs",
+        help="Directory for training logs (TensorBoard)",
+    )
+
+    # -------------------------------------------------------------------------
+    # LR scheduler configuration
+    # -------------------------------------------------------------------------
+    parser.add_argument(
+        "--warmup-ratio",
+        type=float,
+        required=False,
+        default=0.1,
+        help="Fraction of total steps for LR warmup (default: 0.1 = 10%%)",
+    )
+
+    parser.add_argument(
+        "--min-lr-ratio",
+        type=float,
+        required=False,
+        default=0.01,
+        help="Minimum LR as fraction of peak LR at end of training (default: 0.01 = 1%%)",
+    )
+
+    # -------------------------------------------------------------------------
+    # Optimizer configuration
+    # -------------------------------------------------------------------------
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        required=False,
+        default=0.1,
+        help="Weight decay for AdamW (default: 0.1, typical for LLM pretraining)",
+    )
+
+    parser.add_argument(
+        "--beta1",
+        type=float,
+        required=False,
+        default=0.9,
+        help="AdamW beta1 parameter (default: 0.9)",
+    )
+
+    parser.add_argument(
+        "--beta2",
+        type=float,
+        required=False,
+        default=0.95,
+        help="AdamW beta2 parameter (default: 0.95, lower than default for LLM stability)",
+    )
+
+    # -------------------------------------------------------------------------
+    # Performance options
+    # -------------------------------------------------------------------------
+    parser.add_argument(
+        "--activation-checkpointing",
+        action="store_true",
+        help="Enable gradient checkpointing to reduce memory at cost of speed",
+    )
+
+    # Override defaults from base parser for LLM training
+    parser.set_defaults(
+        batch_size=32,
+        learning_rate=3e-4,
+        num_epochs=1,
+        seed=42,
+        progress_log_period=100,
+    )
+
+    return parser
+
+
+def describe_config(
+    train_data_path: str,
+    val_data_path: str | None,
+    model_name: str,
+    checkpoint_dir: str,
+    log_dir: str,
+    warmup_ratio: float,
+    min_lr_ratio: float,
+    weight_decay: float,
+    beta1: float,
+    beta2: float,
+    activation_checkpointing: bool,
+    **kwargs,
+) -> None:
+    """
+    Log NTP training configuration.
+
+    Calls the base describe_config and adds NTP-specific arguments.
+
+    :param train_data_path: Path to tokenized training data.
+    :param val_data_path: Path to tokenized validation data.
+    :param model_name: HuggingFace model name.
+    :param checkpoint_dir: Directory for checkpoints.
+    :param log_dir: Directory for logs.
+    :param warmup_ratio: LR warmup ratio.
+    :param min_lr_ratio: Minimum LR ratio.
+    :param weight_decay: Weight decay.
+    :param beta1: AdamW beta1.
+    :param beta2: AdamW beta2.
+    :param activation_checkpointing: Whether to use gradient checkpointing.
+    :param kwargs: Additional arguments passed to base describe_config.
+    """
+    # Log base config (includes "Configuration:" header)
+    describe_base_config(**kwargs)
+
+    # Log NTP-specific config
+    logger = kwargs["logger"]
+    logger.info(f"  train_data_path: {train_data_path}")
+    logger.info(f"  val_data_path: {val_data_path}")
+    logger.info(f"  model_name: {model_name}")
+    logger.info(f"  checkpoint_dir: {checkpoint_dir}")
+    logger.info(f"  log_dir: {log_dir}")
+    logger.info(f"  warmup_ratio: {warmup_ratio}")
+    logger.info(f"  min_lr_ratio: {min_lr_ratio}")
+    logger.info(f"  weight_decay: {weight_decay}")
+    logger.info(f"  beta1: {beta1}")
+    logger.info(f"  beta2: {beta2}")
+    logger.info(f"  activation_checkpointing: {activation_checkpointing}")
