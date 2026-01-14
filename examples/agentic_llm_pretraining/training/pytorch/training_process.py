@@ -340,7 +340,7 @@ class NTPTrainingProcess(TrainingProcess):
             callbacks.append(
                 mlp.callbacks.CheckpointManager(
                     base_checkpoint_filename=self._experiment_name,
-                    checkpoint_base_path=str(checkpoint_path),
+                    checkpoints_path=str(checkpoint_path),
                     batch_level=False,  # monitor per epoch
                     metric_to_monitor="validation.dataset.loss" if self._validation_set else None,
                     metric_monitor_period=1,  # check every epoch
