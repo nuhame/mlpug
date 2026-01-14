@@ -5,6 +5,8 @@ Provides thin wrappers around Data Forager datasets that inherit from
 torch.utils.data.Dataset for proper type compatibility with PyTorch's
 DataLoader and DistributedSampler.
 """
+import numpy as np
+
 from torch.utils.data import Dataset as TorchDataset
 
 from data_forager.datasets.tokens import TokensDataset
@@ -25,15 +27,19 @@ class PyTorchTokensDataset(TorchDataset):
         super().__init__()
         self._dataset = tokens_dataset
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> np.ndarray:
         """
         Get a sample by index.
+
+        Returns a copy of the token array. The copy is necessary because the
+        underlying TokensDataset returns memory-mapped arrays (read-only),
+        and PyTorch requires writable tensors.
 
         :param idx: Sample index.
 
         :return: Token IDs as numpy array of shape (context_length,).
         """
-        return self._dataset[idx]
+        return self._dataset[idx].copy()
 
     def __len__(self) -> int:
         """
