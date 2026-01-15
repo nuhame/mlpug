@@ -14,7 +14,7 @@ from mlpug.debugging import enable_pycharm_remote_debugging
 from examples.persona_chatbot.training_process import TrainingProcess as TrainingProcessBase
 from examples.persona_chatbot.pytorch.collation import BatchCollator
 
-from examples.persona_chatbot.pytorch.shared_args import create_arg_parser, describe_args
+from examples.persona_chatbot.pytorch.shared_args import create_arg_parser, describe_config
 
 module_logger = get_logger(os.path.basename(__file__))
 
@@ -376,7 +376,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    describe_args(args, logger)
+    describe_config(**vars(args), logger=logger)
 
     if args.remote_debug_ip:
         enable_pycharm_remote_debugging(args.remote_debug_ip)
