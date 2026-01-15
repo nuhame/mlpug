@@ -135,6 +135,12 @@ def create_arg_parser(
         help="Enable gradient checkpointing to reduce memory at cost of speed",
     )
 
+    parser.add_argument(
+        "--no-liger-kernel",
+        action="store_true",
+        help="Disable Liger Kernel (enabled by default for memory-efficient cross-entropy)",
+    )
+
     # Override defaults from base parser for LLM training
     parser.set_defaults(
         batch_size=32,
@@ -159,6 +165,7 @@ def describe_config(
     beta1: float,
     beta2: float,
     activation_checkpointing: bool,
+    no_liger_kernel: bool,
     logger: logging.Logger | None = None,
     **kwargs,
 ) -> None:
@@ -178,6 +185,7 @@ def describe_config(
     :param beta1: AdamW beta1.
     :param beta2: AdamW beta2.
     :param activation_checkpointing: Whether to use gradient checkpointing.
+    :param no_liger_kernel: Whether Liger Kernel is disabled.
     :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments passed to base describe_config.
     """
@@ -199,3 +207,4 @@ def describe_config(
     logger.info(f"  beta1: {beta1}")
     logger.info(f"  beta2: {beta2}")
     logger.info(f"  activation_checkpointing: {activation_checkpointing}")
+    logger.info(f"  use_liger_kernel: {not no_liger_kernel}")

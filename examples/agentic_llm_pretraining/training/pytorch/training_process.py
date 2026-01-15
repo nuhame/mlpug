@@ -17,6 +17,14 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from transformers import AutoConfig, AutoModelForCausalLM, PreTrainedModel
 
+# Optional: Liger Kernel for memory-efficient cross-entropy
+# See docs/liger-kernel-memory-efficient-cross-entropy.md for details
+try:
+    from liger_kernel.transformers import apply_liger_kernel_to_qwen3
+    LIGER_KERNEL_AVAILABLE = True
+except ImportError:
+    LIGER_KERNEL_AVAILABLE = False
+
 import mlpug.pytorch as mlp
 from mlpug.pytorch.training_process import TrainingProcess
 from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
@@ -70,6 +78,9 @@ class NTPTrainingProcess(TrainingProcess):
     :param val_data_path: Path to tokenized validation data directory (must contain
         a Data Forager index created by tokenize_dataset.py).
     :param model_name: HuggingFace model name for config (default: Qwen/Qwen3-1.7B-Base).
+    :param use_liger_kernel: Enable Liger Kernel for memory-efficient cross-entropy.
+        Reduces logits memory by ~97% by fusing linear + cross-entropy computation.
+        Requires liger-kernel package: pip install liger-kernel
     :param checkpoint_dir: Directory for saving checkpoints.
     :param log_dir: Directory for training logs.
     :param kwargs: Additional arguments passed to base TrainingProcess.
@@ -84,6 +95,7 @@ class NTPTrainingProcess(TrainingProcess):
         train_data_path: str,
         val_data_path: str | None = None,
         model_name: str = DEFAULT_MODEL_NAME,
+        use_liger_kernel: bool = True,
         checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR,
         log_dir: str = DEFAULT_LOG_DIR,
         # Base class parameters with NTP-specific defaults
@@ -106,6 +118,7 @@ class NTPTrainingProcess(TrainingProcess):
         self._train_data_path = train_data_path
         self._val_data_path = val_data_path
         self._model_name = model_name
+        self._use_liger_kernel = use_liger_kernel
         self._checkpoint_dir = checkpoint_dir
         self._log_dir = log_dir
 
@@ -193,6 +206,18 @@ class NTPTrainingProcess(TrainingProcess):
         :return: Initialized model.
         """
         self._log.info(f"Initializing model from config: {self._model_name}")
+
+        # Apply Liger Kernel patches if requested
+        if self._use_liger_kernel:
+            if LIGER_KERNEL_AVAILABLE:
+                self._log.info("Applying Liger Kernel patches for memory-efficient cross-entropy")
+                # Patch must happen BEFORE model creation
+                apply_liger_kernel_to_qwen3(fused_linear_cross_entropy=True)
+            else:
+                self._log.warning(
+                    "Liger Kernel requested but not available. "
+                    "Install with: pip install liger-kernel"
+                )
 
         # Load config from HuggingFace (architecture parameters only)
         config = self.execute_for_primary_device_first(

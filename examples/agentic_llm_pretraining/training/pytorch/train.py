@@ -90,6 +90,9 @@ def main() -> None:
     # Map progress_log_period to log_frequency (TrainingProcess parameter name)
     config["log_frequency"] = config.pop("progress_log_period")
 
+    # Convert no_liger_kernel to use_liger_kernel (enabled by default)
+    config["use_liger_kernel"] = not config.pop("no_liger_kernel")
+
     # Remove args that aren't TrainingProcess parameters
     config.pop("remote_debug_ip", None)
     config.pop("distributed", None)
