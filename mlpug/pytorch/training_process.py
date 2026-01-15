@@ -238,6 +238,8 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
             batch_size=self._batch_size,
             micro_batch_size=self._micro_batch_size,
             use_mixed_precision=self._use_mixed_precision,
+            autocast_dtype=self._autocast_dtype,
+            use_loss_scaling=self._use_loss_scaling,
             eager_mode=self._eager_mode,
             **custom_config,
         )

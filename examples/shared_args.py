@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-from argparse import Namespace
 
 from basics.logging import get_logger
 
@@ -44,7 +43,23 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
     parser.add_argument(
         '--use-mixed-precision',
         action='store_true',
-        help='When flag is set, mixed precision will be applied during training')
+        help='When flag is set, mixed precision will be applied during training (float16 + loss scaling)')
+
+    parser.add_argument(
+        '--autocast-dtype',
+        type=str,
+        required=False,
+        default=None,
+        choices=['float16', 'bfloat16'],
+        help='Dtype for autocast mixed precision. When set, enables mixed precision with '
+             'the specified dtype. bfloat16 does not require loss scaling.')
+
+    parser.add_argument(
+        '--no-loss-scaling',
+        action='store_true',
+        dest='no_loss_scaling',
+        help='Explicitly disable loss/gradient scaling. By default, loss scaling '
+             'is auto-detected: enabled for float16, disabled for bfloat16.')
 
     parser.add_argument(
         '--batch-size',
@@ -85,31 +100,6 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
     return parser
 
 
-def describe_args(args: Namespace, logger: logging.Logger) -> None:
-    """
-    Log parsed arguments (legacy function for compatibility).
-
-    :param args: Parsed argparse namespace.
-    :param logger: Logger to use.
-    """
-    logger.info(f"Experiment name: {args.experiment_name}")
-    logger.info(f"Batch size: {args.batch_size}")
-    logger.info(f"Micro-batch size (for gradient accumulation): {args.micro_batch_size}")
-    logger.info(f"Learning rate: {args.learning_rate}")
-    logger.info(f"Progress log period: {args.progress_log_period}")
-    logger.info(f"Num. training epochs: {args.num_epochs}")
-    logger.info(f"Random seed: {args.seed}")
-    logger.info(f"Distributed: {args.distributed}")
-    logger.info(f"Eager mode (no graph compilation): {args.eager_mode}")
-    logger.info(f"Use mixed precision: {args.use_mixed_precision}")
-
-    num_devices_str = args.num_devices if args.num_devices is not None and args.num_devices > 0 else "Use all available"
-    logger.info(f"Number of computing devices: {num_devices_str}")
-    logger.info(f"Force on CPU: {args.force_on_cpu}")
-
-    logger.info(f"Remote debug with PyCharm at: {args.remote_debug_ip}")
-
-
 def describe_config(
     experiment_name: str,
     batch_size: int,
@@ -120,6 +110,8 @@ def describe_config(
     progress_log_period: int,
     eager_mode: bool,
     use_mixed_precision: bool,
+    autocast_dtype: str | None,
+    no_loss_scaling: bool,
     force_on_cpu: bool,
     logger: logging.Logger | None = None,
     **kwargs,
@@ -138,7 +130,9 @@ def describe_config(
     :param seed: Random seed.
     :param progress_log_period: Logging frequency in batch steps.
     :param eager_mode: Whether to disable torch.compile.
-    :param use_mixed_precision: Whether to use AMP.
+    :param use_mixed_precision: Whether to use AMP (convenience flag for float16 + scaling).
+    :param autocast_dtype: Dtype for autocast mixed precision.
+    :param no_loss_scaling: Whether to disable loss/gradient scaling.
     :param force_on_cpu: Whether to force CPU training.
     :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments (absorbed, not logged).
@@ -156,5 +150,7 @@ def describe_config(
     logger.info(f"  progress_log_period: {progress_log_period}")
     logger.info(f"  eager_mode: {eager_mode}")
     logger.info(f"  use_mixed_precision: {use_mixed_precision}")
+    logger.info(f"  autocast_dtype: {autocast_dtype}")
+    logger.info(f"  no_loss_scaling: {no_loss_scaling}")
     logger.info(f"  force_on_cpu: {force_on_cpu}")
 

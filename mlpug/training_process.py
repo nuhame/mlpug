@@ -80,7 +80,9 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         experiment_name: str = "training",
         log_frequency: int = 30,
         # Hardware settings
-        use_mixed_precision: bool = True,
+        use_mixed_precision: bool = False,
+        autocast_dtype: str | None = None,
+        use_loss_scaling: bool | None = None,
         eager_mode: bool = False,
         activation_checkpointing: bool = False,
         num_dataloader_workers: int = 2,
@@ -101,7 +103,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :param lr_scheduler_config: LR scheduler configuration. None for no scheduling.
         :param experiment_name: Name for logging and checkpoints.
         :param log_frequency: Log every N batches.
-        :param use_mixed_precision: Enable automatic mixed precision.
+        :param use_mixed_precision: Convenience flag for mixed precision. When True and
+            autocast_dtype is None, defaults to 'float16' with loss scaling enabled.
+        :param autocast_dtype: Dtype for autocast (e.g., 'float16', 'bfloat16'). When set,
+            enables mixed precision with the specified dtype.
+        :param use_loss_scaling: Whether to use loss/gradient scaling. If None, auto-
+            detected based on autocast_dtype: True for 'float16', False otherwise.
         :param eager_mode: Disable graph compilation (if applicable).
         :param activation_checkpointing: Enable gradient checkpointing.
         :param num_dataloader_workers: Number of DataLoader workers.
@@ -131,6 +138,8 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
 
         # Hardware settings
         self._use_mixed_precision = use_mixed_precision
+        self._autocast_dtype = autocast_dtype
+        self._use_loss_scaling = use_loss_scaling
         self._eager_mode = eager_mode
         self._activation_checkpointing = activation_checkpointing
         self._num_dataloader_workers = num_dataloader_workers

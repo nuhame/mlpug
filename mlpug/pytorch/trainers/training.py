@@ -20,6 +20,13 @@ from mlpug.pytorch.utils import SlidingWindow
 from mlpug.pytorch.multi_processing import MultiProcessingMixin
 
 
+# Mapping from dtype name strings to PyTorch dtype objects
+AUTOCAST_DTYPE_MAP: Dict[str, torch.dtype] = {
+    'float16': torch.float16,
+    'bfloat16': torch.bfloat16,
+}
+
+
 class TrainingManager(MultiProcessingMixin, TrainingManagerBase):
     def __init__(self, *args, sliding_window_factory=SlidingWindow, **kwargs):
         super().__init__(*args, sliding_window_factory=sliding_window_factory, **kwargs)
@@ -60,24 +67,24 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
     def __init__(
             self,
             *args,
-            scaler=None,
-            amp_init_scale: int = 2**10,
+            grad_scaler=None,
+            grad_scaler_init_scale: int = 2**10,
             compile_kwargs: Optional[Dict] = None,
             name="DefaultTrainer",
             **kwargs
     ):
         super().__init__(*args, name=name, **kwargs)
 
-        self._scaler = scaler
+        self._grad_scaler = grad_scaler
 
-        if self.use_mixed_precision:
-            if scaler is None:
-                self._log.debug("Creating default scaler instance for automatic mixed precision ...")
+        if self._use_loss_scaling:
+            if grad_scaler is None:
+                self._log.debug("Creating default GradScaler instance for loss scaling...")
                 # Default 65536 causes overflow on some platforms (e.g., ROCm 7.1.1)
                 # Lower initial scale (1024) provides better stability
-                self._scaler = torch.amp.GradScaler('cuda', init_scale=amp_init_scale)
+                self._grad_scaler = torch.amp.GradScaler('cuda', init_scale=grad_scaler_init_scale)
 
-            self._log.info(f"Using scalar instance for automatic mixed precision : {self._scaler}")
+            self._log.info(f"Using GradScaler for loss scaling: {self._grad_scaler}")
 
         self.no_grad_sync_available = False
 
@@ -86,12 +93,33 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         self._training_step_func = None
         self._optimizer_step_funcs = {}
 
-        # Validate: AMP with multiple optimizers is not supported
-        if self.use_mixed_precision and len(self.get_optimizers()) > 1:
+        # Validate: Loss scaling with multiple optimizers is not supported
+        if self._use_loss_scaling and len(self.get_optimizers()) > 1:
             raise ValueError(
-                "Mixed precision (AMP) with multiple optimizers is not supported. "
+                "Loss scaling with multiple optimizers is not supported. "
                 "GradScaler tracking requires a single optimizer."
             )
+
+    def _get_dtype(self, dtype_name: Optional[str]) -> Optional[torch.dtype]:
+        """
+        Convert dtype name string to PyTorch dtype.
+
+        :param dtype_name: Dtype name (e.g., 'float16', 'bfloat16') or None.
+
+        :return: PyTorch dtype object, or None if dtype_name is None.
+
+        :raises ValueError: If dtype_name is not supported.
+        """
+        if dtype_name is None:
+            return None
+
+        if dtype_name not in AUTOCAST_DTYPE_MAP:
+            raise ValueError(
+                f"Unsupported autocast dtype '{dtype_name}'. "
+                f"Supported: {list(AUTOCAST_DTYPE_MAP.keys())}"
+            )
+
+        return AUTOCAST_DTYPE_MAP[dtype_name]
 
     def _apply_model_wrapper_func(self, model):
         """
@@ -164,10 +192,10 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
 
     def evaluate_loss(self, batch_data, inference_mode, evaluate_settings=None):
 
-        if self.use_mixed_precision:
+        if self._autocast_dtype is not None:
             self._activate_inference_mode(inference_mode)
 
-            with autocast('cuda'):
+            with autocast('cuda', dtype=self._autocast_dtype):
                 results = self._evaluate_loss(batch_data, evaluate_settings, inference_mode)
 
                 return self.normalize_evaluation(results)
@@ -250,8 +278,8 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         """
         Setup optimizer step functions for all optimizers.
 
-        For AMP: wraps scaler.step(optimizer)
-        For non-AMP: uses optimizer.step
+        With GradScaler: wraps scaler.step(optimizer)
+        Without GradScaler: uses optimizer.step
 
         If not in eager mode, applies torch.compile with fullgraph=False
         to allow graph breaks at control flow points (e.g., inf/nan checking in GradScaler).
@@ -262,8 +290,8 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
             return step
 
         for name, optimizer in self.get_optimizers().items():
-            if self.use_mixed_precision:
-                step_func = make_scaler_step(optimizer, self._scaler)
+            if self._grad_scaler is not None:
+                step_func = make_scaler_step(optimizer, self._grad_scaler)
             else:
                 step_func = optimizer.step
 
@@ -328,8 +356,8 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         return nullcontext()
 
     def _back_propagate_from(self, loss):
-        if self.use_mixed_precision:
-            self._scaler.scale(loss).backward()
+        if self._grad_scaler is not None:
+            self._grad_scaler.scale(loss).backward()
         else:
             loss.backward()
 
@@ -342,11 +370,11 @@ class DefaultTrainerMixin(PTTrainerMixin, DefaultTrainerBase):
         for name in self.get_optimizers().keys():
             self._optimizer_step_funcs[name]()
 
-        # AMP scale tracking (single optimizer enforced in __init__)
-        if self.use_mixed_precision:
-            old_scale = self._scaler.get_scale()
-            self._scaler.update()
-            new_scale = self._scaler.get_scale()
+        # GradScaler scale tracking (single optimizer enforced in __init__)
+        if self._grad_scaler is not None:
+            old_scale = self._grad_scaler.get_scale()
+            self._grad_scaler.update()
+            new_scale = self._grad_scaler.get_scale()
 
             did_update = new_scale >= old_scale
             if not did_update:
