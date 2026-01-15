@@ -51,15 +51,9 @@ def create_arg_parser(parser=None, description="Train model using MLPug"):
         required=False,
         default=None,
         choices=['float16', 'bfloat16'],
-        help='Dtype for autocast mixed precision. When set, enables mixed precision with '
-             'the specified dtype. bfloat16 does not require loss scaling.')
-
-    parser.add_argument(
-        '--no-loss-scaling',
-        action='store_true',
-        dest='no_loss_scaling',
-        help='Explicitly disable loss/gradient scaling. By default, loss scaling '
-             'is auto-detected: enabled for float16, disabled for bfloat16.')
+        help='Dtype for autocast mixed precision. When set, enables autocasting to '
+             'the specified dtype WITHOUT loss scaling. Use --use-mixed-precision '
+             'for float16 with loss scaling.')
 
     parser.add_argument(
         '--batch-size',
@@ -111,7 +105,6 @@ def describe_config(
     eager_mode: bool,
     use_mixed_precision: bool,
     autocast_dtype: str | None,
-    no_loss_scaling: bool,
     force_on_cpu: bool,
     logger: logging.Logger | None = None,
     **kwargs,
@@ -130,9 +123,8 @@ def describe_config(
     :param seed: Random seed.
     :param progress_log_period: Logging frequency in batch steps.
     :param eager_mode: Whether to disable torch.compile.
-    :param use_mixed_precision: Whether to use AMP (convenience flag for float16 + scaling).
-    :param autocast_dtype: Dtype for autocast mixed precision.
-    :param no_loss_scaling: Whether to disable loss/gradient scaling.
+    :param use_mixed_precision: Whether to use AMP (float16 + loss scaling).
+    :param autocast_dtype: Dtype for autocast (without loss scaling).
     :param force_on_cpu: Whether to force CPU training.
     :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments (absorbed, not logged).
@@ -151,6 +143,5 @@ def describe_config(
     logger.info(f"  eager_mode: {eager_mode}")
     logger.info(f"  use_mixed_precision: {use_mixed_precision}")
     logger.info(f"  autocast_dtype: {autocast_dtype}")
-    logger.info(f"  no_loss_scaling: {no_loss_scaling}")
     logger.info(f"  force_on_cpu: {force_on_cpu}")
 

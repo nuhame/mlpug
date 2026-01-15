@@ -71,11 +71,10 @@ def main() -> None:
     if rank == 0:
         describe_config(**config, logger=module_logger)
 
-    # Convert no_loss_scaling flag to use_loss_scaling parameter for TrainingProcess
-    # no_loss_scaling=True → use_loss_scaling=False (explicitly disabled)
-    # no_loss_scaling=False → use_loss_scaling=None (auto-detect)
-    no_loss_scaling = config.pop("no_loss_scaling", False)
-    config["use_loss_scaling"] = False if no_loss_scaling else None
+    # use_loss_scaling is derived from use_mixed_precision
+    # --use-mixed-precision → float16 + loss scaling
+    # --autocast-dtype X (without --use-mixed-precision) → autocast only, no scaling
+    config["use_loss_scaling"] = config["use_mixed_precision"]
 
     # Create LR scheduler config from CLI args
     lr_scheduler_config = CosineDecayConfig(
