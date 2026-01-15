@@ -1,5 +1,6 @@
+import logging
+
 from examples.shared_args import create_arg_parser as create_base_arg_parser
-# TODO: Update to use describe_config instead of describe_args
 from examples.shared_args import describe_config as describe_base_config
 
 
@@ -79,25 +80,54 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
     return parser
 
 
-def describe_args(args, logger):
-    logger.info(f"Pre-trained model name: {args.pretrained_model}")
+def describe_config(
+    pretrained_model: str,
+    max_conversations: int | None,
+    num_choices: int | None,
+    sequence_length_outlier_threshold: float,
+    force_generate_samples: bool,
+    lr_warmup_schedule: bool,
+    lr_warmup_epochs: int,
+    weight_decay: float,
+    dropout_rate: float,
+    lm_loss_weight: float,
+    activation_checkpointing: bool,
+    describe_logs_object: bool,
+    inspect_sliding_windows: bool,
+    logger: logging.Logger | None = None,
+    **kwargs,
+) -> None:
+    """
+    Log persona chatbot training configuration.
 
-    logger.info(f"Max. num. conversations to use (None = all): {args.max_conversations}")
-    logger.info(f"Num. of reply choices : {args.num_choices}")
+    :param pretrained_model: HuggingFace pre-trained model name.
+    :param max_conversations: Max conversations to use (None = all).
+    :param num_choices: Number of reply choices.
+    :param sequence_length_outlier_threshold: Fraction of samples to discard.
+    :param force_generate_samples: Force regenerate samples.
+    :param lr_warmup_schedule: Use LR warmup schedule.
+    :param lr_warmup_epochs: LR warmup epochs.
+    :param weight_decay: Weight decay.
+    :param dropout_rate: Dropout rate.
+    :param lm_loss_weight: LM loss weight.
+    :param activation_checkpointing: Enable activation checkpointing.
+    :param describe_logs_object: Log description of logs object.
+    :param inspect_sliding_windows: Inspect sliding metric windows.
+    :param logger: Logger to use.
+    :param kwargs: Additional arguments passed to base describe_config.
+    """
+    describe_base_config(logger=logger, **kwargs)
 
-    logger.info(f"Force (re)generate multiple choice conversation samples: {args.force_generate_samples}")
-
-    logger.info(f"Fraction of samples to discard to reduce max. sequence length: "
-                f"{args.sequence_length_outlier_threshold}")
-
-    logger.info(f"Use LR warmup schedule: {args.lr_warmup_schedule}")
-    logger.info(f"LR warmup epochs (if warmup LR schedule used): {args.lr_warmup_epochs}")
-
-    describe_base_config(logger=logger, **vars(args))
-
-    logger.info(f"Weight decay: {args.weight_decay}")
-    logger.info(f"Dropout rate: {args.dropout_rate}")
-    logger.info(f"Weight of LM loss on complete loss: {args.lm_loss_weight}")
-    logger.info(f"Activation checkpointing: {args.activation_checkpointing}")
-    logger.info(f"Log a description of logs object: {args.describe_logs_object}")
-    logger.info(f"Inspect sliding metric windows: {args.inspect_sliding_windows}")
+    logger.info(f"  pretrained_model: {pretrained_model}")
+    logger.info(f"  max_conversations: {max_conversations}")
+    logger.info(f"  num_choices: {num_choices}")
+    logger.info(f"  sequence_length_outlier_threshold: {sequence_length_outlier_threshold}")
+    logger.info(f"  force_generate_samples: {force_generate_samples}")
+    logger.info(f"  lr_warmup_schedule: {lr_warmup_schedule}")
+    logger.info(f"  lr_warmup_epochs: {lr_warmup_epochs}")
+    logger.info(f"  weight_decay: {weight_decay}")
+    logger.info(f"  dropout_rate: {dropout_rate}")
+    logger.info(f"  lm_loss_weight: {lm_loss_weight}")
+    logger.info(f"  activation_checkpointing: {activation_checkpointing}")
+    logger.info(f"  describe_logs_object: {describe_logs_object}")
+    logger.info(f"  inspect_sliding_windows: {inspect_sliding_windows}")

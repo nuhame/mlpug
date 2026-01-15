@@ -17,7 +17,7 @@ from mlpug.debugging import enable_pycharm_remote_debugging
 
 from basics.logging import get_logger
 
-from examples.fashion_mnist.shared_args import create_arg_parser, describe_args
+from examples.fashion_mnist.shared_args import create_arg_parser, describe_config
 
 
 def load_data():
@@ -307,7 +307,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    describe_args(args, logger)
+    describe_config(**vars(args), logger=logger)
 
     # ############## TRAIN MODEL ##############
     if args.distributed:

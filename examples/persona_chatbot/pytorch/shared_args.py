@@ -1,5 +1,7 @@
+import logging
+
 from examples.persona_chatbot.shared_args import create_arg_parser as create_base_arg_parser
-from examples.persona_chatbot.shared_args import describe_args as describe_base_args
+from examples.persona_chatbot.shared_args import describe_config as describe_base_config
 
 
 def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using PyTorch"):
@@ -13,7 +15,18 @@ def create_arg_parser(description="Finetune GPT2 as persona aware chatbot using 
     return parser
 
 
-def describe_args(args, logger):
-    logger.info(f"Num. dataloader workers: {args.num_dataloader_workers}")
+def describe_config(
+    num_dataloader_workers: int,
+    logger: logging.Logger | None = None,
+    **kwargs,
+) -> None:
+    """
+    Log PyTorch persona chatbot training configuration.
 
-    describe_base_args(args, logger)
+    :param num_dataloader_workers: Number of dataloader workers.
+    :param logger: Logger to use.
+    :param kwargs: Additional arguments passed to base describe_config.
+    """
+    describe_base_config(logger=logger, **kwargs)
+
+    logger.info(f"  num_dataloader_workers: {num_dataloader_workers}")
