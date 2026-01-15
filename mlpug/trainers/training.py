@@ -1,7 +1,7 @@
 import os
 import sys
 import abc
-from typing import Optional, Union, Dict, Tuple, List
+from typing import Any, Optional, Union, Dict, Tuple, List
 
 import math
 import time
@@ -1180,7 +1180,9 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
                  batch_size: Optional[int] = None,
                  micro_batch_size: Optional[int] = None,
                  eager_mode: bool = False,
-                 use_mixed_precision=False,
+                 use_mixed_precision: bool = False,
+                 autocast_dtype: Optional[str] = None,
+                 use_loss_scaling: Optional[bool] = None,
                  name="DefaultTrainer",
                  **kwargs):
         """
@@ -1202,7 +1204,12 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
             This is the memory unit - what fits in AI accelerator (e.g. GPU) memory.
             If micro_batch_size is provided without batch_size, a ValueError is raised.
         :param eager_mode: If True, the training step is not compiled
-        :param use_mixed_precision: If True, Float16/Float32 mixed precision is applied.
+        :param use_mixed_precision: Convenience flag for mixed precision. When True and
+            autocast_dtype is None, defaults to 'float16' with loss scaling enabled.
+        :param autocast_dtype: Dtype for autocast (e.g., 'float16', 'bfloat16'). Framework-
+            specific _get_dtype() validates and converts to native dtype.
+        :param use_loss_scaling: Whether to use loss/gradient scaling. If None, auto-detected
+            based on autocast_dtype: True for 'float16', False otherwise.
         """
 
         model_components = convert_to_dict("model", model_components)
@@ -1230,11 +1237,76 @@ class DefaultTrainer(Trainer, metaclass=abc.ABCMeta):
         # TODO: add property getters, disable setting
         self.eager_mode = eager_mode
 
-        self.use_mixed_precision = use_mixed_precision
-        if self.use_mixed_precision:
-            self._log.info(f"Will train using mixed precision.")
+        # Mixed precision configuration
+        self._autocast_dtype, self._use_loss_scaling = self._resolve_mixed_precision(
+            use_mixed_precision, autocast_dtype, use_loss_scaling
+        )
 
         self.training_model = None
+
+    def _resolve_mixed_precision(
+        self,
+        use_mixed_precision: bool,
+        autocast_dtype: Optional[str],
+        use_loss_scaling: Optional[bool],
+    ) -> Tuple[Any, bool]:
+        """
+        Resolve mixed precision configuration from the three input parameters.
+
+        :param use_mixed_precision: Convenience flag (True = float16 + loss scaling)
+        :param autocast_dtype: Explicit dtype string or None
+        :param use_loss_scaling: Explicit loss scaling flag or None (auto-detect)
+
+        :return: Tuple of (framework_dtype, use_loss_scaling)
+        """
+        # Resolve autocast_dtype
+        if use_mixed_precision and autocast_dtype is None:
+            autocast_dtype = 'float16'
+            self._log.info(
+                "use_mixed_precision=True, defaulting autocast_dtype to 'float16'"
+            )
+
+        # Resolve use_loss_scaling
+        if use_mixed_precision:
+            if use_loss_scaling is False:
+                raise ValueError(
+                    "use_mixed_precision=True requires use_loss_scaling=True (or None). "
+                    "Set use_mixed_precision=False if you don't want loss scaling."
+                )
+            use_loss_scaling = True
+        elif use_loss_scaling is None:
+            # Auto-detect based on dtype
+            use_loss_scaling = (autocast_dtype == 'float16')
+            if autocast_dtype is not None:
+                self._log.info(
+                    f"use_loss_scaling auto-detected as {use_loss_scaling} "
+                    f"(based on autocast_dtype='{autocast_dtype}')"
+                )
+
+        # Convert to framework-specific dtype
+        framework_dtype = self._get_dtype(autocast_dtype)
+
+        # Log final configuration
+        if framework_dtype is not None:
+            self._log.info(
+                f"Mixed precision enabled: autocast_dtype='{autocast_dtype}', "
+                f"use_loss_scaling={use_loss_scaling}"
+            )
+
+        return framework_dtype, use_loss_scaling
+
+    @abc.abstractmethod
+    def _get_dtype(self, dtype_name: Optional[str]) -> Any:
+        """
+        Convert dtype name string to framework-specific dtype.
+
+        :param dtype_name: Dtype name (e.g., 'float16', 'bfloat16') or None.
+
+        :return: Framework-specific dtype object, or None if dtype_name is None.
+
+        :raises ValueError: If dtype_name is not supported by this framework.
+        """
+        ...
 
     def set_training_model(self, model):
         """

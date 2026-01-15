@@ -1,5 +1,7 @@
 from examples.shared_args import create_arg_parser as create_base_arg_parser
-from examples.shared_args import describe_args as describe_base_args
+# TODO: Update to use describe_config instead of describe_args
+# This requires updating train.py as well
+from examples.shared_args import describe_config as describe_base_config
 
 
 def create_arg_parser(description="Train on Fashion MNIST dataset using MLPug"):
@@ -13,7 +15,11 @@ def create_arg_parser(description="Train on Fashion MNIST dataset using MLPug"):
     return parser
 
 
+# Legacy function - TODO: migrate to describe_config pattern
 def describe_args(args, logger):
-    describe_base_args(args, logger)
+    # Convert args to kwargs for describe_config
+    config = vars(args).copy()
+    # Handle no_loss_scaling → convert but describe_config now expects no_loss_scaling
+    describe_base_config(logger=logger, **config)
 
-    logger.info(f"Model hidden size: {args.hidden_size}")
+    logger.info(f"  hidden_size: {args.hidden_size}")

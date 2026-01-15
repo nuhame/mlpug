@@ -1,5 +1,6 @@
 from examples.shared_args import create_arg_parser as create_base_arg_parser
-from examples.shared_args import describe_args as describe_base_args
+# TODO: Update to use describe_config instead of describe_args
+from examples.shared_args import describe_config as describe_base_config
 
 
 def create_arg_parser(description="Finetune GPT2 as persona aware chatbot"):
@@ -92,7 +93,7 @@ def describe_args(args, logger):
     logger.info(f"Use LR warmup schedule: {args.lr_warmup_schedule}")
     logger.info(f"LR warmup epochs (if warmup LR schedule used): {args.lr_warmup_epochs}")
 
-    describe_base_args(args, logger)
+    describe_base_config(logger=logger, **vars(args))
 
     logger.info(f"Weight decay: {args.weight_decay}")
     logger.info(f"Dropout rate: {args.dropout_rate}")
