@@ -103,12 +103,12 @@ class TrainingProcess(Base, metaclass=abc.ABCMeta):
         :param lr_scheduler_config: LR scheduler configuration. None for no scheduling.
         :param experiment_name: Name for logging and checkpoints.
         :param log_frequency: Log every N batches.
-        :param use_mixed_precision: Convenience flag for mixed precision. When True and
-            autocast_dtype is None, defaults to 'float16' with loss scaling enabled.
-        :param autocast_dtype: Dtype for autocast (e.g., 'float16', 'bfloat16'). When set,
-            enables mixed precision with the specified dtype.
-        :param use_loss_scaling: Whether to use loss/gradient scaling. If None, auto-
-            detected based on autocast_dtype: True for 'float16', False otherwise.
+        :param use_mixed_precision: Convenience flag for float16 + loss scaling. When True,
+            defaults autocast_dtype to 'float16' and enables loss scaling.
+        :param autocast_dtype: Dtype for autocast (e.g., 'float16', 'bfloat16'). When set
+            without use_mixed_precision, only autocasting is applied (no loss scaling by default).
+        :param use_loss_scaling: Whether to use loss/gradient scaling. None means use default
+            (enabled only when use_mixed_precision=True, otherwise disabled).
         :param eager_mode: Disable graph compilation (if applicable).
         :param activation_checkpointing: Enable gradient checkpointing.
         :param num_dataloader_workers: Number of DataLoader workers.
