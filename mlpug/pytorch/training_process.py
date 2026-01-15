@@ -16,6 +16,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 import mlpug.pytorch as mlp
 from mlpug.training_process import TrainingProcess as TrainingProcessBase
+from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
 from mlpug.trainers.training import Trainer
 from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
@@ -206,6 +207,22 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
             **optimizer_config,
         )
 
+    def _build_ddp_model_wrapper(self) -> ModelWrapperFunc:
+        """
+        Build DDP model wrapper function.
+
+        Override this method to customize DDP behavior, e.g.:
+
+            from functools import partial
+
+            def _build_ddp_model_wrapper(self) -> ModelWrapperFunc:
+                wrapper = DDPModelWrapper(self.rank, self._device)
+                return partial(wrapper, gradient_as_bucket_view=True)
+
+        :return: Model wrapper function for DDP.
+        """
+        return DDPModelWrapper(self.rank, self._device)
+
     def _setup_training_model(self, training_model: Module) -> Module:
         """
         Setup training model wrapper: move to device and configure DDP.
@@ -219,7 +236,7 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         # Create DDP wrapper function if distributed
         if self.is_distributed:
-            self._model_wrapper_func = DDPModelWrapper(self.rank, self._device)
+            self._model_wrapper_func = self._build_ddp_model_wrapper()
 
         return training_model
 

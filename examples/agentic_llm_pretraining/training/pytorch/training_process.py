@@ -8,6 +8,7 @@ This module expects tokenized and indexed data created using Data Forager.
 See examples/agentic_llm_pretraining/datasets/tokenize_dataset.py for creating
 the required tokenized datasets.
 """
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +19,9 @@ from transformers import AutoConfig, AutoModelForCausalLM, PreTrainedModel
 
 import mlpug.pytorch as mlp
 from mlpug.pytorch.training_process import TrainingProcess
+from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 from mlpug.lr_scheduler_configs import LRSchedulerConfig, CosineDecayConfig
+from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
 
 from examples.agentic_llm_pretraining.datasets.loading import (
@@ -237,6 +240,18 @@ class NTPTrainingProcess(TrainingProcess):
             device=self._device,
             activation_checkpointing=self._activation_checkpointing,
         )
+
+    def _build_ddp_model_wrapper(self) -> ModelWrapperFunc:
+        """
+        Build DDP model wrapper with memory optimization.
+
+        Uses gradient_as_bucket_view=True to reduce memory by avoiding
+        gradient copy to communication buckets.
+
+        :return: Model wrapper function for DDP.
+        """
+        wrapper = DDPModelWrapper(self.rank, self._device)
+        return partial(wrapper, gradient_as_bucket_view=True)
 
     def _setup_callbacks(self) -> list[Callback]:
         """

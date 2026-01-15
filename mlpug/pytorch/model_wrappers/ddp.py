@@ -22,8 +22,23 @@ class DDPModelWrapper(Base, ModelWrapperFunc):
         model: torch.nn.Module,
         eager_mode: bool = False,
         compile_kwargs: Optional[Dict] = None,
-        **other_kwargs
+        **ddp_kwargs,
     ) -> torch.nn.Module:
+        """
+        Wrap model with DDP, optionally compiling first.
+
+        :param model: The model to wrap.
+        :param eager_mode: If True, skip torch.compile.
+        :param compile_kwargs: Arguments passed to torch.compile().
+        :param ddp_kwargs: Additional arguments passed to DDP constructor.
+            Useful options include:
+            - gradient_as_bucket_view=True: Reduces memory by avoiding
+                gradient copy to communication buckets.
+            - bucket_cap_mb: Size of gradient buckets (default 25MB).
+            - static_graph=True: Enables optimizations for static models.
+
+        :return: The wrapped model.
+        """
         if compile_kwargs is None:
             compile_kwargs = {}
 
@@ -39,4 +54,7 @@ class DDPModelWrapper(Base, ModelWrapperFunc):
 
         device_ids = [self._rank] if device_type == 'cuda' else None
 
-        return DDP(model, device_ids=device_ids)
+        if ddp_kwargs:
+            self._log.debug(f"DDP kwargs: {ddp_kwargs}")
+
+        return DDP(model, device_ids=device_ids, **ddp_kwargs)
