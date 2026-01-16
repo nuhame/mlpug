@@ -56,12 +56,6 @@ def main() -> None:
     # Setup logging
     mlp.logging.use_fancy_colors()
 
-    # Configure torch.compile to capture scalar outputs (e.g., .item() calls)
-    # This prevents graph breaks from Liger Kernel's fused cross-entropy which uses .item()
-    # See: https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html
-    import torch._dynamo.config
-    torch._dynamo.config.capture_scalar_outputs = True
-
     # Log git state for reproducibility
     log_git_state()
 
@@ -98,6 +92,22 @@ def main() -> None:
 
     # Convert no_liger_kernel to use_liger_kernel (enabled by default)
     config["use_liger_kernel"] = not config.pop("no_liger_kernel")
+
+    # Configure torch.compile to capture scalar outputs (e.g., .item() calls)
+    # This prevents graph breaks from Liger Kernel's fused cross-entropy.
+    # On ROCm, capture_scalar_outputs=True causes inductor C++ code generation bugs,
+    # so --allow-liger-kernel-graph-breaks disables this setting.
+    allow_graph_breaks = config.pop("allow_liger_kernel_graph_breaks")
+    if not allow_graph_breaks:
+        import torch._dynamo.config
+        torch._dynamo.config.capture_scalar_outputs = True
+        if rank == 0:
+            module_logger.info("torch._dynamo.config.capture_scalar_outputs = True")
+    else:
+        if rank == 0:
+            module_logger.info(
+                "Allowing Liger Kernel graph breaks (capture_scalar_outputs=False)"
+            )
 
     # Remove args that aren't TrainingProcess parameters
     config.pop("remote_debug_ip", None)
