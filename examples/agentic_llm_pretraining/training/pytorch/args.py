@@ -44,12 +44,23 @@ def create_arg_parser(
         default=2,
         help="Number of DataLoader worker processes",
     )
+    parser.add_argument(
+        "--allow-liger-kernel-graph-breaks",
+        action="store_true",
+        default=False,
+        help=(
+            "Allow torch.compile graph breaks from Liger Kernel's .item() calls. "
+            "Use this on ROCm where capture_scalar_outputs=True causes inductor bugs. "
+            "On NVIDIA GPUs, this should not be needed."
+        ),
+    )
 
     return parser
 
 
 def describe_config(
     num_dataloader_workers: int,
+    allow_liger_kernel_graph_breaks: bool,
     logger: logging.Logger | None = None,
     **kwargs,
 ) -> None:
@@ -59,6 +70,7 @@ def describe_config(
     Calls the NTP describe_config and adds PyTorch-specific arguments.
 
     :param num_dataloader_workers: Number of DataLoader workers.
+    :param allow_liger_kernel_graph_breaks: Allow graph breaks from Liger Kernel.
     :param logger: Logger to use. If None, uses module logger.
     :param kwargs: Additional arguments passed to NTP describe_config.
     """
@@ -70,3 +82,4 @@ def describe_config(
 
     # Log PyTorch-specific config
     logger.info(f"  num_dataloader_workers: {num_dataloader_workers}")
+    logger.info(f"  allow_liger_kernel_graph_breaks: {allow_liger_kernel_graph_breaks}")
