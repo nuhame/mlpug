@@ -1,7 +1,7 @@
 import os
 import sys
 import abc
-from typing import Any, Optional, Union, Dict, Tuple, List
+from typing import Any, Optional, Tuple
 
 import math
 import time
@@ -602,8 +602,12 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
             current = None
             epoch_started = True
             epoch_stopped_early = False
-            for training_batch in training_dataset:
-                batch_training_start_time = time.time()
+            # Track effective batch timing (across all micro-batches in accumulation window)
+            batch_training_start_time = None
+            for training_micro_batch in training_dataset:
+                # Start timing at beginning of accumulation window (first micro-batch)
+                if batch_training_start_time is None:
+                    batch_training_start_time = time.time()
 
                 if self._stop_training:
                     # Epoch was not finished yet
@@ -611,7 +615,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     self._log.warn("Training epoch stopped early")
                     break
 
-                # We are at the start of a new batch training iteration: reset current dict
+                # We are at the start of a new micro-batch iteration: reset current dict
                 current = self._init_current_logs()
                 logs["current"] = current
 
@@ -620,7 +624,7 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     update(call_cb('on_epoch_start', self.logs))
                     epoch_started = False
 
-                update(call_cb('on_batch_training_start', training_batch, logs))
+                update(call_cb('on_batch_training_start', training_micro_batch, logs))
 
                 # Previous batch duration is only available on_batch_training_start
                 # In this way it is not double recorded in Tensorboard
@@ -630,7 +634,9 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     if not has_key(logs, "training_settings"):
                         logs["training_settings"] = {}
 
-                    model_outputs, did_update_model = self.trainer.train_on(training_batch, logs["training_settings"])
+                    model_outputs, did_update_model = self.trainer.train_on(
+                        training_micro_batch, logs["training_settings"]
+                    )
 
                     set_value_at("training.batch.raw.model_outputs", current, model_outputs)
                     set_value_at("training.batch.did_update_model", current, did_update_model)
@@ -651,23 +657,23 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     break
 
                 # Fire micro-batch callback after every train_on call
-                update(call_cb('on_micro_batch_completed', training_batch, logs))
+                update(call_cb('on_micro_batch_completed', training_micro_batch, logs))
 
                 # Fire batch callback only at accumulation boundary (semantic batch)
                 if did_update_model:
-                    update(call_cb('on_batch_training_completed', training_batch, logs))
+                    # Calculate effective batch duration (time for all micro-batches)
+                    batch_duration = time.time() - batch_training_start_time
+                    set_value_at("training_params.batch.duration", current, batch_duration)
+                    self._update_window("training_params.batch.duration")
+                    self._previous_batch_duration = batch_duration
+                    # Reset for next effective batch
+                    batch_training_start_time = None
+
+                    update(call_cb('on_batch_training_completed', training_micro_batch, logs))
                     self.batch_step += 1
                     self.global_iter += 1
 
                 self.micro_batch_step += 1
-
-                batch_training_end_time = time.time()
-                batch_duration = batch_training_end_time - batch_training_start_time
-
-                set_value_at("training_params.batch.duration", current, batch_duration)
-                self._update_window("training_params.batch.duration")
-
-                self._previous_batch_duration = batch_duration
 
                 # Situation 1: When the start micro_batch_step given was > 0, go to next epoch when epoch finished
                 # Situation 2: When num_batches_per_epoch was given to simulate epochs in an
@@ -681,8 +687,15 @@ class TrainingManager(Base, metaclass=abc.ABCMeta):
                     did_final_update = self.trainer.epoch_complete()
                     if did_final_update:
                         # Final partial batch was processed - fire callbacks
+                        # Calculate duration for the partial batch
+                        if batch_training_start_time is not None:
+                            batch_duration = time.time() - batch_training_start_time
+                            set_value_at("training_params.batch.duration", current, batch_duration)
+                            self._update_window("training_params.batch.duration")
+                            self._previous_batch_duration = batch_duration
+
                         set_value_at("training.batch.did_update_model", current, did_final_update)
-                        update(call_cb('on_batch_training_completed', training_batch, logs))
+                        update(call_cb('on_batch_training_completed', training_micro_batch, logs))
                         self.batch_step += 1
                         self.global_iter += 1
                 except Exception as e:
