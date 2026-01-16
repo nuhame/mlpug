@@ -141,18 +141,24 @@ def worker_fn(rank, args, world_size):
     mps_available = torch.backends.mps.is_available()
     if cuda_available and not args.force_on_cpu:
         torch.cuda.set_device(rank)
+        device = torch.device("cuda", rank)
 
         if distributed:
             os.environ['MASTER_ADDR'] = 'localhost'
             os.environ['MASTER_PORT'] = '12355'
 
-            dist.init_process_group(backend='nccl', rank=rank, world_size=world_size)
+            # Specify device_id to avoid "Guessing device ID based on global rank"
+            # warning and potential hangs with heterogeneous rank-to-GPU mappings
+            dist.init_process_group(
+                backend='nccl',
+                rank=rank,
+                world_size=world_size,
+                device_id=device,
+            )
 
             logger.info(f"Training using multiple GPUs: Using GPU {rank}/{world_size}")
         else:
             logger.info(f"Single device mode : Using GPU {rank} ")
-
-        device = torch.device("cuda")
 
         # Torch CUDA optimization when compiling
         if not args.eager_mode:
