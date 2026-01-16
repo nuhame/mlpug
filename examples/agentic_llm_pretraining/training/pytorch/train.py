@@ -56,6 +56,12 @@ def main() -> None:
     # Setup logging
     mlp.logging.use_fancy_colors()
 
+    # Configure torch.compile to capture scalar outputs (e.g., .item() calls)
+    # This prevents graph breaks from Liger Kernel's fused cross-entropy which uses .item()
+    # See: https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html
+    import torch._dynamo.config
+    torch._dynamo.config.capture_scalar_outputs = True
+
     # Log git state for reproducibility
     log_git_state()
 
