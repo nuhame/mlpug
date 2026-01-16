@@ -121,7 +121,7 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
 
         if cuda_available and not self._force_on_cpu:
             torch.cuda.set_device(self.rank)
-            device = torch.device("cuda")
+            device = torch.device("cuda", self.rank)
             backend = "nccl"
             self._log.info(f"Using GPU {self.rank}/{self.num_devices}")
         else:
@@ -129,10 +129,13 @@ class TrainingProcess(TrainingProcessBase, metaclass=abc.ABCMeta):
             backend = "gloo"
             self._log.info(f"Using CPU worker {self.rank}/{self.num_devices}")
 
+        # Specify device_id to avoid "Guessing device ID based on global rank"
+        # warning and potential hangs with heterogeneous rank-to-GPU mappings
         dist.init_process_group(
             backend=backend,
             rank=self.rank,
             world_size=self.num_devices,
+            device_id=device if backend == "nccl" else None,
         )
         self._log.info(f"DDP backend: {backend}")
 
