@@ -18,6 +18,10 @@ except Exception as e:
 
 from mlpug.reserved import RESERVED_LOG_FIELDS
 
+# Allow logging of duration in Tensorboard
+RESERVED_LOG_FIELDS = RESERVED_LOG_FIELDS.copy()
+RESERVED_LOG_FIELDS.remove('duration')
+
 
 # Tensorboard writer types
 METRIC_WRITER = 'metrics'
