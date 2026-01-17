@@ -8,6 +8,9 @@ This module expects tokenized and indexed data created using Data Forager.
 See examples/agentic_llm_pretraining/datasets/tokenize_dataset.py for creating
 the required tokenized datasets.
 """
+from typing import Tuple
+
+import math
 from functools import partial
 from pathlib import Path
 
@@ -28,6 +31,7 @@ except ImportError:
 import mlpug.pytorch as mlp
 from mlpug.pytorch.training_process import TrainingProcess
 from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
+from mlpug.evaluation import GatherLoss
 from mlpug.lr_scheduler_configs import LRSchedulerConfig, CosineDecayConfig
 from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
@@ -58,6 +62,28 @@ DEFAULT_LLM_OPTIMIZER_CONFIG = {
     "betas": (0.9, 0.95),
     "eps": 1e-8,
 }
+
+
+def perplexity(loss_data: Tuple[float, int] | None) -> float | None:
+    """
+    Calculate perplexity from aggregated loss data.
+
+    Perplexity = exp(cross_entropy_loss), a standard metric for language models.
+    Lower perplexity indicates better prediction of the next token.
+
+    :param loss_data: Tuple of (loss_sum, num_samples) from GatherLoss,
+        or None if no data available (e.g., non-primary device in DDP).
+
+    :return: Perplexity value, or None if input is None.
+    """
+    if loss_data is None:
+        return None
+
+    loss_sum, tot_num_samples = loss_data
+    avg_loss = loss_sum / tot_num_samples
+
+    # Cap at infinity for numerical stability (exp(100) ≈ 2.7e43)
+    return math.exp(avg_loss) if avg_loss < 100 else float('inf')
 
 
 class NTPTrainingProcess(TrainingProcess):
@@ -303,12 +329,22 @@ class NTPTrainingProcess(TrainingProcess):
                     )
                 )
 
-        # Create metric evaluator for loss tracking
-        loss_evaluator = mlp.evaluation.MetricEvaluator(
+        # Create metric evaluator for loss and perplexity tracking
+        # Both metrics use the same GatherLoss function to extract (loss_sum, num_samples),
+        # but apply different final calculations (average_loss vs exp(average_loss))
+        metric_evaluator = mlp.evaluation.MetricEvaluator(
             trainer=self._trainer,
+            gather_metric_inputs_funcs={
+                # 'loss' uses default GatherLoss (provided automatically when not specified)
+                'perplexity': GatherLoss(requester="MetricEvaluator"),
+            },
+            metric_funcs={
+                # 'loss' uses default average_loss (provided automatically when not specified)
+                'perplexity': perplexity,
+            },
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             eager_mode=self._eager_mode,
-            name="LossEvaluator",
+            name="MetricEvaluator",
         )
 
         # Condition function for batch-level logging
@@ -337,7 +373,7 @@ class NTPTrainingProcess(TrainingProcess):
         # Training metrics logger (batch-level)
         callbacks.append(
             mlp.callbacks.TrainingMetricsLogger(
-                metric_evaluator=loss_evaluator,
+                metric_evaluator=metric_evaluator,
                 log_condition_func=log_condition,
                 sliding_window_length=avg_window_length,
             )
@@ -349,7 +385,7 @@ class NTPTrainingProcess(TrainingProcess):
                 mlp.callbacks.DatasetMetricsLogger(
                     self._validation_set,
                     'validation',
-                    metric_evaluator=loss_evaluator,
+                    metric_evaluator=metric_evaluator,
                     log_condition_func=log_condition,
                     sliding_window_length=avg_window_length,
                 )
@@ -360,7 +396,7 @@ class NTPTrainingProcess(TrainingProcess):
                 mlp.callbacks.DatasetMetricsLogger(
                     self._validation_set,
                     'validation',
-                    metric_evaluator=loss_evaluator,
+                    metric_evaluator=metric_evaluator,
                     batch_level=False,  # epoch level only
                 )
             )

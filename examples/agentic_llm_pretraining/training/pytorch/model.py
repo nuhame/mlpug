@@ -3,7 +3,6 @@ NTP (Next-Token Prediction) training model wrapper.
 
 Wraps a HuggingFace causal LM model and computes the NTP loss for MLPug training.
 """
-import math
 from typing import Any
 
 import torch
@@ -54,8 +53,7 @@ class NTPTrainModel(nn.Module):
         :param evaluate_settings: Optional evaluation settings (unused, for MLPug compatibility).
         :param inference_mode: Optional inference mode flag (unused, for MLPug compatibility).
 
-        :return: Dict with 'loss', 'num_samples', and 'auxiliary_results'.
-            auxiliary_results contains 'perplexity' computed from the loss.
+        :return: Dict with 'loss', 'num_samples', and 'auxiliary_results' (None).
         """
         # Move to device and convert to long for embedding layer compatibility
         # (PyTorch embeddings require Long/Int, not unsigned types like uint32)
@@ -76,15 +74,8 @@ class NTPTrainModel(nn.Module):
         loss = outputs.loss
         batch_size = input_ids.shape[0]
 
-        # Compute perplexity from loss
-        # perplexity = exp(cross_entropy_loss)
-        with torch.no_grad():
-            perplexity = math.exp(loss.item()) if loss.item() < 100 else float('inf')
-
         return {
             "loss": loss,
             "num_samples": batch_size,
-            "auxiliary_results": {
-                "perplexity": perplexity,
-            },
+            "auxiliary_results": None,
         }
