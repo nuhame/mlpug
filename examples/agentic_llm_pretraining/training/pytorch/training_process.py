@@ -32,6 +32,7 @@ import mlpug.pytorch as mlp
 from mlpug.pytorch.training_process import TrainingProcess
 from mlpug.pytorch.model_wrappers.ddp import DDPModelWrapper
 from mlpug.evaluation import GatherLoss
+from mlpug.pytorch.evaluation import GatherLossDistributed
 from mlpug.lr_scheduler_configs import LRSchedulerConfig, CosineDecayConfig
 from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
@@ -337,6 +338,10 @@ class NTPTrainingProcess(TrainingProcess):
             gather_metric_inputs_funcs={
                 # 'loss' uses default GatherLoss (provided automatically when not specified)
                 'perplexity': GatherLoss(requester="MetricEvaluator"),
+            },
+            gather_distributed_inputs_funcs={
+                # 'loss' uses default GatherLossDistributed (provided automatically)
+                'perplexity': GatherLossDistributed(requester="MetricEvaluator"),
             },
             metric_funcs={
                 # 'loss' uses default average_loss (provided automatically when not specified)
