@@ -61,6 +61,14 @@ def create_arg_parser(
         help="Fraction of training data to use (0-1, default: None = all data)",
     )
 
+    parser.add_argument(
+        "--val-fraction",
+        type=float,
+        required=False,
+        default=None,
+        help="Fraction of validation data to use (0-1, default: None = all data)",
+    )
+
     # -------------------------------------------------------------------------
     # Model configuration
     # -------------------------------------------------------------------------
@@ -165,6 +173,7 @@ def describe_config(
     train_data_path: str,
     val_data_path: str | None,
     train_fraction: float | None,
+    val_fraction: float | None,
     model_name: str,
     checkpoint_dir: str,
     log_dir: str,
@@ -186,6 +195,7 @@ def describe_config(
     :param train_data_path: Path to tokenized training data.
     :param val_data_path: Path to tokenized validation data.
     :param train_fraction: Fraction of training data to use.
+    :param val_fraction: Fraction of validation data to use.
     :param model_name: HuggingFace model name.
     :param checkpoint_dir: Directory for checkpoints.
     :param log_dir: Directory for logs.
@@ -209,6 +219,7 @@ def describe_config(
     logger.info(f"  train_data_path: {train_data_path}")
     logger.info(f"  val_data_path: {val_data_path}")
     logger.info(f"  train_fraction: {train_fraction}")
+    logger.info(f"  val_fraction: {val_fraction}")
     logger.info(f"  model_name: {model_name}")
     logger.info(f"  checkpoint_dir: {checkpoint_dir}")
     logger.info(f"  log_dir: {log_dir}")
