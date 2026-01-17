@@ -37,6 +37,8 @@ from mlpug.lr_scheduler_configs import LRSchedulerConfig, CosineDecayConfig
 from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
 
+from data_forager.datasets.common import SubsampledDataset
+
 from examples.agentic_llm_pretraining.datasets.loading import (
     load_tokens_dataset,
     get_sample_properties,
@@ -104,6 +106,8 @@ class NTPTrainingProcess(TrainingProcess):
         a Data Forager index created by tokenize_dataset.py).
     :param val_data_path: Path to tokenized validation data directory (must contain
         a Data Forager index created by tokenize_dataset.py).
+    :param train_fraction: Fraction of training data to use (0-1). If None, use all data.
+        Requires seed to be set for reproducible subsampling across distributed processes.
     :param model_name: HuggingFace model name for config (default: Qwen/Qwen3-1.7B-Base).
     :param use_liger_kernel: Enable Liger Kernel for memory-efficient cross-entropy.
         Reduces logits memory by ~97% by fusing linear + cross-entropy computation.
@@ -121,6 +125,7 @@ class NTPTrainingProcess(TrainingProcess):
         # NTP-specific parameters
         train_data_path: str,
         val_data_path: str | None = None,
+        train_fraction: float | None = None,
         model_name: str = DEFAULT_MODEL_NAME,
         use_liger_kernel: bool = True,
         checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR,
@@ -144,6 +149,7 @@ class NTPTrainingProcess(TrainingProcess):
 
         self._train_data_path = train_data_path
         self._val_data_path = val_data_path
+        self._train_fraction = train_fraction
         self._model_name = model_name
         self._use_liger_kernel = use_liger_kernel
         self._checkpoint_dir = checkpoint_dir
@@ -168,6 +174,22 @@ class NTPTrainingProcess(TrainingProcess):
         # Load training dataset
         self._log.info(f"Loading training data from: {self._train_data_path}")
         train_tokens_dataset = load_tokens_dataset(self._train_data_path)
+
+        # Apply subsampling if requested
+        if self._train_fraction is not None:
+            if self._seed is None:
+                raise ValueError(
+                    "train_fraction requires a seed for reproducible subsampling across "
+                    "distributed processes. Please specify --seed."
+                )
+            self._log.info(f"  Subsampling training data to {self._train_fraction:.1%} "
+                           f"(seed={self._seed})")
+            train_tokens_dataset = SubsampledDataset(
+                train_tokens_dataset,
+                subsample_factor=self._train_fraction,
+                seed=self._seed,
+            )
+
         train_dataset = PyTorchTokensDataset(train_tokens_dataset)
         self._log.info(f"  Training samples: {len(train_dataset):,}")
 
