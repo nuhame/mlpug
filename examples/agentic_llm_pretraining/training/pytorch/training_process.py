@@ -368,6 +368,7 @@ class NTPTrainingProcess(TrainingProcess):
             },
             clean_up_batch_data_func=self._create_clean_up_batch_data_func(),
             eager_mode=self._eager_mode,
+            show_progress=True,
             name="MetricEvaluator",
         )
 
