@@ -372,18 +372,24 @@ def _log_results_summary(results: dict, logger: logging.Logger) -> None:
 
     for task_name, task_results in results['results'].items():
         # Get the main accuracy metric
+        # lm-evaluation-harness uses "metric,aggregation" format (e.g., "acc_norm,none")
         acc_key = None
-        for key in ['acc_norm', 'acc', 'exact_match', 'mc2']:
-            if key in task_results:
-                acc_key = key
+        acc_value = None
+        for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
+            # Try both formats: "metric,none" and "metric"
+            for key_format in [f'{metric},none', metric]:
+                if key_format in task_results:
+                    acc_key = metric
+                    acc_value = task_results[key_format]
+                    break
+            if acc_key:
                 break
 
-        if acc_key:
-            value = task_results[acc_key]
-            if isinstance(value, float):
-                logger.info(f"  {task_name}: {value:.4f} ({acc_key})")
+        if acc_key and acc_value is not None:
+            if isinstance(acc_value, float):
+                logger.info(f"  {task_name}: {acc_value:.4f} ({acc_key})")
             else:
-                logger.info(f"  {task_name}: {value} ({acc_key})")
+                logger.info(f"  {task_name}: {acc_value} ({acc_key})")
 
     logger.info("=" * 60)
 
@@ -403,12 +409,17 @@ def get_results_summary(results: dict) -> dict:
 
     for task_name, task_results in results['results'].items():
         # Get the main accuracy metric
-        for key in ['acc_norm', 'acc', 'exact_match', 'mc2']:
-            if key in task_results:
-                summary[task_name] = {
-                    'metric': key,
-                    'value': task_results[key],
-                }
+        # lm-evaluation-harness uses "metric,aggregation" format (e.g., "acc_norm,none")
+        for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
+            # Try both formats: "metric,none" and "metric"
+            for key_format in [f'{metric},none', metric]:
+                if key_format in task_results:
+                    summary[task_name] = {
+                        'metric': metric,
+                        'value': task_results[key_format],
+                    }
+                    break
+            if task_name in summary:
                 break
 
     return summary
