@@ -84,7 +84,9 @@ def load_model_from_checkpoint(
         logger.info(f"Loading checkpoint from {checkpoint_path}")
 
     # Load the checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    # weights_only=False needed because MLPug checkpoints contain pickled objects
+    # (e.g., MicroBatchResults in manager_state). This is safe for our own checkpoints.
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # The checkpoint contains model state under 'model' key
     # (from MLPug's trainer.get_model_components() with convert_to_dict())
