@@ -363,6 +363,41 @@ def evaluate_model(
         return results
 
 
+def _find_metric_key(task_results: dict, metric: str) -> tuple:
+    """
+    Find the best matching key for a metric in task results.
+
+    lm-evaluation-harness uses various formats:
+    - "metric,none" (e.g., "acc_norm,none")
+    - "metric,filter" (e.g., "exact_match,flexible-extract")
+    - "metric" (legacy format)
+
+    :param task_results: Dictionary of results for a task.
+    :param metric: The metric name to search for (e.g., "acc_norm", "exact_match").
+
+    :return: Tuple of (full_key, value) or (None, None) if not found.
+    """
+    # Preferred suffixes in order (more lenient/informative first)
+    preferred_suffixes = ['flexible-extract', 'none', 'strict-match']
+
+    # First, try preferred formats in order
+    for suffix in preferred_suffixes:
+        key = f'{metric},{suffix}'
+        if key in task_results:
+            return key, task_results[key]
+
+    # Then, search for any key starting with the metric (excluding stderr)
+    for key, value in task_results.items():
+        if key.startswith(f'{metric},') and 'stderr' not in key:
+            return key, value
+
+    # Finally, try bare metric name (legacy format)
+    if metric in task_results:
+        return metric, task_results[metric]
+
+    return None, None
+
+
 def _log_results_summary(results: dict, logger: logging.Logger) -> None:
     """Log a summary of evaluation results."""
     if 'results' not in results:
@@ -374,24 +409,19 @@ def _log_results_summary(results: dict, logger: logging.Logger) -> None:
 
     for task_name, task_results in results['results'].items():
         # Get the main accuracy metric
-        # lm-evaluation-harness uses "metric,aggregation" format (e.g., "acc_norm,none")
-        acc_key = None
-        acc_value = None
+        # Try metrics in order of preference
+        found_key = None
+        found_value = None
         for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
-            # Try both formats: "metric,none" and "metric"
-            for key_format in [f'{metric},none', metric]:
-                if key_format in task_results:
-                    acc_key = metric
-                    acc_value = task_results[key_format]
-                    break
-            if acc_key:
+            found_key, found_value = _find_metric_key(task_results, metric)
+            if found_key is not None:
                 break
 
-        if acc_key and acc_value is not None:
-            if isinstance(acc_value, float):
-                logger.info(f"  {task_name}: {acc_value:.4f} ({acc_key})")
+        if found_key is not None and found_value is not None:
+            if isinstance(found_value, float):
+                logger.info(f"  {task_name}: {found_value:.4f} ({found_key})")
             else:
-                logger.info(f"  {task_name}: {acc_value} ({acc_key})")
+                logger.info(f"  {task_name}: {found_value} ({found_key})")
 
     logger.info("=" * 60)
 
@@ -411,17 +441,13 @@ def get_results_summary(results: dict) -> dict:
 
     for task_name, task_results in results['results'].items():
         # Get the main accuracy metric
-        # lm-evaluation-harness uses "metric,aggregation" format (e.g., "acc_norm,none")
         for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
-            # Try both formats: "metric,none" and "metric"
-            for key_format in [f'{metric},none', metric]:
-                if key_format in task_results:
-                    summary[task_name] = {
-                        'metric': metric,
-                        'value': task_results[key_format],
-                    }
-                    break
-            if task_name in summary:
+            found_key, found_value = _find_metric_key(task_results, metric)
+            if found_key is not None:
+                summary[task_name] = {
+                    'metric': found_key,
+                    'value': found_value,
+                }
                 break
 
     return summary
