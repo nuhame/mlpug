@@ -190,6 +190,7 @@ def evaluate_hf_model(
             logger.info(f"Sample limit per task: {limit}")
 
     # Run evaluation
+    # confirm_run_unsafe_code=True needed for code evaluation tasks (humaneval, mbpp)
     results = simple_evaluate(
         model="hf",
         model_args=f"pretrained={model_path},device={device}",
@@ -198,6 +199,7 @@ def evaluate_hf_model(
         num_fewshot=num_fewshot,
         limit=limit,
         log_samples=False,
+        confirm_run_unsafe_code=True,
     )
 
     if logger:
