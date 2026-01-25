@@ -286,6 +286,7 @@ def evaluate_hf_model_distributed(
         logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
 
     # Build command
+    # Note: --log_samples and --confirm_run_unsafe_code are boolean flags (no value)
     cmd = [
         "accelerate", "launch",
         "--multi_gpu",
@@ -296,7 +297,6 @@ def evaluate_hf_model_distributed(
         "--tasks", ",".join(tasks),
         "--batch_size", str(batch_size),
         "--output_path", temp_output_dir,
-        "--log_samples", "False",
         "--confirm_run_unsafe_code",
     ]
 
