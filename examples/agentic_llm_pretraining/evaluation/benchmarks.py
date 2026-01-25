@@ -275,8 +275,9 @@ def evaluate_hf_model_distributed(
         )
 
     # Multi-GPU: launch accelerate as subprocess
-    # lm-eval CLI creates a directory at output_path and writes results.json inside
-    # We use a temp directory, then copy results.json to user-specified output_path
+    # lm-eval CLI creates: output_path/MODEL_NAME/results_TIMESTAMP.json
+    # We use a unique temp directory to guarantee we find only our results,
+    # then copy to user's output_path if specified.
     temp_output_dir = tempfile.mkdtemp(prefix="lm_eval_output_")
 
     if logger:
@@ -316,16 +317,33 @@ def evaluate_hf_model_distributed(
             check=True,  # Raise exception on non-zero exit
         )
 
-        # Read results from temp directory
-        # lm-eval writes results to temp_output_dir/results.json
-        results_file = Path(temp_output_dir) / "results.json"
-        if not results_file.exists():
-            raise FileNotFoundError(f"Results file not found at {results_file}")
+        # Find results file in temp directory
+        # lm-eval creates: temp_output_dir/MODEL_NAME/results_TIMESTAMP.json
+        # Since temp_output_dir is unique, any results file must be ours
+        results_files = list(Path(temp_output_dir).rglob("results_*.json"))
 
+        if not results_files:
+            raise FileNotFoundError(
+                f"No results file found in {temp_output_dir}"
+            )
+
+        if len(results_files) > 1:
+            # This should never happen with a unique temp directory
+            if logger:
+                logger.error(
+                    f"UNEXPECTED: Multiple results files found in temp directory: "
+                    f"{results_files}. This indicates a bug or race condition. "
+                    f"Using most recent file."
+                )
+            results_file = max(results_files, key=lambda p: p.stat().st_mtime)
+        else:
+            results_file = results_files[0]
+
+        # Read results
         with open(results_file) as f:
             results = json.load(f)
 
-        # Copy results to user-specified output_path if provided
+        # Copy to user's output_path if specified
         if output_path is not None:
             shutil.copy(results_file, output_path)
             if logger:
