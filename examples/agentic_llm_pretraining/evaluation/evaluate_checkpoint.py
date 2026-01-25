@@ -1,10 +1,16 @@
 """
 CLI script to evaluate model checkpoints using lm-evaluation-harness.
 
-Usage:
+Usage (single GPU):
     python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
         --output-dir /path/to/results
+
+Multi-GPU evaluation (uses accelerate for data parallelism):
+    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+        --checkpoint /path/to/checkpoint.pt \
+        --num-gpus 6 \
+        --batch-size 24
 
 Quick test (limited samples):
     python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
@@ -83,13 +89,19 @@ def create_arg_parser() -> argparse.ArgumentParser:
         "--batch-size",
         type=int,
         default=8,
-        help="Batch size for evaluation",
+        help="Batch size for evaluation (per GPU)",
     )
     parser.add_argument(
-        "--device",
+        "--num-gpus",
+        type=int,
+        default=1,
+        help="Number of GPUs to use (1 = single GPU, >1 = multi-GPU with accelerate)",
+    )
+    parser.add_argument(
+        "--dtype",
         type=str,
-        default="cuda",
-        help="Device to run on (cuda, cpu)",
+        default="bfloat16",
+        help="Model dtype for loading",
     )
     parser.add_argument(
         "--num-fewshot",
@@ -120,7 +132,8 @@ def describe_config(
     model_name: str,
     tasks: list[str],
     batch_size: int,
-    device: str,
+    num_gpus: int,
+    dtype: str,
     num_fewshot: int | None,
     limit: int | None,
     output_dir: str | None,
@@ -135,7 +148,8 @@ def describe_config(
     logger.info(f"  model_name: {model_name}")
     logger.info(f"  tasks: {tasks}")
     logger.info(f"  batch_size: {batch_size}")
-    logger.info(f"  device: {device}")
+    logger.info(f"  num_gpus: {num_gpus}")
+    logger.info(f"  dtype: {dtype}")
     logger.info(f"  num_fewshot: {num_fewshot}")
     logger.info(f"  limit: {limit}")
     logger.info(f"  output_dir: {output_dir}")
@@ -174,7 +188,8 @@ def main() -> None:
         model_name=args.model_name,
         tasks=tasks,
         batch_size=args.batch_size,
-        device=args.device,
+        num_gpus=args.num_gpus,
+        dtype=args.dtype,
         num_fewshot=args.num_fewshot,
         limit=args.limit,
         output_dir=output_dir,
@@ -187,7 +202,8 @@ def main() -> None:
         model_name=args.model_name,
         tasks=tasks,
         batch_size=args.batch_size,
-        device=args.device,
+        num_gpus=args.num_gpus,
+        dtype=args.dtype,
         num_fewshot=args.num_fewshot,
         limit=args.limit,
         output_path=str(output_path),

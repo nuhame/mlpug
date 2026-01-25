@@ -3,11 +3,12 @@ Core evaluation functions using lm-evaluation-harness.
 
 This module provides reusable functions for evaluating language model checkpoints.
 The functions are designed to be used both standalone and in training callbacks.
+Supports both single-GPU and multi-GPU evaluation (via accelerate).
 
 Requirements:
-    pip install lm-eval
+    pip install lm-eval accelerate
 
-Usage (standalone):
+Usage (standalone, single GPU):
     from examples.agentic_llm_pretraining.evaluation.benchmarks import (
         evaluate_checkpoint,
         DEFAULT_BENCHMARKS,
@@ -17,6 +18,14 @@ Usage (standalone):
         checkpoint_path="/path/to/checkpoint.pt",
         model_name="Qwen/Qwen3-1.7B-Base",
         tasks=DEFAULT_BENCHMARKS,
+    )
+
+Usage (standalone, multi-GPU):
+    results = evaluate_checkpoint(
+        checkpoint_path="/path/to/checkpoint.pt",
+        model_name="Qwen/Qwen3-1.7B-Base",
+        tasks=DEFAULT_BENCHMARKS,
+        num_gpus=6,  # Uses accelerate for data-parallel evaluation
     )
 
 Usage (in callback):
@@ -30,8 +39,11 @@ Usage (in callback):
 """
 from typing import Optional
 
-import os
+import json
 import logging
+import os
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -153,6 +165,7 @@ def evaluate_hf_model(
     tasks: list[str],
     batch_size: int = 8,
     device: str = "cuda",
+    dtype: str = "bfloat16",
     num_fewshot: Optional[int] = None,
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
@@ -167,9 +180,10 @@ def evaluate_hf_model(
     :param tasks: List of benchmark task names.
     :param batch_size: Batch size for evaluation.
     :param device: Device to run evaluation on.
+    :param dtype: Model dtype for loading (default: bfloat16).
     :param num_fewshot: Number of few-shot examples (None = use task default).
     :param limit: Limit number of samples per task (for quick testing).
-    :param output_path: Optional path to save results JSON.
+    :param output_path: Optional path to save results JSON file.
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -185,7 +199,7 @@ def evaluate_hf_model(
     if logger:
         logger.info(f"Running lm-evaluation-harness on tasks: {tasks}")
         logger.info(f"Model: {model_path}")
-        logger.info(f"Batch size: {batch_size}, Device: {device}")
+        logger.info(f"Batch size: {batch_size}, Device: {device}, dtype: {dtype}")
         if limit:
             logger.info(f"Sample limit per task: {limit}")
 
@@ -193,7 +207,7 @@ def evaluate_hf_model(
     # confirm_run_unsafe_code=True needed for code evaluation tasks (humaneval, mbpp)
     results = simple_evaluate(
         model="hf",
-        model_args=f"pretrained={model_path},device={device}",
+        model_args=f"pretrained={model_path},device={device},dtype={dtype}",
         tasks=tasks,
         batch_size=batch_size,
         num_fewshot=num_fewshot,
@@ -208,7 +222,6 @@ def evaluate_hf_model(
 
     # Save results if output path specified
     if output_path:
-        import json
         with open(output_path, 'w') as f:
             json.dump(results, f, indent=2, default=str)
         if logger:
@@ -217,12 +230,137 @@ def evaluate_hf_model(
     return results
 
 
+def evaluate_hf_model_distributed(
+    model_path: str,
+    tasks: list[str],
+    batch_size: int = 8,
+    num_gpus: int = 1,
+    num_fewshot: Optional[int] = None,
+    limit: Optional[int] = None,
+    output_path: Optional[str] = None,
+    dtype: str = "bfloat16",
+    logger: Optional[logging.Logger] = None,
+) -> dict:
+    """
+    Evaluate a HuggingFace model using lm-evaluation-harness with multi-GPU support.
+
+    For single GPU (num_gpus=1), uses the in-process evaluate_hf_model().
+    For multiple GPUs, launches accelerate as a subprocess to distribute
+    evaluation across all GPUs using data parallelism.
+
+    :param model_path: Path to HuggingFace model directory or model name.
+    :param tasks: List of benchmark task names.
+    :param batch_size: Batch size for evaluation (per GPU).
+    :param num_gpus: Number of GPUs to use (1 = single GPU, >1 = multi-GPU).
+    :param num_fewshot: Number of few-shot examples (None = use task default).
+    :param limit: Limit number of samples per task (for quick testing).
+    :param output_path: Optional path to save results JSON file.
+    :param dtype: Model dtype for loading (default: bfloat16).
+    :param logger: Optional logger for status messages.
+
+    :return: Dictionary with evaluation results.
+    """
+    if num_gpus == 1:
+        # Single GPU: use in-process evaluation
+        return evaluate_hf_model(
+            model_path=model_path,
+            tasks=tasks,
+            batch_size=batch_size,
+            device="cuda",
+            dtype=dtype,
+            num_fewshot=num_fewshot,
+            limit=limit,
+            output_path=output_path,
+            logger=logger,
+        )
+
+    # Multi-GPU: launch accelerate as subprocess
+    # lm-eval CLI creates a directory at output_path and writes results.json inside
+    # We use a temp directory, then copy results.json to user-specified output_path
+    temp_output_dir = tempfile.mkdtemp(prefix="lm_eval_output_")
+
+    if logger:
+        logger.info(f"Launching multi-GPU evaluation with {num_gpus} GPUs")
+        logger.info(f"Model: {model_path}")
+        logger.info(f"Tasks: {tasks}")
+        logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
+
+    # Build command
+    cmd = [
+        "accelerate", "launch",
+        "--multi_gpu",
+        "--num_processes", str(num_gpus),
+        "-m", "lm_eval",
+        "--model", "hf",
+        "--model_args", f"pretrained={model_path},dtype={dtype}",
+        "--tasks", ",".join(tasks),
+        "--batch_size", str(batch_size),
+        "--output_path", temp_output_dir,
+        "--log_samples", "False",
+        "--confirm_run_unsafe_code",
+    ]
+
+    if num_fewshot is not None:
+        cmd.extend(["--num_fewshot", str(num_fewshot)])
+
+    if limit is not None:
+        cmd.extend(["--limit", str(limit)])
+
+    if logger:
+        logger.info(f"Command: {' '.join(cmd)}")
+
+    try:
+        # Run subprocess, streaming output to main process stdout/stderr
+        subprocess.run(
+            cmd,
+            check=True,  # Raise exception on non-zero exit
+        )
+
+        # Read results from temp directory
+        # lm-eval writes results to temp_output_dir/results.json
+        results_file = Path(temp_output_dir) / "results.json"
+        if not results_file.exists():
+            raise FileNotFoundError(f"Results file not found at {results_file}")
+
+        with open(results_file) as f:
+            results = json.load(f)
+
+        # Copy results to user-specified output_path if provided
+        if output_path is not None:
+            shutil.copy(results_file, output_path)
+            if logger:
+                logger.info(f"Results saved to {output_path}")
+
+        if logger:
+            logger.info("Evaluation complete")
+            _log_results_summary(results, logger)
+
+        return results
+
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Evaluation subprocess failed with exit code {e.returncode}"
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
+
+    except FileNotFoundError as e:
+        error_msg = f"Results file not found: {e}"
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
+
+    finally:
+        # Cleanup temp directory
+        shutil.rmtree(temp_output_dir, ignore_errors=True)
+
+
 def evaluate_checkpoint(
     checkpoint_path: str,
     model_name: str = "Qwen/Qwen3-1.7B-Base",
     tasks: Optional[list[str]] = None,
     batch_size: int = 8,
-    device: str = "cuda",
+    num_gpus: int = 1,
+    dtype: str = "bfloat16",
     num_fewshot: Optional[int] = None,
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
@@ -236,17 +374,18 @@ def evaluate_checkpoint(
     This is the main entry point for checkpoint evaluation. It:
     1. Loads the checkpoint into a model
     2. Saves the model in HuggingFace format (temporary)
-    3. Runs lm-evaluation-harness
+    3. Runs lm-evaluation-harness (single or multi-GPU)
     4. Cleans up temporary files (unless keep_temp_model=True)
 
     :param checkpoint_path: Path to the .pt checkpoint file.
     :param model_name: HuggingFace model name for architecture.
     :param tasks: List of benchmark tasks (default: DEFAULT_BENCHMARKS).
     :param batch_size: Batch size for evaluation.
-    :param device: Device to run on.
+    :param num_gpus: Number of GPUs to use (1 = single GPU, >1 = multi-GPU).
+    :param dtype: Model dtype for loading (default: bfloat16).
     :param num_fewshot: Number of few-shot examples.
     :param limit: Sample limit per task (for quick testing).
-    :param output_path: Path to save results JSON.
+    :param output_path: Path to save results JSON file.
     :param keep_temp_model: If True, don't delete temporary model directory.
     :param temp_model_dir: Custom directory for temporary model.
     :param logger: Optional logger.
@@ -256,11 +395,15 @@ def evaluate_checkpoint(
     if tasks is None:
         tasks = DEFAULT_BENCHMARKS
 
+    # For multi-GPU, load on CPU to avoid CUDA init before subprocess spawn
+    # For single GPU, load directly on CUDA
+    load_device = "cpu" if num_gpus > 1 else "cuda"
+
     # Load checkpoint
     model, tokenizer = load_model_from_checkpoint(
         checkpoint_path=checkpoint_path,
         model_name=model_name,
-        device=device,
+        device=load_device,
         logger=logger,
     )
 
@@ -279,16 +422,18 @@ def evaluate_checkpoint(
             logger=logger,
         )
 
-        # Free GPU memory before evaluation
+        # Free memory before evaluation
         del model
-        torch.cuda.empty_cache()
+        if load_device == "cuda":
+            torch.cuda.empty_cache()
 
-        # Run evaluation
-        results = evaluate_hf_model(
+        # Run evaluation (single or multi-GPU)
+        results = evaluate_hf_model_distributed(
             model_path=model_path,
             tasks=tasks,
             batch_size=batch_size,
-            device=device,
+            num_gpus=num_gpus,
+            dtype=dtype,
             num_fewshot=num_fewshot,
             limit=limit,
             output_path=output_path,
@@ -300,7 +445,6 @@ def evaluate_checkpoint(
     finally:
         # Cleanup temporary model directory
         if not keep_temp_model and temp_model_dir is None:
-            import shutil
             if logger:
                 logger.info(f"Cleaning up temporary model directory: {temp_dir}")
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -311,7 +455,8 @@ def evaluate_model(
     tokenizer,
     tasks: Optional[list[str]] = None,
     batch_size: int = 8,
-    device: str = "cuda",
+    num_gpus: int = 1,
+    dtype: str = "bfloat16",
     num_fewshot: Optional[int] = None,
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
@@ -328,10 +473,11 @@ def evaluate_model(
     :param tokenizer: Tokenizer for the model.
     :param tasks: List of benchmark tasks.
     :param batch_size: Batch size for evaluation.
-    :param device: Device to run on.
+    :param num_gpus: Number of GPUs to use (1 = single GPU, >1 = multi-GPU).
+    :param dtype: Model dtype for loading (default: bfloat16).
     :param num_fewshot: Number of few-shot examples.
     :param limit: Sample limit per task.
-    :param output_path: Path to save results JSON.
+    :param output_path: Path to save results JSON file.
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
@@ -348,12 +494,13 @@ def evaluate_model(
             logger=logger,
         )
 
-        # Run evaluation
-        results = evaluate_hf_model(
+        # Run evaluation (single or multi-GPU)
+        results = evaluate_hf_model_distributed(
             model_path=model_path,
             tasks=tasks,
             batch_size=batch_size,
-            device=device,
+            num_gpus=num_gpus,
+            dtype=dtype,
             num_fewshot=num_fewshot,
             limit=limit,
             output_path=output_path,
