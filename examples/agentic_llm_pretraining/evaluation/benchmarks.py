@@ -373,7 +373,8 @@ def evaluate_hf_model_distributed(
 
 
 def evaluate_checkpoint(
-    checkpoint_path: str,
+    checkpoint_path: Optional[str] = None,
+    hf_model: Optional[str] = None,
     model_name: str = "Qwen/Qwen3-1.7B-Base",
     tasks: Optional[list[str]] = None,
     batch_size: int = 8,
@@ -387,16 +388,15 @@ def evaluate_checkpoint(
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
-    Evaluate an MLPug checkpoint using lm-evaluation-harness.
+    Evaluate an MLPug checkpoint or HuggingFace model using lm-evaluation-harness.
 
-    This is the main entry point for checkpoint evaluation. It:
-    1. Loads the checkpoint into a model
-    2. Saves the model in HuggingFace format (temporary)
-    3. Runs lm-evaluation-harness (single or multi-GPU)
-    4. Cleans up temporary files (unless keep_temp_model=True)
+    This is the main entry point for model evaluation. Provide either:
+    - checkpoint_path: Loads the checkpoint, converts to HF format, then evaluates
+    - hf_model: Evaluates the HuggingFace model directly (no conversion needed)
 
-    :param checkpoint_path: Path to the .pt checkpoint file.
-    :param model_name: HuggingFace model name for architecture.
+    :param checkpoint_path: Path to the .pt checkpoint file (mutually exclusive with hf_model).
+    :param hf_model: HuggingFace model name to evaluate directly (mutually exclusive with checkpoint_path).
+    :param model_name: HuggingFace model name for architecture (only used with checkpoint_path).
     :param tasks: List of benchmark tasks (default: DEFAULT_BENCHMARKS).
     :param batch_size: Batch size for evaluation.
     :param num_gpus: Number of GPUs to use (1 = single GPU, >1 = multi-GPU).
@@ -404,15 +404,35 @@ def evaluate_checkpoint(
     :param num_fewshot: Number of few-shot examples.
     :param limit: Sample limit per task (for quick testing).
     :param output_path: Path to save results JSON file.
-    :param keep_temp_model: If True, don't delete temporary model directory.
-    :param temp_model_dir: Custom directory for temporary model.
+    :param keep_temp_model: If True, don't delete temporary model directory (only used with checkpoint_path).
+    :param temp_model_dir: Custom directory for temporary model (only used with checkpoint_path).
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
     """
+    if checkpoint_path is None and hf_model is None:
+        raise ValueError("Must provide either checkpoint_path or hf_model")
+    if checkpoint_path is not None and hf_model is not None:
+        raise ValueError("Cannot provide both checkpoint_path and hf_model")
+
     if tasks is None:
         tasks = DEFAULT_BENCHMARKS
 
+    # HuggingFace model mode: evaluate directly without conversion
+    if hf_model is not None:
+        return evaluate_hf_model_distributed(
+            model_path=hf_model,
+            tasks=tasks,
+            batch_size=batch_size,
+            num_gpus=num_gpus,
+            dtype=dtype,
+            num_fewshot=num_fewshot,
+            limit=limit,
+            output_path=output_path,
+            logger=logger,
+        )
+
+    # Checkpoint mode: load, convert to HF format, evaluate
     # For multi-GPU, load on CPU to avoid CUDA init before subprocess spawn
     # For single GPU, load directly on CUDA
     load_device = "cpu" if num_gpus > 1 else "cuda"
