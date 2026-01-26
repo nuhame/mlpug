@@ -1,9 +1,14 @@
 """
-CLI script to evaluate model checkpoints using lm-evaluation-harness.
+CLI script to evaluate model checkpoints or HuggingFace models using lm-evaluation-harness.
 
-Usage (single GPU):
+Usage (checkpoint, single GPU):
     python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
+        --output-dir /path/to/results
+
+Usage (HuggingFace model, single GPU):
+    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+        --hf-model Qwen/Qwen3-1.7B-Base \
         --output-dir /path/to/results
 
 Multi-GPU evaluation (uses accelerate for data parallelism):
@@ -45,24 +50,29 @@ module_logger = get_logger(os.path.basename(__file__))
 def create_arg_parser() -> argparse.ArgumentParser:
     """Create argument parser for evaluation script."""
     parser = argparse.ArgumentParser(
-        description="Evaluate model checkpoint using lm-evaluation-harness",
+        description="Evaluate model checkpoint or HuggingFace model using lm-evaluation-harness",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Required arguments
-    parser.add_argument(
+    # Model source (mutually exclusive)
+    model_group = parser.add_mutually_exclusive_group(required=True)
+    model_group.add_argument(
         "--checkpoint",
         type=str,
-        required=True,
         help="Path to the model checkpoint (.pt file)",
     )
+    model_group.add_argument(
+        "--hf-model",
+        type=str,
+        help="HuggingFace model name to evaluate directly (e.g., Qwen/Qwen3-1.7B-Base)",
+    )
 
-    # Model configuration
+    # Model configuration (only used with --checkpoint)
     parser.add_argument(
         "--model-name",
         type=str,
         default="Qwen/Qwen3-1.7B-Base",
-        help="HuggingFace model name for architecture",
+        help="HuggingFace model name for architecture (only used with --checkpoint)",
     )
 
     # Benchmark selection
@@ -128,7 +138,8 @@ def create_arg_parser() -> argparse.ArgumentParser:
 
 
 def describe_config(
-    checkpoint: str,
+    checkpoint: str | None,
+    hf_model: str | None,
     model_name: str,
     tasks: list[str],
     batch_size: int,
@@ -145,6 +156,7 @@ def describe_config(
 
     logger.info("Configuration:")
     logger.info(f"  checkpoint: {checkpoint}")
+    logger.info(f"  hf_model: {hf_model}")
     logger.info(f"  model_name: {model_name}")
     logger.info(f"  tasks: {tasks}")
     logger.info(f"  batch_size: {batch_size}")
@@ -156,7 +168,7 @@ def describe_config(
 
 
 def main() -> None:
-    """Main entry point for checkpoint evaluation."""
+    """Main entry point for checkpoint or HuggingFace model evaluation."""
     mlp.logging.use_fancy_colors()
     log_git_state()
 
@@ -173,18 +185,28 @@ def main() -> None:
     else:
         tasks = DEFAULT_BENCHMARKS
 
-    # Determine output directory
-    if args.output_dir:
-        output_dir = args.output_dir
+    # Determine output directory and filename
+    if args.checkpoint:
+        # Checkpoint mode
+        if args.output_dir:
+            output_dir = args.output_dir
+        else:
+            output_dir = str(Path(args.checkpoint).parent)
+        output_name = Path(args.checkpoint).stem
     else:
-        output_dir = str(Path(args.checkpoint).parent)
+        # HuggingFace model mode
+        if args.output_dir:
+            output_dir = args.output_dir
+        else:
+            output_dir = "."
+        # Convert model name to safe filename (e.g., "Qwen/Qwen3-1.7B-Base" -> "Qwen--Qwen3-1.7B-Base")
+        output_name = args.hf_model.replace("/", "--")
 
-    # Create output filename based on checkpoint name
-    checkpoint_name = Path(args.checkpoint).stem
-    output_path = Path(output_dir) / f"{checkpoint_name}-eval-results.json"
+    output_path = Path(output_dir) / f"{output_name}-eval-results.json"
 
     describe_config(
         checkpoint=args.checkpoint,
+        hf_model=args.hf_model,
         model_name=args.model_name,
         tasks=tasks,
         batch_size=args.batch_size,
@@ -199,6 +221,7 @@ def main() -> None:
     # Run evaluation
     results = evaluate_checkpoint(
         checkpoint_path=args.checkpoint,
+        hf_model=args.hf_model,
         model_name=args.model_name,
         tasks=tasks,
         batch_size=args.batch_size,
