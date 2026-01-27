@@ -44,6 +44,7 @@ from examples.agentic_llm_pretraining.datasets.loading import (
     load_tokens_dataset,
     get_sample_properties,
 )
+from examples.agentic_llm_pretraining.models.qwen3 import add_mlp_dropout_to_qwen3
 from examples.agentic_llm_pretraining.training.pytorch.datasets import PyTorchTokensDataset
 from examples.agentic_llm_pretraining.training.pytorch.model import NTPTrainModel
 
@@ -112,6 +113,10 @@ class NTPTrainingProcess(TrainingProcess):
     :param val_fraction: Fraction of validation data to use (0-1). If None, use all data.
         Requires seed to be set for reproducible subsampling across distributed processes.
     :param model_name: HuggingFace model name for config (default: Qwen/Qwen3-1.7B-Base).
+    :param attn_dropout: Attention dropout rate on attention weights (Qwen3 built-in).
+        Recommended: 0.1 for multi-epoch training.
+    :param mlp_dropout: MLP dropout rate after MLP layers, before residual connection.
+        Recommended: 0.1 for multi-epoch training.
     :param use_liger_kernel: Enable Liger Kernel for memory-efficient cross-entropy.
         Reduces logits memory by ~97% by fusing linear + cross-entropy computation.
         Requires liger-kernel package: pip install liger-kernel
@@ -131,6 +136,8 @@ class NTPTrainingProcess(TrainingProcess):
         train_fraction: float | None = None,
         val_fraction: float | None = None,
         model_name: str = DEFAULT_MODEL_NAME,
+        attn_dropout: float = 0.0,
+        mlp_dropout: float = 0.0,
         use_liger_kernel: bool = True,
         checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR,
         log_dir: str = DEFAULT_LOG_DIR,
@@ -156,6 +163,8 @@ class NTPTrainingProcess(TrainingProcess):
         self._train_fraction = train_fraction
         self._val_fraction = val_fraction
         self._model_name = model_name
+        self._attn_dropout = attn_dropout
+        self._mlp_dropout = mlp_dropout
         self._use_liger_kernel = use_liger_kernel
         self._checkpoint_dir = checkpoint_dir
         self._log_dir = log_dir
@@ -272,13 +281,9 @@ class NTPTrainingProcess(TrainingProcess):
             trust_remote_code=True,
         )
 
-        self._log.info(f"Model config:\n"
-                       f"  hidden_size: {config.hidden_size}\n"
-                       f"  num_hidden_layers: {config.num_hidden_layers}\n"
-                       f"  num_attention_heads: {config.num_attention_heads}\n"
-                       f"  num_key_value_heads: {config.num_key_value_heads}\n"
-                       f"  vocab_size: {config.vocab_size}\n"
-                       f"  max_position_embeddings: {config.max_position_embeddings}")
+        # Apply attention dropout via config (Qwen3 built-in)
+        if self._attn_dropout > 0:
+            config.attention_dropout = self._attn_dropout
 
         # Initialize model with random weights (not from pretrained checkpoint)
         # Wrap in execute_for_primary_device_first because trust_remote_code=True
@@ -288,6 +293,20 @@ class NTPTrainingProcess(TrainingProcess):
             config,
             trust_remote_code=True,
         )
+
+        # Apply MLP dropout via wrapper
+        if self._mlp_dropout > 0:
+            model = add_mlp_dropout_to_qwen3(model, dropout_rate=self._mlp_dropout)
+
+        self._log.info(f"Model config:\n"
+                       f"  hidden_size: {config.hidden_size}\n"
+                       f"  num_hidden_layers: {config.num_hidden_layers}\n"
+                       f"  num_attention_heads: {config.num_attention_heads}\n"
+                       f"  num_key_value_heads: {config.num_key_value_heads}\n"
+                       f"  vocab_size: {config.vocab_size}\n"
+                       f"  max_position_embeddings: {config.max_position_embeddings}\n"
+                       f"  attention_dropout: {config.attention_dropout}\n"
+                       f"  mlp_dropout: {self._mlp_dropout}")
 
         # Count parameters
         total_params = sum(p.numel() for p in model.parameters())

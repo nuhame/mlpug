@@ -81,6 +81,28 @@ def create_arg_parser(
     )
 
     parser.add_argument(
+        "--attn-dropout",
+        type=float,
+        required=False,
+        default=0.0,
+        help=(
+            "Attention dropout rate on attention weights (Qwen3 built-in). "
+            "Default: 0.0, recommended: 0.1 for multi-epoch training."
+        ),
+    )
+
+    parser.add_argument(
+        "--mlp-dropout",
+        type=float,
+        required=False,
+        default=0.0,
+        help=(
+            "MLP dropout rate after MLP layers, before residual connection. "
+            "Default: 0.0, recommended: 0.1 for multi-epoch training."
+        ),
+    )
+
+    parser.add_argument(
         "--checkpoint-dir",
         type=str,
         required=False,
@@ -175,6 +197,8 @@ def describe_config(
     train_fraction: float | None,
     val_fraction: float | None,
     model_name: str,
+    attn_dropout: float,
+    mlp_dropout: float,
     checkpoint_dir: str,
     log_dir: str,
     warmup_ratio: float,
@@ -197,6 +221,8 @@ def describe_config(
     :param train_fraction: Fraction of training data to use.
     :param val_fraction: Fraction of validation data to use.
     :param model_name: HuggingFace model name.
+    :param attn_dropout: Attention dropout rate (Qwen3 built-in).
+    :param mlp_dropout: MLP dropout rate (wrapper).
     :param checkpoint_dir: Directory for checkpoints.
     :param log_dir: Directory for logs.
     :param warmup_ratio: LR warmup ratio.
@@ -221,6 +247,8 @@ def describe_config(
     logger.info(f"  train_fraction: {train_fraction}")
     logger.info(f"  val_fraction: {val_fraction}")
     logger.info(f"  model_name: {model_name}")
+    logger.info(f"  attn_dropout: {attn_dropout}")
+    logger.info(f"  mlp_dropout: {mlp_dropout}")
     logger.info(f"  checkpoint_dir: {checkpoint_dir}")
     logger.info(f"  log_dir: {log_dir}")
     logger.info(f"  warmup_ratio: {warmup_ratio}")
