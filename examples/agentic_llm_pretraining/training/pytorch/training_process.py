@@ -141,6 +141,7 @@ class NTPTrainingProcess(TrainingProcess):
         use_liger_kernel: bool = True,
         checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR,
         log_dir: str = DEFAULT_LOG_DIR,
+        archive_epoch_checkpoints: bool = False,
         # Base class parameters with NTP-specific defaults
         lr_scheduler_config: LRSchedulerConfig | None = DEFAULT_LR_SCHEDULER_CONFIG,
         optimizer_config: dict | None = None,
@@ -168,6 +169,7 @@ class NTPTrainingProcess(TrainingProcess):
         self._use_liger_kernel = use_liger_kernel
         self._checkpoint_dir = checkpoint_dir
         self._log_dir = log_dir
+        self._archive_epoch_checkpoints = archive_epoch_checkpoints
 
         # Set during _setup_datasets
         self._context_length: int | None = None
@@ -466,7 +468,7 @@ class NTPTrainingProcess(TrainingProcess):
                     metric_to_monitor="validation.dataset.loss" if self._validation_set else None,
                     metric_monitor_period=1,  # check every epoch
                     create_checkpoint_every=1,  # save every epoch
-                    archive_last_model_checkpoint_every=0,  # no archiving
+                    archive_last_model_checkpoint_every=1 if self._archive_epoch_checkpoints else 0,
                     backup_before_override=False,
                 )
             )

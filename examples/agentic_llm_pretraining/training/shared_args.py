@@ -118,6 +118,12 @@ def create_arg_parser(
         help="Directory for training logs (TensorBoard)",
     )
 
+    parser.add_argument(
+        "--archive-epoch-checkpoints",
+        action="store_true",
+        help="Archive model checkpoint at end of each epoch (for evaluation at different stages)",
+    )
+
     # -------------------------------------------------------------------------
     # LR scheduler configuration
     # -------------------------------------------------------------------------
@@ -201,6 +207,7 @@ def describe_config(
     mlp_dropout: float,
     checkpoint_dir: str,
     log_dir: str,
+    archive_epoch_checkpoints: bool,
     warmup_ratio: float,
     min_lr_ratio: float,
     weight_decay: float,
@@ -251,6 +258,7 @@ def describe_config(
     logger.info(f"  mlp_dropout: {mlp_dropout}")
     logger.info(f"  checkpoint_dir: {checkpoint_dir}")
     logger.info(f"  log_dir: {log_dir}")
+    logger.info(f"  archive_epoch_checkpoints: {archive_epoch_checkpoints}")
     logger.info(f"  warmup_ratio: {warmup_ratio}")
     logger.info(f"  min_lr_ratio: {min_lr_ratio}")
     logger.info(f"  weight_decay: {weight_decay}")
