@@ -3,4 +3,11 @@ zstandard    # For reading zstd-compressed datasets (e.g., The Pile)
 gitpython    # For git state logging (reproducibility)
 rich         # For pretty-printing sample inspection and config logging
 data-forager>=0.1.2  # For JSONL indexing, tokenization, and random access
-transformers # For tokenizers (Qwen3, etc.)
+tensorboard  # For training metrics visualization
+
+# Transformers pinned to 4.x - liger-kernel 0.6.x is incompatible with transformers 5.x
+# (transformers 5.x removed HybridCache from cache_utils, causing import errors)
+transformers>=4.45,<5.0
+
+# Liger Kernel for memory-efficient cross-entropy (critical for large vocabularies like Qwen3's 152K)
+liger-kernel
