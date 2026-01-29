@@ -2,34 +2,33 @@
 CLI script to evaluate model checkpoints or HuggingFace models using lm-evaluation-harness.
 
 Usage (checkpoint, single GPU):
-    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+    python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
         --output-dir /path/to/results
 
 Usage (HuggingFace model, single GPU):
-    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+    python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
         --hf-model Qwen/Qwen3-1.7B-Base \
         --output-dir /path/to/results
 
 Multi-GPU evaluation (uses accelerate for data parallelism):
-    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+    python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
         --num-gpus 6 \
         --batch-size 24
 
 Quick test (limited samples):
-    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+    python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
         --limit 10
 
 Extended benchmarks including GSM8K:
-    python -m examples.agentic_llm_pretraining.evaluation.evaluate_checkpoint \
+    python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
         --checkpoint /path/to/checkpoint.pt \
         --extended
 """
 import argparse
 import os
-import sys
 from pathlib import Path
 
 from basics.logging import get_logger
@@ -37,7 +36,7 @@ from basics.logging import get_logger
 import mlpug.pytorch as mlp
 from mlpug.utils.git_logging import log_git_state
 
-from examples.agentic_llm_pretraining.evaluation.benchmarks import (
+from examples.agentic_llm_pretraining.evaluation.lm_eval.benchmarks import (
     evaluate_checkpoint,
     DEFAULT_BENCHMARKS,
     EXTENDED_BENCHMARKS,
