@@ -9,7 +9,7 @@ Requirements:
     pip install lm-eval accelerate
 
 Usage (standalone, single GPU):
-    from examples.agentic_llm_pretraining.evaluation.benchmarks import (
+    from examples.agentic_llm_pretraining.evaluation.lm_eval.benchmarks import (
         evaluate_checkpoint,
         DEFAULT_BENCHMARKS,
     )
@@ -29,7 +29,7 @@ Usage (standalone, multi-GPU):
     )
 
 Usage (in callback):
-    from examples.agentic_llm_pretraining.evaluation.benchmarks import (
+    from examples.agentic_llm_pretraining.evaluation.lm_eval.benchmarks import (
         evaluate_model,
         DEFAULT_BENCHMARKS,
     )
@@ -48,7 +48,15 @@ import tempfile
 from pathlib import Path
 
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+from basics.logging import get_logger
+
+from examples.agentic_llm_pretraining.evaluation.checkpoint import (
+    load_model_from_checkpoint,
+    save_model_as_hf,
+)
+
+module_logger = get_logger(os.path.basename(__file__))
 
 
 # Default benchmarks for quick evaluation
@@ -71,93 +79,6 @@ EXTENDED_BENCHMARKS = DEFAULT_BENCHMARKS + [
 EXTENDED_BENCHMARKS_INCLUDING_MMLU = EXTENDED_BENCHMARKS + [
     "mmlu",           # Multi-task language understanding
 ]
-
-
-def load_model_from_checkpoint(
-    checkpoint_path: str,
-    model_name: str = "Qwen/Qwen3-1.7B-Base",
-    device: str = "cuda",
-    logger: Optional[logging.Logger] = None,
-) -> tuple:
-    """
-    Load a model from an MLPug checkpoint file.
-
-    MLPug saves model checkpoints as state_dict files using torch.save().
-    This function loads the state_dict into a fresh model instance.
-
-    :param checkpoint_path: Path to the .pt checkpoint file.
-    :param model_name: HuggingFace model name to initialize the architecture.
-    :param device: Device to load the model to.
-    :param logger: Optional logger for status messages.
-
-    :return: Tuple of (model, tokenizer).
-    """
-    if logger:
-        logger.info(f"Loading checkpoint from {checkpoint_path}")
-
-    # Load the checkpoint
-    # weights_only=False needed because MLPug checkpoints contain pickled objects
-    # (e.g., MicroBatchResults in manager_state). This is safe for our own checkpoints.
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    # The checkpoint contains model state under 'model' key
-    # (from MLPug's trainer.get_model_components() with convert_to_dict())
-    if isinstance(checkpoint, dict) and 'model' in checkpoint:
-        state_dict = checkpoint['model']
-    else:
-        # Assume it's a direct state_dict
-        state_dict = checkpoint
-
-    # Initialize model architecture
-    config = AutoConfig.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_config(config)
-
-    # Load the trained weights
-    model.load_state_dict(state_dict)
-    model = model.to(device)
-    model.eval()
-
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    if logger:
-        logger.info(f"Model loaded successfully on {device}")
-
-    return model, tokenizer
-
-
-def save_model_for_lm_eval(
-    model,
-    tokenizer,
-    output_dir: str,
-    logger: Optional[logging.Logger] = None,
-) -> str:
-    """
-    Save model in HuggingFace format for lm-evaluation-harness.
-
-    lm-evaluation-harness works best with HuggingFace model paths.
-    This function saves the model and tokenizer in the expected format.
-
-    :param model: The PyTorch model to save.
-    :param tokenizer: The tokenizer to save.
-    :param output_dir: Directory to save the model.
-    :param logger: Optional logger for status messages.
-
-    :return: Path to the saved model directory.
-    """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    if logger:
-        logger.info(f"Saving model to {output_path}")
-
-    model.save_pretrained(output_path)
-    tokenizer.save_pretrained(output_path)
-
-    if logger:
-        logger.info(f"Model saved successfully")
-
-    return str(output_path)
 
 
 def evaluate_hf_model(
@@ -188,6 +109,9 @@ def evaluate_hf_model(
 
     :return: Dictionary with evaluation results.
     """
+    if logger is None:
+        logger = module_logger
+
     try:
         import lm_eval
         from lm_eval import simple_evaluate
@@ -196,12 +120,11 @@ def evaluate_hf_model(
             "lm-evaluation-harness not installed. Install with: pip install lm-eval"
         )
 
-    if logger:
-        logger.info(f"Running lm-evaluation-harness on tasks: {tasks}")
-        logger.info(f"Model: {model_path}")
-        logger.info(f"Batch size: {batch_size}, Device: {device}, dtype: {dtype}")
-        if limit:
-            logger.info(f"Sample limit per task: {limit}")
+    logger.info(f"Running lm-evaluation-harness on tasks: {tasks}")
+    logger.info(f"Model: {model_path}")
+    logger.info(f"Batch size: {batch_size}, Device: {device}, dtype: {dtype}")
+    if limit:
+        logger.info(f"Sample limit per task: {limit}")
 
     # Run evaluation
     # confirm_run_unsafe_code=True needed for code evaluation tasks (humaneval, mbpp)
@@ -216,16 +139,14 @@ def evaluate_hf_model(
         confirm_run_unsafe_code=True,
     )
 
-    if logger:
-        logger.info("Evaluation complete")
-        _log_results_summary(results, logger)
+    logger.info("Evaluation complete")
+    _log_results_summary(results, logger)
 
     # Save results if output path specified
     if output_path:
         with open(output_path, 'w') as f:
             json.dump(results, f, indent=2, default=str)
-        if logger:
-            logger.info(f"Results saved to {output_path}")
+        logger.info(f"Results saved to {output_path}")
 
     return results
 
@@ -260,6 +181,9 @@ def evaluate_hf_model_distributed(
 
     :return: Dictionary with evaluation results.
     """
+    if logger is None:
+        logger = module_logger
+
     if num_gpus == 1:
         # Single GPU: use in-process evaluation
         return evaluate_hf_model(
@@ -280,11 +204,10 @@ def evaluate_hf_model_distributed(
     # then copy to user's output_path if specified.
     temp_output_dir = tempfile.mkdtemp(prefix="lm_eval_output_")
 
-    if logger:
-        logger.info(f"Launching multi-GPU evaluation with {num_gpus} GPUs")
-        logger.info(f"Model: {model_path}")
-        logger.info(f"Tasks: {tasks}")
-        logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
+    logger.info(f"Launching multi-GPU evaluation with {num_gpus} GPUs")
+    logger.info(f"Model: {model_path}")
+    logger.info(f"Tasks: {tasks}")
+    logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
 
     # Build command
     # Note: --log_samples and --confirm_run_unsafe_code are boolean flags (no value)
@@ -307,8 +230,7 @@ def evaluate_hf_model_distributed(
     if limit is not None:
         cmd.extend(["--limit", str(limit)])
 
-    if logger:
-        logger.info(f"Command: {' '.join(cmd)}")
+    logger.info(f"Command: {' '.join(cmd)}")
 
     try:
         # Run subprocess, streaming output to main process stdout/stderr
@@ -329,12 +251,11 @@ def evaluate_hf_model_distributed(
 
         if len(results_files) > 1:
             # This should never happen with a unique temp directory
-            if logger:
-                logger.error(
-                    f"UNEXPECTED: Multiple results files found in temp directory: "
-                    f"{results_files}. This indicates a bug or race condition. "
-                    f"Using most recent file."
-                )
+            logger.error(
+                f"UNEXPECTED: Multiple results files found in temp directory: "
+                f"{results_files}. This indicates a bug or race condition. "
+                f"Using most recent file."
+            )
             results_file = max(results_files, key=lambda p: p.stat().st_mtime)
         else:
             results_file = results_files[0]
@@ -346,25 +267,21 @@ def evaluate_hf_model_distributed(
         # Copy to user's output_path if specified
         if output_path is not None:
             shutil.copy(results_file, output_path)
-            if logger:
-                logger.info(f"Results saved to {output_path}")
+            logger.info(f"Results saved to {output_path}")
 
-        if logger:
-            logger.info("Evaluation complete")
-            _log_results_summary(results, logger)
+        logger.info("Evaluation complete")
+        _log_results_summary(results, logger)
 
         return results
 
     except subprocess.CalledProcessError as e:
         error_msg = f"Evaluation subprocess failed with exit code {e.returncode}"
-        if logger:
-            logger.error(error_msg)
+        logger.error(error_msg)
         raise RuntimeError(error_msg) from e
 
     except FileNotFoundError as e:
         error_msg = f"Results file not found: {e}"
-        if logger:
-            logger.error(error_msg)
+        logger.error(error_msg)
         raise RuntimeError(error_msg) from e
 
     finally:
@@ -410,6 +327,9 @@ def evaluate_checkpoint(
 
     :return: Dictionary with evaluation results.
     """
+    if logger is None:
+        logger = module_logger
+
     if checkpoint_path is None and hf_model is None:
         raise ValueError("Must provide either checkpoint_path or hf_model")
     if checkpoint_path is not None and hf_model is not None:
@@ -453,7 +373,7 @@ def evaluate_checkpoint(
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
 
     try:
-        model_path = save_model_for_lm_eval(
+        model_path = save_model_as_hf(
             model=model,
             tokenizer=tokenizer,
             output_dir=temp_dir,
@@ -483,8 +403,7 @@ def evaluate_checkpoint(
     finally:
         # Cleanup temporary model directory
         if not keep_temp_model and temp_model_dir is None:
-            if logger:
-                logger.info(f"Cleaning up temporary model directory: {temp_dir}")
+            logger.info(f"Cleaning up temporary model directory: {temp_dir}")
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
@@ -520,12 +439,15 @@ def evaluate_model(
 
     :return: Dictionary with evaluation results.
     """
+    if logger is None:
+        logger = module_logger
+
     if tasks is None:
         tasks = DEFAULT_BENCHMARKS
 
     # Save to temporary directory
     with tempfile.TemporaryDirectory(prefix="lm_eval_model_") as temp_dir:
-        model_path = save_model_for_lm_eval(
+        model_path = save_model_as_hf(
             model=model,
             tokenizer=tokenizer,
             output_dir=temp_dir,
