@@ -506,30 +506,43 @@ def _capture_bfcl_samples(
 
             logger.info(f"Found model directory: {model_dir.name}")
 
-            # Find result files for each category
-            # BFCL naming: BFCL_v3_{category}_result.json
-            for category in categories:
-                # Map category name to BFCL file naming convention
-                # e.g., "simple_python" -> "BFCL_v3_simple_python_result.json"
-                result_file = model_dir / f"BFCL_v3_{category}_result.json"
+            # BFCL v4 uses subdirectories: non_live/, live/, multi_turn/, etc.
+            # Check both direct files and subdirectories
+            search_dirs = [model_dir]
+            for subdir in model_dir.iterdir():
+                if subdir.is_dir():
+                    search_dirs.append(subdir)
+                    logger.info(f"  Found subdirectory: {subdir.name}")
 
-                if not result_file.exists():
+            # Find result files for each category
+            for category in categories:
+                result_file = None
+
+                # Search all directories for the result file
+                for search_dir in search_dirs:
+                    # BFCL naming: BFCL_v3_{category}_result.json
+                    candidate = search_dir / f"BFCL_v3_{category}_result.json"
+                    if candidate.exists():
+                        result_file = candidate
+                        break
+
                     # Try alternative patterns
                     alt_patterns = [
                         f"*{category}*_result.json",
                         f"*{category}*.json",
                     ]
                     for pattern in alt_patterns:
-                        matches = list(model_dir.glob(pattern))
+                        matches = list(search_dir.glob(pattern))
                         if matches:
                             result_file = matches[0]
                             break
-                    else:
-                        logger.info(f"  No result file for category: {category}")
-                        logger.info(f"  Files in {model_dir}:")
-                        for item in model_dir.iterdir():
-                            logger.info(f"    {item.name}")
-                        continue
+                    if result_file:
+                        break
+
+                if not result_file:
+                    logger.info(f"  No result file for category: {category}")
+                    logger.info(f"  Searched directories: {[str(d) for d in search_dirs]}")
+                    continue
 
                 logger.info(f"  Reading: {result_file.name}")
 
