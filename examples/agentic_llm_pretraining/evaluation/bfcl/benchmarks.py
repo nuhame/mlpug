@@ -4,10 +4,6 @@ Core evaluation functions using BFCL (Berkeley Function Calling Leaderboard).
 This module provides functions for evaluating language model checkpoints
 on function/tool calling benchmarks using the BFCL framework.
 
-WARNING: This module has not been tested yet. The implementation is based on
-BFCL documentation and may require adjustments. Test with a small category
-(e.g., simple_python) before running comprehensive evaluations.
-
 Requirements:
     pip install bfcl-eval[oss_eval_vllm]  # For vLLM backend
     # or
@@ -31,6 +27,7 @@ Note:
 """
 from typing import Optional
 
+import csv
 import json
 import logging
 import os
@@ -63,6 +60,20 @@ DEFAULT_TEST_CATEGORIES = BASIC_TEST_CATEGORIES + [
 
 # All scoring categories (comprehensive evaluation)
 ALL_SCORING_CATEGORIES = "all_scoring"
+
+# Mapping from BFCL test category names to CSV column names in data_non_live.csv
+# BFCL v4 outputs results to CSV files instead of JSON
+CATEGORY_TO_CSV_COLUMN = {
+    "simple_python": "Python Simple AST",
+    "simple_java": "Java Simple AST",
+    "simple_javascript": "JavaScript Simple AST",
+    "parallel": "Parallel AST",
+    "multiple": "Multiple AST",
+    "parallel_multiple": "Parallel Multiple AST",
+}
+
+# CSV file containing non-live benchmark results (simple_*, parallel, multiple)
+BFCL_NON_LIVE_CSV = "data_non_live.csv"
 
 
 def bfcl_generate(
@@ -161,7 +172,7 @@ def bfcl_evaluate(
     :param templates_model_name: Model name (must match bfcl_generate).
     :param logger: Optional logger for status messages.
 
-    :return: Dictionary with evaluation results.
+    :return: Dictionary mapping category names to accuracy percentages.
     """
     if logger is None:
         logger = module_logger
@@ -176,8 +187,11 @@ def bfcl_evaluate(
     logger.info(f"Templates model: {templates_model_name}")
     logger.info(f"Test categories: {categories}")
 
-    results = {}
+    # Set BFCL_PROJECT_ROOT to our output directory
+    env = os.environ.copy()
+    env["BFCL_PROJECT_ROOT"] = output_dir
 
+    # Run evaluate for each category
     for category in categories:
         cmd = [
             "bfcl", "evaluate",
@@ -187,10 +201,6 @@ def bfcl_evaluate(
 
         logger.info(f"Command: {' '.join(cmd)}")
 
-        # Set BFCL_PROJECT_ROOT to our output directory
-        env = os.environ.copy()
-        env["BFCL_PROJECT_ROOT"] = output_dir
-
         try:
             subprocess.run(
                 cmd,
@@ -199,20 +209,94 @@ def bfcl_evaluate(
             )
             logger.info(f"Evaluate completed for category: {category}")
 
-            # Try to read the score file
-            # BFCL creates: score/MODEL_NAME/BFCL_v3_TEST_CATEGORY_score.json
-            # Note: templates_model_name may contain "/" which becomes directory separator
-            score_file = Path(output_dir) / "score" / templates_model_name / f"BFCL_v3_{category}_score.json"
-
-            if score_file.exists():
-                with open(score_file) as f:
-                    results[category] = json.load(f)
-            else:
-                logger.warning(f"Score file not found: {score_file}")
-
         except subprocess.CalledProcessError as e:
             logger.error(f"Evaluate failed for category {category}: {e}")
             raise
+
+    # Parse results from CSV (BFCL v4 outputs CSV, not JSON)
+    results = _parse_bfcl_csv_results(output_dir, categories, templates_model_name, logger)
+
+    return results
+
+
+def _parse_bfcl_csv_results(
+    output_dir: str,
+    categories: list[str],
+    templates_model_name: str,
+    logger: logging.Logger,
+) -> dict:
+    """
+    Parse BFCL evaluation results from CSV files.
+
+    BFCL v4 outputs results to CSV files in the score/ directory.
+    This function reads data_non_live.csv and extracts accuracy for each category.
+
+    :param output_dir: BFCL output directory containing score/ subdirectory.
+    :param categories: List of category names to extract.
+    :param templates_model_name: Model name used in BFCL (for row matching).
+    :param logger: Logger for status messages.
+
+    :return: Dictionary mapping category names to accuracy percentages.
+    """
+    results = {}
+
+    # Read data_non_live.csv for simple_*, parallel, multiple categories
+    csv_path = Path(output_dir) / "score" / BFCL_NON_LIVE_CSV
+
+    if not csv_path.exists():
+        logger.warning(f"CSV file not found: {csv_path}")
+        return results
+
+    try:
+        with open(csv_path, newline='') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        if not rows:
+            logger.warning(f"CSV file is empty: {csv_path}")
+            return results
+
+        # Find the row for our model
+        # BFCL uses model name with "/" replaced by "_" in some contexts
+        model_name_normalized = templates_model_name.replace("/", "_")
+        model_row = None
+
+        for row in rows:
+            model_col = row.get("Model", "")
+            if model_col == templates_model_name or model_col == model_name_normalized:
+                model_row = row
+                break
+
+        if model_row is None:
+            logger.warning(
+                f"Model '{templates_model_name}' not found in CSV. "
+                f"Available models: {[r.get('Model', '') for r in rows]}"
+            )
+            return results
+
+        # Extract accuracy for each requested category
+        for category in categories:
+            csv_column = CATEGORY_TO_CSV_COLUMN.get(category)
+
+            if csv_column is None:
+                logger.warning(f"No CSV column mapping for category: {category}")
+                continue
+
+            accuracy_str = model_row.get(csv_column, "")
+
+            if accuracy_str:
+                try:
+                    # Convert percentage string to float (e.g., "69.25" -> 69.25)
+                    accuracy = float(accuracy_str)
+                    results[category] = {"accuracy": accuracy}
+                    logger.info(f"{category}: {accuracy:.2f}%")
+                except ValueError:
+                    logger.warning(f"Could not parse accuracy for {category}: {accuracy_str}")
+            else:
+                logger.warning(f"No accuracy value for {category} in CSV")
+
+    except Exception as e:
+        logger.error(f"Error parsing CSV: {e}")
 
     return results
 
