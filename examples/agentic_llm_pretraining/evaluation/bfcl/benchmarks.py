@@ -271,8 +271,25 @@ def evaluate_checkpoint(
     cleanup_temp = False
 
     if hf_model is not None:
-        # HuggingFace model: use directly
-        model_path = hf_model
+        # HuggingFace model: download to local directory
+        # BFCL requires a local path for --local-model-path
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        if temp_model_dir is None:
+            temp_dir = tempfile.mkdtemp(prefix="bfcl_model_")
+            cleanup_temp = not keep_temp_model
+        else:
+            temp_dir = temp_model_dir
+            Path(temp_dir).mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Downloading HuggingFace model {hf_model} to {temp_dir}")
+        hf_model_instance = AutoModelForCausalLM.from_pretrained(hf_model)
+        hf_tokenizer = AutoTokenizer.from_pretrained(hf_model)
+        hf_model_instance.save_pretrained(temp_dir)
+        hf_tokenizer.save_pretrained(temp_dir)
+        del hf_model_instance  # Free memory
+        logger.info(f"Model saved to {temp_dir}")
+        model_path = temp_dir
     else:
         # Checkpoint: convert to HF format
         if temp_model_dir is None:
