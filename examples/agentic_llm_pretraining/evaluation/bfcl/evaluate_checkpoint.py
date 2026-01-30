@@ -125,6 +125,19 @@ def create_arg_parser() -> argparse.ArgumentParser:
         help="Directory to save results (default: same as checkpoint)",
     )
 
+    # Sample capture
+    parser.add_argument(
+        "--capture-samples",
+        action="store_true",
+        help="Capture sample prompts and model responses for analysis",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=10,
+        help="Number of samples to capture per category (only used with --capture-samples)",
+    )
+
     return parser
 
 
@@ -138,6 +151,8 @@ def describe_config(
     num_gpus: int,
     gpu_memory_utilization: float,
     output_dir: str | None,
+    capture_samples: bool,
+    num_samples: int,
     logger=None,
 ) -> None:
     """Log script configuration."""
@@ -154,6 +169,8 @@ def describe_config(
     logger.info(f"  num_gpus: {num_gpus}")
     logger.info(f"  gpu_memory_utilization: {gpu_memory_utilization}")
     logger.info(f"  output_dir: {output_dir}")
+    logger.info(f"  capture_samples: {capture_samples}")
+    logger.info(f"  num_samples: {num_samples}")
 
 
 def main() -> None:
@@ -193,6 +210,11 @@ def main() -> None:
 
     output_path = Path(output_dir) / f"{output_name}-bfcl-results.json"
 
+    # Determine sample capture path if requested
+    capture_samples_path = None
+    if args.capture_samples:
+        capture_samples_path = str(Path(output_dir) / f"{output_name}-bfcl-samples.txt")
+
     describe_config(
         checkpoint=args.checkpoint,
         hf_model=args.hf_model,
@@ -203,6 +225,8 @@ def main() -> None:
         num_gpus=args.num_gpus,
         gpu_memory_utilization=args.gpu_memory_utilization,
         output_dir=output_dir,
+        capture_samples=args.capture_samples,
+        num_samples=args.num_samples,
         logger=module_logger,
     )
 
@@ -217,10 +241,14 @@ def main() -> None:
         num_gpus=args.num_gpus,
         gpu_memory_utilization=args.gpu_memory_utilization,
         output_path=str(output_path),
+        capture_samples_path=capture_samples_path,
+        num_samples_to_capture=args.num_samples,
         logger=module_logger,
     )
 
     module_logger.info(f"Evaluation complete. Results saved to: {output_path}")
+    if capture_samples_path:
+        module_logger.info(f"Sample responses saved to: {capture_samples_path}")
 
 
 if __name__ == "__main__":

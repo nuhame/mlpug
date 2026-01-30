@@ -326,6 +326,8 @@ def evaluate_checkpoint(
     output_path: Optional[str] = None,
     keep_temp_model: bool = False,
     temp_model_dir: Optional[str] = None,
+    capture_samples_path: Optional[str] = None,
+    num_samples_to_capture: int = 10,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -348,6 +350,8 @@ def evaluate_checkpoint(
     :param output_path: Path to save results JSON file.
     :param keep_temp_model: If True, don't delete temporary model directory (only used with checkpoint_path).
     :param temp_model_dir: Custom directory for temporary model (only used with checkpoint_path).
+    :param capture_samples_path: If provided, capture sample prompts and responses to this file.
+    :param num_samples_to_capture: Number of samples to capture per category (default: 10).
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
@@ -428,6 +432,16 @@ def evaluate_checkpoint(
             logger=logger,
         )
 
+        # Capture sample responses before cleanup if requested
+        if capture_samples_path:
+            _capture_bfcl_samples(
+                bfcl_output_dir,
+                capture_samples_path,
+                test_categories if isinstance(test_categories, list) else [test_categories],
+                num_samples_to_capture,
+                logger,
+            )
+
         # Log summary
         _log_results_summary(results, logger)
 
@@ -447,6 +461,120 @@ def evaluate_checkpoint(
 
         # Always cleanup BFCL output directory
         shutil.rmtree(bfcl_output_dir, ignore_errors=True)
+
+
+def _capture_bfcl_samples(
+    output_dir: str,
+    capture_path: str,
+    categories: list[str],
+    num_samples: int,
+    logger: logging.Logger,
+) -> None:
+    """
+    Capture sample prompts and model responses from BFCL output.
+
+    BFCL stores model outputs in:
+      result/MODEL_NAME/BFCL_v3_TEST_CATEGORY_result.json
+
+    Reference: https://github.com/ShishirPatil/gorilla/tree/main/berkeley-function-call-leaderboard
+
+    :param output_dir: BFCL output directory (BFCL_PROJECT_ROOT).
+    :param capture_path: Path to save captured samples.
+    :param categories: List of categories to capture.
+    :param num_samples: Number of samples per category.
+    :param logger: Logger for status messages.
+    """
+    logger.info(f"Capturing BFCL samples to {capture_path}")
+
+    # BFCL stores model outputs in result/MODEL_NAME/
+    result_dir = Path(output_dir) / "result"
+
+    if not result_dir.exists():
+        logger.warning(f"BFCL result directory not found: {result_dir}")
+        logger.info(f"Contents of {output_dir}:")
+        for item in Path(output_dir).iterdir():
+            logger.info(f"  {item.name}")
+        return
+
+    with open(capture_path, 'w') as f:
+        sample_count = 0
+
+        # Iterate through model subdirectories
+        for model_dir in result_dir.iterdir():
+            if not model_dir.is_dir():
+                continue
+
+            logger.info(f"Found model directory: {model_dir.name}")
+
+            # Find result files for each category
+            # BFCL naming: BFCL_v3_{category}_result.json
+            for category in categories:
+                # Map category name to BFCL file naming convention
+                # e.g., "simple_python" -> "BFCL_v3_simple_python_result.json"
+                result_file = model_dir / f"BFCL_v3_{category}_result.json"
+
+                if not result_file.exists():
+                    # Try alternative patterns
+                    alt_patterns = [
+                        f"*{category}*_result.json",
+                        f"*{category}*.json",
+                    ]
+                    for pattern in alt_patterns:
+                        matches = list(model_dir.glob(pattern))
+                        if matches:
+                            result_file = matches[0]
+                            break
+                    else:
+                        logger.info(f"  No result file for category: {category}")
+                        logger.info(f"  Files in {model_dir}:")
+                        for item in model_dir.iterdir():
+                            logger.info(f"    {item.name}")
+                        continue
+
+                logger.info(f"  Reading: {result_file.name}")
+
+                try:
+                    with open(result_file) as rf:
+                        content = rf.read().strip()
+
+                    # Parse JSON (BFCL uses JSON array format)
+                    samples = json.loads(content)
+                    if not isinstance(samples, list):
+                        samples = [samples]
+
+                    # Write samples to capture file
+                    for i, sample in enumerate(samples[:num_samples]):
+                        sample_count += 1
+                        f.write(f"# SAMPLE {sample_count}\n\n")
+                        f.write(f"## CATEGORY: {category}\n\n")
+                        f.write(f"## FILE: {result_file.name}\n\n")
+
+                        # Extract prompt/input - BFCL typically uses 'prompt'
+                        prompt = sample.get('prompt', sample.get('input', 'N/A'))
+                        if isinstance(prompt, list):
+                            # Chat format - format nicely
+                            prompt = json.dumps(prompt, indent=2)
+                        f.write(f"## PROMPT\n\n{prompt}\n\n")
+
+                        # Extract model response - BFCL uses 'result'
+                        response = sample.get('result', sample.get('output', sample.get('response', 'N/A')))
+                        f.write(f"## MODEL RESPONSE\n\n{response}\n\n")
+
+                        # Extract expected output if available
+                        expected = sample.get('expected', sample.get('ground_truth', None))
+                        if expected:
+                            f.write(f"## EXPECTED\n\n{expected}\n\n")
+
+                        # Include full sample JSON for first 3 samples (debugging)
+                        if i < 3:
+                            f.write(f"## FULL SAMPLE JSON\n\n```json\n{json.dumps(sample, indent=2)}\n```\n\n")
+
+                        f.write("=" * 80 + "\n\n")
+
+                except Exception as e:
+                    logger.warning(f"Error reading {result_file}: {e}")
+
+        logger.info(f"Captured {sample_count} samples to {capture_path}")
 
 
 def _log_results_summary(results: dict, logger: logging.Logger) -> None:
