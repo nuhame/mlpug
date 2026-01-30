@@ -429,7 +429,7 @@ class CheckpointManager(Callback, metaclass=abc.ABCMeta):
         training_iter = current[iter_name]
 
         archive_last_model = (self._archive_last_model_checkpoint_every > 0) and \
-                             (training_iter > 0) and \
+                             (training_iter >= 0) and \
                              (training_iter % self._archive_last_model_checkpoint_every == 0)
 
         success = True
