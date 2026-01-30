@@ -520,10 +520,13 @@ def _capture_bfcl_samples(
 
                 # Search all directories for the result file
                 for search_dir in search_dirs:
-                    # BFCL naming: BFCL_v3_{category}_result.json
-                    candidate = search_dir / f"BFCL_v3_{category}_result.json"
-                    if candidate.exists():
-                        result_file = candidate
+                    # BFCL naming: BFCL_v3_{category}_result.json or BFCL_v4_{category}_result.json
+                    for version in ["v4", "v3"]:
+                        candidate = search_dir / f"BFCL_{version}_{category}_result.json"
+                        if candidate.exists():
+                            result_file = candidate
+                            break
+                    if result_file:
                         break
 
                     # Try alternative patterns
@@ -550,10 +553,21 @@ def _capture_bfcl_samples(
                     with open(result_file) as rf:
                         content = rf.read().strip()
 
-                    # Parse JSON (BFCL uses JSON array format)
-                    samples = json.loads(content)
-                    if not isinstance(samples, list):
-                        samples = [samples]
+                    # BFCL v4 uses JSONL format (one JSON object per line)
+                    # Try JSONL first, fall back to JSON array
+                    samples = []
+                    try:
+                        # Try parsing as JSONL (one JSON object per line)
+                        for line in content.split('\n'):
+                            if line.strip():
+                                samples.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        # Fall back to single JSON array
+                        data = json.loads(content)
+                        if isinstance(data, list):
+                            samples = data
+                        else:
+                            samples = [data]
 
                     # Write samples to capture file
                     for i, sample in enumerate(samples[:num_samples]):
