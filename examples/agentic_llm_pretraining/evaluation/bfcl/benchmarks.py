@@ -463,6 +463,219 @@ def evaluate_checkpoint(
         shutil.rmtree(bfcl_output_dir, ignore_errors=True)
 
 
+def _find_bfcl_test_data_dir() -> Path | None:
+    """
+    Find the BFCL test data directory in the installed bfcl_eval package.
+
+    :return: Path to the data directory, or None if not found.
+    """
+    try:
+        import bfcl_eval
+        package_dir = Path(bfcl_eval.__file__).parent
+        data_dir = package_dir / "data"
+        if data_dir.exists():
+            return data_dir
+    except ImportError:
+        pass
+    return None
+
+
+def _load_bfcl_test_data(category: str, logger: logging.Logger) -> dict:
+    """
+    Load BFCL test data for a category and build a lookup dict by sample ID.
+
+    Loads both the test questions (from data/) and expected answers (from data/possible_answer/).
+
+    :param category: Test category name (e.g., "simple_python").
+    :param logger: Logger for status messages.
+
+    :return: Dictionary mapping sample ID to test data (question, function, ground_truth).
+    """
+    test_data = {}
+    data_dir = _find_bfcl_test_data_dir()
+
+    if data_dir is None:
+        logger.warning("BFCL test data directory not found")
+        return test_data
+
+    # Try both v4 and v3 naming for test questions
+    for version in ["v4", "v3"]:
+        test_file = data_dir / f"BFCL_{version}_{category}.json"
+        if test_file.exists():
+            logger.info(f"  Loading test data from: {test_file.name}")
+            try:
+                with open(test_file) as f:
+                    for line in f:
+                        if line.strip():
+                            sample = json.loads(line)
+                            sample_id = sample.get("id")
+                            if sample_id:
+                                test_data[sample_id] = sample
+                logger.info(f"  Loaded {len(test_data)} test samples")
+                break
+            except Exception as e:
+                logger.warning(f"  Error loading test data: {e}")
+
+    # Load expected answers from possible_answer/ directory
+    for version in ["v4", "v3"]:
+        answer_file = data_dir / "possible_answer" / f"BFCL_{version}_{category}.json"
+        if answer_file.exists():
+            logger.info(f"  Loading expected answers from: {answer_file.name}")
+            try:
+                with open(answer_file) as f:
+                    for line in f:
+                        if line.strip():
+                            answer = json.loads(line)
+                            sample_id = answer.get("id")
+                            if sample_id and sample_id in test_data:
+                                test_data[sample_id]["ground_truth"] = answer.get("ground_truth")
+                logger.info(f"  Loaded expected answers")
+                break
+            except Exception as e:
+                logger.warning(f"  Error loading expected answers: {e}")
+
+    if not test_data:
+        logger.warning(f"  No test data file found for category: {category}")
+
+    return test_data
+
+
+def _load_bfcl_score_data(
+    output_dir: str,
+    category: str,
+    logger: logging.Logger,
+) -> dict:
+    """
+    Load BFCL score data (failed samples) for a category.
+
+    BFCL stores only failed samples in the score file. If a sample ID is not in the
+    score file, it passed the evaluation.
+
+    :param output_dir: BFCL output directory (BFCL_PROJECT_ROOT).
+    :param category: Test category name (e.g., "simple_python").
+    :param logger: Logger for status messages.
+
+    :return: Dictionary mapping failed sample IDs to their error details.
+    """
+    failed_samples = {}
+    score_dir = Path(output_dir) / "score"
+
+    if not score_dir.exists():
+        logger.warning(f"  Score directory not found: {score_dir}")
+        return failed_samples
+
+    # Search in model subdirectories and their subdirectories (non_live/, live/, etc.)
+    search_dirs = []
+    for model_dir in score_dir.iterdir():
+        if model_dir.is_dir():
+            search_dirs.append(model_dir)
+            for subdir in model_dir.iterdir():
+                if subdir.is_dir():
+                    search_dirs.append(subdir)
+
+    # Find score file
+    score_file = None
+    for search_dir in search_dirs:
+        for version in ["v4", "v3"]:
+            candidate = search_dir / f"BFCL_{version}_{category}_score.json"
+            if candidate.exists():
+                score_file = candidate
+                break
+        if score_file:
+            break
+
+    if score_file is None:
+        logger.warning(f"  Score file not found for category: {category}")
+        return failed_samples
+
+    logger.info(f"  Loading score data from: {score_file.name}")
+
+    try:
+        with open(score_file) as f:
+            content = f.read().strip()
+
+        # Try JSONL first, fall back to JSON array
+        entries = []
+        try:
+            for line in content.split('\n'):
+                if line.strip():
+                    entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            data = json.loads(content)
+            if isinstance(data, list):
+                entries = data
+            else:
+                entries = [data]
+
+        # First entry is the header with accuracy info
+        # Subsequent entries are failed samples
+        for entry in entries[1:]:  # Skip header
+            sample_id = entry.get("id")
+            if sample_id:
+                failed_samples[sample_id] = entry
+
+        logger.info(f"  Loaded {len(failed_samples)} failed samples from score file")
+
+    except Exception as e:
+        logger.warning(f"  Error loading score data: {e}")
+
+    return failed_samples
+
+
+def _format_bfcl_prompt(sample_id: str, question: list, functions: list) -> str:
+    """
+    Format the full BFCL prompt as presented to the model.
+
+    Uses BFCL's formulate_system_prompt to reconstruct the exact prompt.
+
+    :param sample_id: Sample ID (used to extract prompt format config).
+    :param question: The question/prompt messages from test data.
+    :param functions: The available functions from test data.
+
+    :return: Formatted prompt string.
+    """
+    try:
+        from bfcl_eval.model_handler.utils import (
+            formulate_system_prompt,
+            extract_prompt_format_from_id,
+        )
+
+        # Get the prompt format config from the sample ID
+        prompt_format = extract_prompt_format_from_id(sample_id)
+
+        # Generate the system prompt using BFCL's logic
+        system_prompt = formulate_system_prompt(
+            format_sensitivity_config=prompt_format,
+            functions=functions,
+        )
+
+        # Build the full prompt
+        formatted = "=== SYSTEM PROMPT ===\n\n"
+        formatted += system_prompt
+        formatted += "\n\n=== USER MESSAGE ===\n\n"
+
+        # Format the user question
+        if isinstance(question, list) and question:
+            for turn in question:
+                if isinstance(turn, list):
+                    for msg in turn:
+                        role = msg.get('role', 'unknown')
+                        content = msg.get('content', '')
+                        if role != 'system':  # System prompt already shown
+                            formatted += f"[{role}]: {content}\n\n"
+                elif isinstance(turn, dict):
+                    role = turn.get('role', 'unknown')
+                    content = turn.get('content', '')
+                    if role != 'system':
+                        formatted += f"[{role}]: {content}\n\n"
+
+        return formatted
+
+    except ImportError as e:
+        # Fall back to simple format if BFCL not available
+        return f"[BFCL import error: {e}]\n\nQuestion: {question}\n\nFunctions: {json.dumps(functions, indent=2)}"
+
+
 def _capture_bfcl_samples(
     output_dir: str,
     capture_path: str,
@@ -473,8 +686,14 @@ def _capture_bfcl_samples(
     """
     Capture sample prompts and model responses from BFCL output.
 
+    For each sample, captures:
+    1. Full prompt (system prompt + user message) as presented to the model
+    2. Model response
+    3. Expected output (ground truth)
+    4. Assessment result (PASS/FAIL with error details if failed)
+
     BFCL stores model outputs in:
-      result/MODEL_NAME/BFCL_v3_TEST_CATEGORY_result.json
+      result/MODEL_NAME/BFCL_v4_TEST_CATEGORY_result.json
 
     Reference: https://github.com/ShishirPatil/gorilla/tree/main/berkeley-function-call-leaderboard
 
@@ -549,6 +768,12 @@ def _capture_bfcl_samples(
 
                 logger.info(f"  Reading: {result_file.name}")
 
+                # Load test data for this category to get prompts and expected outputs
+                test_data = _load_bfcl_test_data(category, logger)
+
+                # Load score data to determine pass/fail for each sample
+                failed_samples = _load_bfcl_score_data(output_dir, category, logger)
+
                 try:
                     with open(result_file) as rf:
                         content = rf.read().strip()
@@ -572,29 +797,58 @@ def _capture_bfcl_samples(
                     # Write samples to capture file
                     for i, sample in enumerate(samples[:num_samples]):
                         sample_count += 1
-                        f.write(f"# SAMPLE {sample_count}\n\n")
-                        f.write(f"## CATEGORY: {category}\n\n")
-                        f.write(f"## FILE: {result_file.name}\n\n")
+                        sample_id = sample.get('id', f'unknown_{i}')
 
-                        # Extract prompt/input - BFCL typically uses 'prompt'
-                        prompt = sample.get('prompt', sample.get('input', 'N/A'))
-                        if isinstance(prompt, list):
-                            # Chat format - format nicely
-                            prompt = json.dumps(prompt, indent=2)
-                        f.write(f"## PROMPT\n\n{prompt}\n\n")
+                        f.write(f"{'#' * 80}\n")
+                        f.write(f"# SAMPLE {sample_count}\n")
+                        f.write(f"{'#' * 80}\n\n")
+                        f.write(f"**Category:** {category}\n")
+                        f.write(f"**Sample ID:** {sample_id}\n\n")
 
-                        # Extract model response - BFCL uses 'result'
+                        # Get test data for this sample (contains prompt and function defs)
+                        test_sample = test_data.get(sample_id, {})
+
+                        # 1. FULL PROMPT (as presented to model)
+                        question = test_sample.get('question', [])
+                        functions = test_sample.get('function', [])
+
+                        f.write(f"## 1. PROMPT (as presented to model)\n\n")
+                        if question or functions:
+                            full_prompt = _format_bfcl_prompt(sample_id, question, functions)
+                            f.write(f"```\n{full_prompt}\n```\n\n")
+                        else:
+                            f.write("*[No prompt data available]*\n\n")
+
+                        # 2. MODEL RESPONSE
                         response = sample.get('result', sample.get('output', sample.get('response', 'N/A')))
-                        f.write(f"## MODEL RESPONSE\n\n{response}\n\n")
+                        f.write(f"## 2. MODEL RESPONSE\n\n")
+                        f.write(f"```\n{response}\n```\n\n")
 
-                        # Extract expected output if available
-                        expected = sample.get('expected', sample.get('ground_truth', None))
-                        if expected:
-                            f.write(f"## EXPECTED\n\n{expected}\n\n")
+                        # 3. EXPECTED OUTPUT (ground truth)
+                        ground_truth = test_sample.get('ground_truth', [])
+                        f.write(f"## 3. EXPECTED OUTPUT (acceptable function calls)\n\n")
+                        if ground_truth:
+                            for gt in ground_truth:
+                                f.write(f"```\n{gt}\n```\n")
+                        else:
+                            f.write("*[No expected output available]*\n")
+                        f.write("\n")
 
-                        # Include full sample JSON for first 3 samples (debugging)
-                        if i < 3:
-                            f.write(f"## FULL SAMPLE JSON\n\n```json\n{json.dumps(sample, indent=2)}\n```\n\n")
+                        # 4. ASSESSMENT RESULT
+                        f.write(f"## 4. ASSESSMENT RESULT\n\n")
+                        if sample_id in failed_samples:
+                            error_info = failed_samples[sample_id]
+                            error_type = error_info.get('error_type', 'unknown')
+                            error_details = error_info.get('error', [])
+                            f.write(f"**FAIL**\n\n")
+                            f.write(f"- Error type: `{error_type}`\n")
+                            if error_details:
+                                f.write(f"- Error details:\n")
+                                for err in error_details:
+                                    f.write(f"  - {err}\n")
+                        else:
+                            f.write(f"**PASS**\n")
+                        f.write("\n")
 
                         f.write("=" * 80 + "\n\n")
 
