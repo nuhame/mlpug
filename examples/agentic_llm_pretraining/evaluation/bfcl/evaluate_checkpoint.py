@@ -70,6 +70,12 @@ def create_arg_parser() -> argparse.ArgumentParser:
         default="Qwen/Qwen3-1.7B-Base",
         help="HuggingFace model name for architecture (only used with --checkpoint)",
     )
+    parser.add_argument(
+        "--templates-model-name",
+        type=str,
+        default="Qwen/Qwen3-1.7B",
+        help="Model name whose prompt templates to use (must be BFCL-supported)",
+    )
 
     # Test category selection
     parser.add_argument(
@@ -126,6 +132,7 @@ def describe_config(
     checkpoint: str | None,
     hf_model: str | None,
     model_name: str,
+    templates_model_name: str,
     test_categories: str | list[str],
     backend: str,
     num_gpus: int,
@@ -141,6 +148,7 @@ def describe_config(
     logger.info(f"  checkpoint: {checkpoint}")
     logger.info(f"  hf_model: {hf_model}")
     logger.info(f"  model_name: {model_name}")
+    logger.info(f"  templates_model_name: {templates_model_name}")
     logger.info(f"  test_categories: {test_categories}")
     logger.info(f"  backend: {backend}")
     logger.info(f"  num_gpus: {num_gpus}")
@@ -189,6 +197,7 @@ def main() -> None:
         checkpoint=args.checkpoint,
         hf_model=args.hf_model,
         model_name=args.model_name,
+        templates_model_name=args.templates_model_name,
         test_categories=test_categories,
         backend=args.backend,
         num_gpus=args.num_gpus,
@@ -202,6 +211,7 @@ def main() -> None:
         checkpoint_path=args.checkpoint,
         hf_model=args.hf_model,
         model_name=args.model_name,
+        templates_model_name=args.templates_model_name,
         test_categories=test_categories,
         backend=args.backend,
         num_gpus=args.num_gpus,
