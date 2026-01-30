@@ -297,8 +297,10 @@ def _parse_bfcl_csv_results(
 
             if accuracy_str:
                 try:
-                    # Convert percentage string to float (e.g., "69.25" -> 69.25)
-                    accuracy = float(accuracy_str)
+                    # Convert percentage string to float
+                    # Handle both "69.25" and "69.25%" formats
+                    accuracy_clean = accuracy_str.rstrip('%').strip()
+                    accuracy = float(accuracy_clean)
                     results[category] = {"accuracy": accuracy}
                     logger.info(f"{category}: {accuracy:.2f}%")
                 except ValueError:
