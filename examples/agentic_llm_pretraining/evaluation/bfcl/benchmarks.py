@@ -257,19 +257,30 @@ def _parse_bfcl_csv_results(
             return results
 
         # Find the row for our model
-        # BFCL uses model name with "/" replaced by "_" in some contexts
-        model_name_normalized = templates_model_name.replace("/", "_")
-        model_row = None
+        # BFCL uses various model name formats in CSV:
+        # - "Qwen/Qwen3-1.7B" (original)
+        # - "Qwen_Qwen3-1.7B" (slash replaced with underscore)
+        # - "Qwen3-1.7B (Prompt)" (model name without org, with suffix)
+        model_name_variants = [
+            templates_model_name,
+            templates_model_name.replace("/", "_"),
+        ]
+        # Add variant without org prefix + " (Prompt)" suffix
+        if "/" in templates_model_name:
+            model_short = templates_model_name.split("/")[-1]
+            model_name_variants.append(f"{model_short} (Prompt)")
 
+        model_row = None
         for row in rows:
             model_col = row.get("Model", "")
-            if model_col == templates_model_name or model_col == model_name_normalized:
+            if model_col in model_name_variants:
                 model_row = row
                 break
 
         if model_row is None:
             logger.warning(
                 f"Model '{templates_model_name}' not found in CSV. "
+                f"Tried variants: {model_name_variants}. "
                 f"Available models: {[r.get('Model', '') for r in rows]}"
             )
             return results
