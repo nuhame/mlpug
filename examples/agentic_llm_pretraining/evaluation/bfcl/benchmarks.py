@@ -68,6 +68,7 @@ ALL_SCORING_CATEGORIES = "all_scoring"
 def bfcl_generate(
     model_path: str,
     test_category: str | list[str],
+    templates_model_name: str = "Qwen/Qwen3-1.7B",
     backend: str = "vllm",
     num_gpus: int = 1,
     gpu_memory_utilization: float = 0.9,
@@ -79,9 +80,12 @@ def bfcl_generate(
 
     This runs `bfcl generate` to create model responses for evaluation.
 
-    :param model_path: Path to HuggingFace model directory.
+    :param model_path: Path to HuggingFace model directory containing weights.
     :param test_category: Test category or list of categories to evaluate.
         Use "all_scoring" for all scoring categories.
+    :param templates_model_name: Model name whose prompt templates to use.
+        Must be recognized by BFCL (e.g., "Qwen/Qwen3-1.7B").
+        The actual weights come from model_path via --local-model-path.
     :param backend: Inference backend ("vllm" or "sglang").
     :param num_gpus: Number of GPUs to use.
     :param gpu_memory_utilization: GPU memory utilization (0.0-1.0).
@@ -104,23 +108,21 @@ def bfcl_generate(
         output_dir = tempfile.mkdtemp(prefix="bfcl_output_")
 
     logger.info(f"Running BFCL generate")
-    logger.info(f"Model: {model_path}")
+    logger.info(f"Model path: {model_path}")
+    logger.info(f"Templates model: {templates_model_name}")
     logger.info(f"Test categories: {categories}")
     logger.info(f"Backend: {backend}, GPUs: {num_gpus}")
-
-    # Use directory basename as model identifier for BFCL output naming
-    model_identifier = Path(model_path).name
 
     # Build command for each category
     for category in categories:
         cmd = [
             "bfcl", "generate",
-            "--model", model_identifier,  # Used for output file naming
+            "--model", templates_model_name,  # Model whose templates to use
             "--test-category", category,
             "--backend", backend,
             "--num-gpus", str(num_gpus),
             "--gpu-memory-utilization", str(gpu_memory_utilization),
-            "--local-model-path", model_path,  # Actual path to model files
+            "--local-model-path", model_path,  # Actual path to model weights
         ]
 
         logger.info(f"Command: {' '.join(cmd)}")
@@ -144,9 +146,9 @@ def bfcl_generate(
 
 
 def bfcl_evaluate(
-    model_path: str,
     test_category: str | list[str],
     output_dir: str,
+    templates_model_name: str = "Qwen/Qwen3-1.7B",
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -154,9 +156,9 @@ def bfcl_evaluate(
 
     This runs `bfcl evaluate` on previously generated responses.
 
-    :param model_path: Path to HuggingFace model directory (for model name).
     :param test_category: Test category or list of categories to evaluate.
     :param output_dir: Directory containing BFCL output from bfcl_generate().
+    :param templates_model_name: Model name (must match bfcl_generate).
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -170,12 +172,8 @@ def bfcl_evaluate(
     else:
         categories = [test_category]
 
-    # Use directory basename as model identifier (must match bfcl_generate)
-    model_identifier = Path(model_path).name
-
     logger.info(f"Running BFCL evaluate")
-    logger.info(f"Model: {model_path}")
-    logger.info(f"Model identifier: {model_identifier}")
+    logger.info(f"Templates model: {templates_model_name}")
     logger.info(f"Test categories: {categories}")
 
     results = {}
@@ -183,7 +181,7 @@ def bfcl_evaluate(
     for category in categories:
         cmd = [
             "bfcl", "evaluate",
-            "--model", model_identifier,  # Must match the identifier used in generate
+            "--model", templates_model_name,  # Must match the model used in generate
             "--test-category", category,
         ]
 
@@ -202,8 +200,9 @@ def bfcl_evaluate(
             logger.info(f"Evaluate completed for category: {category}")
 
             # Try to read the score file
-            # BFCL creates: score/MODEL_IDENTIFIER/BFCL_v3_TEST_CATEGORY_score.json
-            score_file = Path(output_dir) / "score" / model_identifier / f"BFCL_v3_{category}_score.json"
+            # BFCL creates: score/MODEL_NAME/BFCL_v3_TEST_CATEGORY_score.json
+            # Note: templates_model_name may contain "/" which becomes directory separator
+            score_file = Path(output_dir) / "score" / templates_model_name / f"BFCL_v3_{category}_score.json"
 
             if score_file.exists():
                 with open(score_file) as f:
@@ -222,6 +221,7 @@ def evaluate_checkpoint(
     checkpoint_path: Optional[str] = None,
     hf_model: Optional[str] = None,
     model_name: str = "Qwen/Qwen3-1.7B-Base",
+    templates_model_name: str = "Qwen/Qwen3-1.7B",
     test_categories: str | list[str] | None = None,
     backend: str = "vllm",
     num_gpus: int = 1,
@@ -241,6 +241,9 @@ def evaluate_checkpoint(
     :param checkpoint_path: Path to the .pt checkpoint file (mutually exclusive with hf_model).
     :param hf_model: HuggingFace model name/path to evaluate directly (mutually exclusive with checkpoint_path).
     :param model_name: HuggingFace model name for architecture (only used with checkpoint_path).
+    :param templates_model_name: Model name whose prompt templates to use.
+        Must be recognized by BFCL (e.g., "Qwen/Qwen3-1.7B"). The actual weights
+        come from the checkpoint or hf_model.
     :param test_categories: Test category or list of categories (default: DEFAULT_TEST_CATEGORIES).
     :param backend: Inference backend ("vllm" or "sglang").
     :param num_gpus: Number of GPUs to use.
@@ -295,6 +298,7 @@ def evaluate_checkpoint(
         bfcl_generate(
             model_path=model_path,
             test_category=test_categories,
+            templates_model_name=templates_model_name,
             backend=backend,
             num_gpus=num_gpus,
             gpu_memory_utilization=gpu_memory_utilization,
@@ -304,9 +308,9 @@ def evaluate_checkpoint(
 
         # Evaluate responses
         results = bfcl_evaluate(
-            model_path=model_path,
             test_category=test_categories,
             output_dir=bfcl_output_dir,
+            templates_model_name=templates_model_name,
             logger=logger,
         )
 
