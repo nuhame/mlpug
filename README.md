@@ -10,8 +10,8 @@ independent of the ML library you are using.
 **Thus, when switching ML library, you don't have to learn a new training API and you can reuse your own training code 
 with no, or minimal, change! 🤩🎉**
 
-## MLPug is at version 0.1!
-MLPug is still in development. If you are having trouble using MLPug for your use case, or 
+## MLPug is at version 0.2!
+MLPug is still in development. If you are having trouble using MLPug for your use case, or
 when you have found a bug, please file an issue.
 
 ## Dive right in! Installing MLPug as a Python package for your project.

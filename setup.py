@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="mlpug",
-    version="0.1.0",
+    version="0.2.0",
     author="Freddy Snijder",
     author_email="mlpug@visionscapers.com",
     description="MLPug is a library for training and evaluating Machine Learning (ML) models, "
