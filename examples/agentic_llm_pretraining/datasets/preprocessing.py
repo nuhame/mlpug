@@ -636,7 +636,7 @@ def preprocess_code_contests(
         return None
 
     shortest_idx = min(indices, key=lambda i: len(solution_codes[i]))
-    solution_code = solution_codes[shortest_idx]
+    solution_code = solution_codes[shortest_idx].strip()
     language_name, language_ext = CODE_CONTESTS_LANGUAGE_IDS[chosen_id]
 
     # Format public test cases
