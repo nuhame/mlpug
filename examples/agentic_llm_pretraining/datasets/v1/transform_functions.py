@@ -1,41 +1,27 @@
 """
-Transform functions for converting raw dataset samples to training text.
+V1 transform functions for converting raw dataset samples to training text.
 
 Provides a generic transform function that applies optional preprocessing
 and template formatting, plus helpers for Qwen3 chat format.
+
+Output format: single text string per sample.
 """
 
 import logging
 import os
-from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
+
+from examples.agentic_llm_pretraining.datasets.common import (
+    TransformStats,
+    PreprocessFunc,
+    VALID_CHAT_ROLES,
+)
 
 
 use_fancy_colors()
 module_logger = get_logger(os.path.basename(__file__))
-
-
-@dataclass
-class TransformStats:
-    """Statistics from transform operation."""
-    total: int
-    success: int
-    failed: int
-
-    @property
-    def success_rate(self) -> float:
-        return self.success / self.total if self.total > 0 else 0.0
-
-    @property
-    def failure_rate(self) -> float:
-        return self.failed / self.total if self.total > 0 else 0.0
-
-
-# Type alias for preprocess functions
-# Returns dict of template fields, or None if sample is invalid
-PreprocessFunc = Callable[[dict, int, str, logging.Logger], Optional[dict]]
 
 
 def transform(
@@ -84,9 +70,6 @@ def transform(
 
     stats = TransformStats(total=len(samples), success=len(results), failed=failed)
     return results, stats
-
-
-VALID_CHAT_ROLES = ("user", "assistant", "tool")
 
 
 def format_chat(

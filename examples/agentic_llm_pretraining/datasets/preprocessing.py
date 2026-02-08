@@ -15,7 +15,8 @@ from typing import Optional
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
 
-from .transform_functions import format_chat
+from examples.agentic_llm_pretraining.datasets.common import extract_dialogstudio_messages
+from examples.agentic_llm_pretraining.datasets.v1.transform_functions import format_chat
 
 
 use_fancy_colors()
@@ -919,38 +920,6 @@ def preprocess_openbookqa(
 # =============================================================================
 
 
-def _preprocess_dialogstudio_turns(
-    log: list,
-    index: int,
-    dataset_name: str,
-    logger: logging.Logger,
-) -> Optional[list]:
-    """
-    Common helper for DialogStudio datasets. Extracts turns from log.
-
-    Returns list of message dicts for format_chat(), or None if invalid.
-    """
-    if not log:
-        logger.warning(f"{dataset_name}[{index}]: empty log field")
-        return None
-
-    messages = []
-    for turn in log:
-        user_utterance = turn.get("user utterance", "")
-        system_response = turn.get("system response", "")
-
-        if user_utterance:
-            messages.append({"user": user_utterance})
-        if system_response:
-            messages.append({"assistant": system_response})
-
-    if not messages:
-        logger.warning(f"{dataset_name}[{index}]: no valid turns in log")
-        return None
-
-    return messages
-
-
 def preprocess_multiwoz(
     sample: dict,
     index: int,
@@ -972,7 +941,7 @@ def preprocess_multiwoz(
         logger.warning(f"{dataset_name}[{index}]: empty prompt field")
         return None
 
-    messages = _preprocess_dialogstudio_turns(log, index, dataset_name, logger)
+    messages = extract_dialogstudio_messages(log, index, dataset_name, logger)
     if messages is None:
         return None
 
@@ -1017,7 +986,7 @@ def preprocess_wizard_of_wikipedia(
         logger.warning(f"{dataset_name}[{index}]: empty chosen_topic")
         return None
 
-    messages = _preprocess_dialogstudio_turns(log, index, dataset_name, logger)
+    messages = extract_dialogstudio_messages(log, index, dataset_name, logger)
     if messages is None:
         return None
 
@@ -1055,7 +1024,7 @@ def preprocess_sharegpt(
 
     log = sample.get("log", [])
 
-    messages = _preprocess_dialogstudio_turns(log, index, dataset_name, logger)
+    messages = extract_dialogstudio_messages(log, index, dataset_name, logger)
     if messages is None:
         return None
 
@@ -1092,7 +1061,7 @@ def preprocess_empathetic_dialogues(
 
     emotion = original_dialog_info.get("context", "")
 
-    messages = _preprocess_dialogstudio_turns(log, index, dataset_name, logger)
+    messages = extract_dialogstudio_messages(log, index, dataset_name, logger)
     if messages is None:
         return None
 
@@ -1134,7 +1103,7 @@ def preprocess_samsum(
 
     summary = original_dialog_info.get("summary", "")
 
-    messages = _preprocess_dialogstudio_turns(log, index, dataset_name, logger)
+    messages = extract_dialogstudio_messages(log, index, dataset_name, logger)
     if messages is None:
         return None
 
