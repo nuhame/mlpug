@@ -432,11 +432,12 @@ def preprocess_cosmopedia_wikihow(
     Preprocess cosmopedia-wikihow sample.
 
     Extracts text field (already well-formatted with steps).
+    Strips leading/trailing whitespace (raw data has leading space).
     """
     if logger is None:
         logger = module_logger
 
-    text = sample.get("text", "")
+    text = sample.get("text", "").strip()
 
     if not text:
         logger.warning(f"{dataset_name}[{index}]: empty text field")
@@ -460,7 +461,7 @@ def preprocess_stackexchange(
     if logger is None:
         logger = module_logger
 
-    question = sample.get("question", "")
+    question = sample.get("question", "").strip()
     answers = sample.get("answers", [])
 
     valid = True
@@ -485,7 +486,7 @@ def preprocess_stackexchange(
     best_answers = []
     for ans in answers:
         if ans.get("pm_score", 0) == max_score:
-            answer_text = ans.get("text", "")
+            answer_text = ans.get("text", "").strip()
             if answer_text:
                 best_answers.append(answer_text)
 
@@ -524,9 +525,9 @@ def preprocess_swe_bench(
     if logger is None:
         logger = module_logger
 
-    repo = sample.get("repo", "")
-    problem_statement = sample.get("problem_statement", "")
-    patch = sample.get("patch", "")
+    repo = sample.get("repo", "").strip()
+    problem_statement = sample.get("problem_statement", "").strip()
+    patch = sample.get("patch", "").strip()
 
     valid = True
     if not repo:
