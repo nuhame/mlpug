@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Transform datasets from raw JSONL to training-ready format.
+V1: Transform datasets from raw JSONL to training-ready format.
+
+Output format: {"source": "...", "index": N, "text": "..."}
 
 Usage (from repo root):
-    python -m examples.agentic_llm_pretraining.datasets.transform_datasets \
+    python -m examples.agentic_llm_pretraining.datasets.v1.transform_datasets \
         --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json
 
-    python -m examples.agentic_llm_pretraining.datasets.transform_datasets \
+    python -m examples.agentic_llm_pretraining.datasets.v1.transform_datasets \
         --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json \
         --datasets gsm8k soda \
         --num-samples 100 \
@@ -15,6 +17,7 @@ Usage (from repo root):
 
 import argparse
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -22,9 +25,17 @@ from typing import Any, Optional
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
 from mlpug.utils.git_logging import log_git_state
 
-from .transform_functions import transform, TransformStats
-from . import preprocessing
-from .dataset_templates import TEMPLATES
+from examples.agentic_llm_pretraining.datasets.common import (
+    TransformStats,
+    load_metadata,
+    load_raw_samples,
+    print_summary,
+    describe_config,
+    describe_dataset_config,
+)
+from examples.agentic_llm_pretraining.datasets.dataset_templates import TEMPLATES
+from examples.agentic_llm_pretraining.datasets import preprocessing
+from examples.agentic_llm_pretraining.datasets.v1.transform_functions import transform
 
 
 use_fancy_colors()
@@ -35,76 +46,13 @@ module_logger = get_logger(os.path.basename(__file__))
 DEFAULT_TEMPLATE = "{text}"
 
 
-def describe_config(
-    metadata: str,
-    data_dir: str,
-    output_dir: str,
-    datasets: list[str] | None,
-    num_samples: int | None,
-) -> None:
-    """Log script configuration."""
-    module_logger.info("Configuration:")
-    module_logger.info(f"  metadata: {metadata}")
-    module_logger.info(f"  data_dir: {data_dir}")
-    module_logger.info(f"  output_dir: {output_dir}")
-    module_logger.info(f"  datasets: {datasets}")
-    module_logger.info(f"  num_samples: {num_samples}")
-
-
-def describe_dataset_config(name: str, config: dict[str, Any]) -> None:
-    """Log per-dataset configuration from metadata."""
-    from rich.pretty import pretty_repr
-    module_logger.info(f"  [{name}] config: {pretty_repr(config)}")
-
-
-def load_metadata(metadata_path: str) -> dict[str, Any]:
-    """Load metadata from JSON file, excluding comment fields."""
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-    return {k: v for k, v in metadata.items() if not k.startswith("_")}
-
-
-def load_raw_samples(
-    data_dir: Path,
-    dataset_name: str,
-    num_samples: Optional[int] = None,
-    logger=None,
-) -> list[dict]:
-    """
-    Load raw samples from JSONL file.
-
-    :param data_dir: Directory containing raw JSONL files.
-    :param dataset_name: Name of dataset (used as filename).
-    :param num_samples: Optional limit on number of samples to load.
-    :param logger: Optional logger.
-
-    :return: List of sample dicts.
-    """
-    if logger is None:
-        logger = module_logger
-
-    input_path = data_dir / f"{dataset_name}.jsonl"
-    if not input_path.exists():
-        raise FileNotFoundError(f"Raw data file not found: {input_path}")
-
-    samples = []
-    with open(input_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if num_samples is not None and len(samples) >= num_samples:
-                break
-            samples.append(json.loads(line))
-
-    logger.info(f"{dataset_name}: loaded {len(samples)} raw samples from {input_path}")
-    return samples
-
-
 def transform_dataset(
     dataset_name: str,
     config: dict[str, Any],
     data_dir: Path,
     output_dir: Path,
     num_samples: Optional[int] = None,
-    logger=None,
+    logger: Optional[logging.Logger] = None,
 ) -> TransformStats:
     """
     Transform a single dataset and write to output file.
@@ -179,39 +127,11 @@ def transform_dataset(
     return stats
 
 
-def print_summary(results: dict[str, TransformStats], logger=None):
-    """Print summary of all transform operations."""
-    if logger is None:
-        logger = module_logger
-
-    logger.info("")
-    logger.info("=" * 50)
-    logger.info("Transform Summary")
-    logger.info("=" * 50)
-
-    total_success = 0
-    total_failed = 0
-    total_samples = 0
-
-    for name, stats in results.items():
-        pct = stats.success_rate * 100
-        logger.info(f"  {name}: {stats.success}/{stats.total} success ({pct:.1f}%)")
-        total_success += stats.success
-        total_failed += stats.failed
-        total_samples += stats.total
-
-    logger.info("-" * 50)
-    total_pct = (total_success / total_samples * 100) if total_samples > 0 else 0
-    logger.info(f"  Total: {total_success}/{total_samples} success ({total_pct:.1f}%)")
-    logger.info(f"  Failed: {total_failed}")
-    logger.info("=" * 50)
-
-
 def main():
     log_git_state()
 
     parser = argparse.ArgumentParser(
-        description="Transform datasets from raw JSONL to training format"
+        description="Transform datasets from raw JSONL to training format (v1: text output)"
     )
     parser.add_argument(
         "--metadata",

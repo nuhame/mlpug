@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 """
-Tokenize datasets for NTP training using Data Forager.
+V1: Tokenize datasets for NTP training using Data Forager.
 
 Tokenizes JSONL files into fixed-length token samples and creates a byte-offset
 index for O(1) random access during training.
 
+Output format: tokens only (no auxiliary data like loss masks).
+
 Usage (from repo root):
     # Tokenize all splits with default settings (4K context)
-    python -m examples.agentic_llm_pretraining.datasets.tokenize_dataset \
+    python -m examples.agentic_llm_pretraining.datasets.v1.tokenize_dataset \
         --splits-dir ../data/agentic_llm_pretraining/full-08012026/splits \
         --output-dir ../data/agentic_llm_pretraining/full-08012026/tokenized
 
     # Tokenize only train split with custom context length
-    python -m examples.agentic_llm_pretraining.datasets.tokenize_dataset \
+    python -m examples.agentic_llm_pretraining.datasets.v1.tokenize_dataset \
         --splits-dir ../data/agentic_llm_pretraining/full-08012026/splits \
         --output-dir ../data/agentic_llm_pretraining/full-08012026/tokenized \
         --splits train \
         --context-length 4096
 
     # Force re-tokenization (clears existing index)
-    python -m examples.agentic_llm_pretraining.datasets.tokenize_dataset \
+    python -m examples.agentic_llm_pretraining.datasets.v1.tokenize_dataset \
         --splits-dir ../data/agentic_llm_pretraining/full-08012026/splits \
         --output-dir ../data/agentic_llm_pretraining/full-08012026/tokenized \
         --force
 
     # Use pad token as end-of-document separator (recommended for Qwen3)
-    python -m examples.agentic_llm_pretraining.datasets.tokenize_dataset \
+    python -m examples.agentic_llm_pretraining.datasets.v1.tokenize_dataset \
         --splits-dir ../data/agentic_llm_pretraining/full-08012026/splits \
         --output-dir ../data/agentic_llm_pretraining/full-08012026/tokenized \
         --eod-token pad
