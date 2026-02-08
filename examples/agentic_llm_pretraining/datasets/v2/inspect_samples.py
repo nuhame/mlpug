@@ -27,10 +27,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from rich.console import Console
+from rich.markup import escape as escape_markup
 from rich.panel import Panel
 from rich.text import Text
 
 from mlpug.mlpug_logging import get_logger, use_fancy_colors
+from mlpug.utils.git_logging import log_git_state
 
 
 use_fancy_colors()
@@ -100,12 +102,14 @@ def load_jsonl_samples(
 def format_part_for_display(
     part: dict[str, str],
     max_length: int = 500,
+    tail_length: int = 80,
 ) -> tuple[str, str, bool]:
     """
     Format a single part for display.
 
     :param part: Part dict with 'type' and 'text' fields.
-    :param max_length: Maximum text length before truncation.
+    :param max_length: Maximum text length for the start before truncation.
+    :param tail_length: Number of characters to show from the end when truncated.
 
     :return: Tuple of (type_label, display_text, is_masked).
     """
@@ -115,9 +119,14 @@ def format_part_for_display(
     type_label = TYPE_LABELS.get(part_type, f"[{part_type.upper()}]")
     is_masked = PART_MASK_RULES.get(part_type, False)
 
-    # Truncate if needed
-    if len(text) > max_length:
-        text = text[:max_length] + f"\n... [truncated, {len(text) - max_length} chars remaining]"
+    # Truncate if needed, showing both start and end
+    if len(text) > max_length + tail_length:
+        truncated_chars = len(text) - max_length - tail_length
+        text = (
+            text[:max_length] +
+            f"\n... [truncated, {truncated_chars} chars] ...\n" +
+            text[-tail_length:]
+        )
 
     return type_label, text, is_masked
 
@@ -162,7 +171,8 @@ def display_sample(
         header.append(f" ({mask_status})", style=color)
 
         console.print(header)
-        console.print(Panel(text, style=color, expand=False))
+        # Escape markup to prevent Rich from interpreting [...] as tags
+        console.print(Panel(escape_markup(text), style=color, expand=False))
 
 
 def inspect_dataset(
@@ -216,6 +226,8 @@ def print_mask_summary(console: Console) -> None:
 
 
 def main():
+    log_git_state()
+
     parser = argparse.ArgumentParser(
         description="Inspect v2 transformed samples with loss mask visualization"
     )
