@@ -33,7 +33,7 @@ from examples.agentic_llm_pretraining.datasets.common import (
     describe_config,
     describe_dataset_config,
 )
-from examples.agentic_llm_pretraining.datasets.dataset_templates import TEMPLATES
+from examples.agentic_llm_pretraining.datasets.v1.dataset_templates import TEMPLATES
 from examples.agentic_llm_pretraining.datasets import preprocessing
 from examples.agentic_llm_pretraining.datasets.v1.transform_functions import transform
 
