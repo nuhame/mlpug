@@ -28,6 +28,7 @@ class TransformStats:
     total: int
     success: int
     failed: int
+    filtered: int = 0
 
     @property
     def success_rate(self) -> float:
@@ -110,19 +111,26 @@ def print_summary(
 
     total_success = 0
     total_failed = 0
+    total_filtered = 0
     total_samples = 0
 
     for name, stats in results.items():
         pct = stats.success_rate * 100
-        logger.info(f"  {name}: {stats.success}/{stats.total} success ({pct:.1f}%)")
+        filtered_info = f", {stats.filtered} filtered" if stats.filtered > 0 else ""
+        logger.info(
+            f"  {name}: {stats.success}/{stats.total} success ({pct:.1f}%){filtered_info}"
+        )
         total_success += stats.success
         total_failed += stats.failed
+        total_filtered += stats.filtered
         total_samples += stats.total
 
     logger.info("-" * 50)
     total_pct = (total_success / total_samples * 100) if total_samples > 0 else 0
     logger.info(f"  Total: {total_success}/{total_samples} success ({total_pct:.1f}%)")
     logger.info(f"  Failed: {total_failed}")
+    if total_filtered > 0:
+        logger.info(f"  Filtered: {total_filtered}")
     logger.info("=" * 50)
 
 

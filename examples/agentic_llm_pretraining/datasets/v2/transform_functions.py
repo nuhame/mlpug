@@ -179,11 +179,34 @@ def apply_dialogue_data(dialogue_data: DialogueData) -> list[Part]:
 # =============================================================================
 
 
+MASKED_PART_TYPES = {"system", "prompt"}
+
+
+def exceeds_max_masked_chars(
+    parts: list[Part],
+    max_masked_chars: int,
+) -> tuple[bool, Optional[Part]]:
+    """
+    Check if any single masked part exceeds the character limit.
+
+    :param parts: List of Part objects.
+    :param max_masked_chars: Maximum character count for any single masked part.
+
+    :return: Tuple of (exceeds, offending_part). offending_part is None
+        if no part exceeds the limit.
+    """
+    for part in parts:
+        if part.type in MASKED_PART_TYPES and len(part.text) > max_masked_chars:
+            return True, part
+    return False, None
+
+
 def transform_samples_to_parts(
     samples: list[dict],
     dataset_name: str,
     preprocess_fn,
     template: TemplateBase,
+    max_masked_chars: int = 0,
     logger: Optional[logging.Logger] = None,
 ) -> tuple[list[list[Part]], TransformStats]:
     """
@@ -200,6 +223,8 @@ def transform_samples_to_parts(
         For TextTemplate/SplitTemplate: (sample, index, dataset_name, logger) -> dict | None
         For DialogueTemplate: (sample, index, dataset_name, logger) -> DialogueData | None
     :param template: TemplateBase instance (TextTemplate, SplitTemplate, or DialogueTemplate).
+    :param max_masked_chars: Skip samples where any single masked part
+        exceeds this character count. 0 disables filtering.
     :param logger: Optional logger. Falls back to module logger if None.
 
     :return: Tuple of (list of parts lists, TransformStats).
@@ -209,6 +234,7 @@ def transform_samples_to_parts(
 
     results = []
     failed = 0
+    filtered = 0
 
     for index, sample in enumerate(samples):
         try:
@@ -227,6 +253,20 @@ def transform_samples_to_parts(
             else:
                 raise ValueError(f"Unknown template type: {type(template)}")
 
+            # Filter by max masked part length
+            if max_masked_chars > 0:
+                exceeds, offending_part = exceeds_max_masked_chars(
+                    parts, max_masked_chars,
+                )
+                if exceeds:
+                    logger.debug(
+                        f"{dataset_name}[{index}]: filtered — "
+                        f"{offending_part.type} part has {len(offending_part.text)} chars "
+                        f"(max: {max_masked_chars})"
+                    )
+                    filtered += 1
+                    continue
+
             results.append(parts)
 
         except Exception as e:
@@ -236,5 +276,8 @@ def transform_samples_to_parts(
             )
             failed += 1
 
-    stats = TransformStats(total=len(samples), success=len(results), failed=failed)
+    stats = TransformStats(
+        total=len(samples), success=len(results),
+        failed=failed, filtered=filtered,
+    )
     return results, stats

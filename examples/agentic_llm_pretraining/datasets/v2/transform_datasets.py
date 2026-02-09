@@ -33,7 +33,7 @@ from examples.agentic_llm_pretraining.datasets.common import (
     load_metadata,
     load_raw_samples,
     print_summary,
-    describe_config,
+    describe_config as describe_config_base,
     describe_dataset_config,
 )
 from examples.agentic_llm_pretraining.datasets import preprocessing as v1_preprocessing
@@ -54,6 +54,25 @@ from examples.agentic_llm_pretraining.datasets.v2.transform_functions import (
 
 use_fancy_colors()
 module_logger = get_logger(os.path.basename(__file__))
+
+DEFAULT_MAX_MASKED_CHARS = 8000
+
+
+def describe_config(
+    max_masked_chars: int,
+    **kwargs,
+) -> None:
+    """
+    Log v2-specific configuration, then delegate to base describe_config.
+
+    :param max_masked_chars: Max chars for any single masked part. 0 disables filtering.
+    :param kwargs: Passed through to base describe_config.
+    """
+    describe_config_base(**kwargs)
+    if max_masked_chars > 0:
+        module_logger.info(f"  max_masked_chars: {max_masked_chars}")
+    else:
+        module_logger.info(f"  max_masked_chars: disabled")
 
 
 def get_preprocess_func(
@@ -119,6 +138,7 @@ def transform_dataset(
     data_dir: Path,
     output_dir: Path,
     num_samples: Optional[int] = None,
+    max_masked_chars: int = 0,
     logger: Optional[logging.Logger] = None,
 ) -> TransformStats:
     """
@@ -129,6 +149,8 @@ def transform_dataset(
     :param data_dir: Directory containing raw JSONL files.
     :param output_dir: Directory to write transformed output.
     :param num_samples: Optional limit on samples to process.
+    :param max_masked_chars: Skip samples where any single masked part
+        exceeds this character count. 0 disables filtering.
     :param logger: Optional logger.
 
     :return: TransformStats with success/failure counts.
@@ -158,6 +180,7 @@ def transform_dataset(
         dataset_name=dataset_name,
         preprocess_fn=preprocess_fn,
         template=template,
+        max_masked_chars=max_masked_chars,
         logger=logger,
     )
 
@@ -172,9 +195,10 @@ def transform_dataset(
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    filtered_info = f", {stats.filtered} filtered" if stats.filtered > 0 else ""
     logger.info(
         f"{dataset_name}: wrote {stats.success} samples to {output_path} "
-        f"({stats.success}/{stats.total} success, {stats.failed} failed)"
+        f"({stats.success}/{stats.total} success, {stats.failed} failed{filtered_info})"
     )
 
     return stats
@@ -212,9 +236,19 @@ def main():
         default=None,
         help="Limit number of samples per dataset (default: all)",
     )
+    parser.add_argument(
+        "--max-masked-chars",
+        type=int,
+        default=DEFAULT_MAX_MASKED_CHARS,
+        help=(
+            f"Skip samples where any single masked part exceeds this character count "
+            f"(default: {DEFAULT_MAX_MASKED_CHARS}). Set to 0 to disable."
+        ),
+    )
     args = parser.parse_args()
 
     describe_config(
+        max_masked_chars=args.max_masked_chars,
         metadata=args.metadata,
         data_dir=args.data_dir,
         output_dir=args.output_dir,
@@ -248,6 +282,7 @@ def main():
                 data_dir=data_dir,
                 output_dir=output_dir,
                 num_samples=args.num_samples,
+                max_masked_chars=args.max_masked_chars,
                 logger=module_logger,
             )
             results[name] = stats
