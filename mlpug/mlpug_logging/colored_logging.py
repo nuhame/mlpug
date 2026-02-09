@@ -1,6 +1,6 @@
 import logging
 
-from basics.logging import LOGGING_FORMAT
+from basics.logging import LOGGING_FORMAT, LOGGING_DATEFMT
 
 from mlpug.mlpug_logging.base import FG_COLOR_CODE, BG_COLOR_CODE, FormatterBase
 
@@ -76,6 +76,6 @@ def use_fancy_colors(log_level=logging.DEBUG):
 
     try:
         handler = root_logger.handlers[0]
-        handler.setFormatter(FancyColorFormatter(LOGGING_FORMAT))
+        handler.setFormatter(FancyColorFormatter(LOGGING_FORMAT, datefmt=LOGGING_DATEFMT))
     except IndexError:
         print("ERROR : Unable to use fancy colors for logging, use logging.basicConfig or logging.config first")
