@@ -1122,6 +1122,104 @@ def preprocess_samsum(
 
 
 # =============================================================================
+# Scripting Preprocessing
+# =============================================================================
+
+
+def preprocess_nl2sh_alfa(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess NL2SH-ALFA sample.
+
+    Extracts natural language description and bash command.
+    """
+    if logger is None:
+        logger = module_logger
+
+    nl = sample.get("nl", "")
+    bash = sample.get("bash", "")
+
+    valid = True
+    if not nl:
+        logger.warning(f"{dataset_name}[{index}]: empty nl field")
+        valid = False
+    if not bash:
+        logger.warning(f"{dataset_name}[{index}]: empty bash field")
+        valid = False
+
+    if not valid:
+        return None
+
+    return {"nl": nl, "bash": bash}
+
+
+def preprocess_linux_command(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess linux-command-dataset sample.
+
+    Extracts NL task description and Linux command.
+    """
+    if logger is None:
+        logger = module_logger
+
+    input_text = sample.get("input", "")
+    output_text = sample.get("output", "")
+
+    valid = True
+    if not input_text:
+        logger.warning(f"{dataset_name}[{index}]: empty input field")
+        valid = False
+    if not output_text:
+        logger.warning(f"{dataset_name}[{index}]: empty output field")
+        valid = False
+
+    if not valid:
+        return None
+
+    return {"input": input_text, "output": output_text}
+
+
+def preprocess_glaive_code_assistant(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess glaive-code-assistant sample.
+
+    Extracts question and answer. Uses v3 (superset of v1+v2).
+    """
+    if logger is None:
+        logger = module_logger
+
+    question = sample.get("question", "")
+    answer = sample.get("answer", "")
+
+    valid = True
+    if not question:
+        logger.warning(f"{dataset_name}[{index}]: empty question field")
+        valid = False
+    if not answer:
+        logger.warning(f"{dataset_name}[{index}]: empty answer field")
+        valid = False
+
+    if not valid:
+        return None
+
+    return {"question": question, "answer": answer}
+
+
+# =============================================================================
 # RAG Preprocessing
 # =============================================================================
 

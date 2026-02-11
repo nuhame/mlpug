@@ -48,6 +48,165 @@ class DialogueData:
 
 
 # =============================================================================
+# Helper: Standard Chat Format
+# =============================================================================
+
+
+def _extract_standard_chat_messages(
+    messages_raw: list[dict],
+    index: int,
+    dataset_name: str,
+    logger: logging.Logger,
+) -> Optional[list[dict]]:
+    """
+    Extract messages from standard chat format (role/content dicts).
+
+    Handles datasets like Crab-SFT and tulu3-if that use
+    [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
+
+    :param messages_raw: Raw messages list from sample.
+    :param index: Sample index for logging.
+    :param dataset_name: Dataset name for logging.
+    :param logger: Logger instance.
+
+    :return: List of message dicts for DialogueData, or None if invalid.
+    """
+    if not messages_raw:
+        logger.warning(f"{dataset_name}[{index}]: empty messages field")
+        return None
+
+    messages = []
+    for msg in messages_raw:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+
+        if not content:
+            continue
+
+        if role in ("user", "assistant"):
+            messages.append({role: content})
+        else:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{role}', skipping turn"
+            )
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in messages")
+        return None
+
+    return messages
+
+
+# =============================================================================
+# Reasoning Trace Preprocessing
+# =============================================================================
+
+
+def preprocess_openthoughts3_parts(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[DialogueData]:
+    """
+    Preprocess OpenThoughts3-1.2M sample for v2 parts format.
+
+    Maps human→user, gpt→assistant. GPT responses contain <think>...</think>
+    reasoning traces followed by the final answer.
+    """
+    if logger is None:
+        logger = module_logger
+
+    conversations = sample.get("conversations", [])
+
+    if not conversations:
+        logger.warning(f"{dataset_name}[{index}]: empty conversations field")
+        return None
+
+    role_mapping = {
+        "human": "user",
+        "gpt": "assistant",
+    }
+
+    messages = []
+    for conv in conversations:
+        from_role = conv.get("from", "")
+        value = conv.get("value", "")
+
+        if not value:
+            continue
+
+        qwen_role = role_mapping.get(from_role)
+        if qwen_role is None:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{from_role}', skipping turn"
+            )
+            continue
+
+        messages.append({qwen_role: value})
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in conversations")
+        return None
+
+    return DialogueData(messages=messages)
+
+
+# =============================================================================
+# Instruction Following Preprocessing
+# =============================================================================
+
+
+def preprocess_crab_sft_parts(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[DialogueData]:
+    """
+    Preprocess Crab-SFT sample for v2 parts format.
+
+    Multi-turn instruction-following with format/length/style constraints.
+    Standard role/content chat format.
+    """
+    if logger is None:
+        logger = module_logger
+
+    messages = _extract_standard_chat_messages(
+        sample.get("messages", []), index, dataset_name, logger,
+    )
+    if messages is None:
+        return None
+
+    return DialogueData(messages=messages)
+
+
+def preprocess_tulu3_if_parts(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[DialogueData]:
+    """
+    Preprocess tulu-3-sft-personas-instruction-following sample for v2 parts format.
+
+    Single-turn IFEval-style verifiable constraint satisfaction.
+    Standard content/role chat format. The 'prompt' and 'constraints' fields
+    are redundant metadata — the actual data is in 'messages'.
+    """
+    if logger is None:
+        logger = module_logger
+
+    messages = _extract_standard_chat_messages(
+        sample.get("messages", []), index, dataset_name, logger,
+    )
+    if messages is None:
+        return None
+
+    return DialogueData(messages=messages)
+
+
+# =============================================================================
 # Agentic Dialogue Preprocessing
 # =============================================================================
 
@@ -520,6 +679,9 @@ def preprocess_samsum_parts(
 
 # Map dataset names to v2 preprocessing functions
 DIALOGUE_PREPROCESS_FUNCS = {
+    "openthoughts3": preprocess_openthoughts3_parts,
+    "crab-sft": preprocess_crab_sft_parts,
+    "tulu3-if": preprocess_tulu3_if_parts,
     "toolace": preprocess_toolace_parts,
     "hermes-function-calling": preprocess_hermes_function_calling_parts,
     "glaive-function-calling": preprocess_glaive_function_calling_parts,

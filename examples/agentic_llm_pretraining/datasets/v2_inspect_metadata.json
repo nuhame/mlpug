@@ -1,0 +1,107 @@
+{
+  "_comment": "V2 dataset inspection metadata - 500 samples each, new datasets for v2 pipeline",
+
+  "openthoughts3": {
+    "description": "Reasoning traces with <think> tags (QwQ-32B). Multi-domain: math, code, science.",
+    "primary_purpose": "reasoning",
+    "also_provides": ["thinking_traces"],
+    "license": "Apache 2.0",
+    "acquisition_method": "stream_subsample_hf",
+    "acquisition_config": {
+      "path": "open-thoughts/OpenThoughts3-1.2M",
+      "split": "train",
+      "keep_probability": 0.001,
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  },
+
+  "crab-sft": {
+    "description": "Instruction-following with format/length/style constraints (constraint back-translation)",
+    "primary_purpose": "instruction_following",
+    "also_provides": [],
+    "license": "Apache 2.0",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "THU-KEG/Crab-SFT",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  },
+
+  "tulu3-if": {
+    "description": "IFEval-style verifiable instruction-following constraints (Tulu 3 recipe)",
+    "primary_purpose": "instruction_following",
+    "also_provides": [],
+    "license": "ODC-BY",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "allenai/tulu-3-sft-personas-instruction-following",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  },
+
+  "nl2sh-alfa": {
+    "description": "Natural language to bash command pairs (find, grep, sed, awk, curl, ssh, etc.)",
+    "primary_purpose": "bash_scripting",
+    "also_provides": [],
+    "license": "MIT",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "westenfelder/NL2SH-ALFA",
+      "name": "train",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  },
+
+  "linux-command": {
+    "description": "Linux commands with NL descriptions, verified against man pages",
+    "primary_purpose": "bash_scripting",
+    "also_provides": [],
+    "license": "Apache 2.0",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "mecha-org/linux-command-dataset",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  },
+
+  "glaive-code-assistant": {
+    "description": "Practical Python scripting (web scraping, file I/O, APIs). v3 superset of v1+v2.",
+    "primary_purpose": "python_scripting",
+    "also_provides": ["code"],
+    "license": "Apache 2.0",
+    "acquisition_method": "download_subsample_hf",
+    "acquisition_config": {
+      "path": "glaiveai/glaive-code-assistant-v3",
+      "split": "train",
+      "target_count": 500
+    },
+    "filter_func": null,
+    "filter_config": null,
+    "preprocess_func": null,
+    "preprocess_config": null
+  }
+}

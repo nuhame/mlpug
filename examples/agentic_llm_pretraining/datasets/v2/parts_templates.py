@@ -128,6 +128,25 @@ OPENBOOKQA_TEMPLATE = SplitTemplate(
 )
 
 # =============================================================================
+# Scripting templates (prompt masked, response trained)
+# =============================================================================
+
+NL2SH_ALFA_TEMPLATE = SplitTemplate(
+    prompt_template="Task: {nl}\n\nBash command: ",
+    response_template="{bash}",
+)
+
+LINUX_COMMAND_TEMPLATE = SplitTemplate(
+    prompt_template="Task: {input}\n\nLinux command: ",
+    response_template="{output}",
+)
+
+GLAIVE_CODE_ASSISTANT_TEMPLATE = SplitTemplate(
+    prompt_template="{question}\n\nSolution:\n",
+    response_template="{answer}",
+)
+
+# =============================================================================
 # Code templates (prompt masked, response trained)
 # =============================================================================
 
@@ -208,7 +227,14 @@ TEMPLATES: dict[str, TemplateBase] = {
     # RAG
     "rag-dataset-12000": RAG_DATASET_TEMPLATE,
     "ragbench-hotpotqa": RAGBENCH_TEMPLATE,
+    # Scripting
+    "nl2sh-alfa": NL2SH_ALFA_TEMPLATE,
+    "linux-command": LINUX_COMMAND_TEMPLATE,
+    "glaive-code-assistant": GLAIVE_CODE_ASSISTANT_TEMPLATE,
     # Dialogue templates (role-based masking via format_chat_parts)
+    "openthoughts3": DIALOGUE_TEMPLATE,
+    "crab-sft": DIALOGUE_TEMPLATE,
+    "tulu3-if": DIALOGUE_TEMPLATE,
     "toolace": DIALOGUE_TEMPLATE,
     "hermes-function-calling": DIALOGUE_TEMPLATE,
     "glaive-function-calling": DIALOGUE_TEMPLATE,
