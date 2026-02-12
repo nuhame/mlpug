@@ -233,7 +233,7 @@ TEMPLATES: dict[str, TemplateBase] = {
     "glaive-code-assistant": GLAIVE_CODE_ASSISTANT_TEMPLATE,
     # Dialogue templates (role-based masking via format_chat_parts)
     "openthoughts3": DIALOGUE_TEMPLATE,
-    "crab-sft": DIALOGUE_TEMPLATE,
+    "nemotron-structured-outputs": DIALOGUE_TEMPLATE,
     "tulu3-if": DIALOGUE_TEMPLATE,
     "toolace": DIALOGUE_TEMPLATE,
     "hermes-function-calling": DIALOGUE_TEMPLATE,

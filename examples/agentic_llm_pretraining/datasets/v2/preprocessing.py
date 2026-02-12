@@ -113,6 +113,9 @@ def preprocess_openthoughts3_parts(
 
     Maps human→user, gpt→assistant. GPT responses contain <think>...</think>
     reasoning traces followed by the final answer.
+
+    Note: Filtering for complete reasoning traces (require </think>, max response
+    length) is handled at download time via filter_openthoughts3 in filters.py.
     """
     if logger is None:
         logger = module_logger
@@ -157,28 +160,59 @@ def preprocess_openthoughts3_parts(
 # =============================================================================
 
 
-def preprocess_crab_sft_parts(
+def preprocess_nemotron_structured_outputs_parts(
     sample: dict,
     index: int,
     dataset_name: str,
     logger: Optional[logging.Logger] = None,
 ) -> Optional[DialogueData]:
     """
-    Preprocess Crab-SFT sample for v2 parts format.
+    Preprocess Nemotron-Instruction-Following-Chat-v1 structured_outputs sample.
 
-    Multi-turn instruction-following with format/length/style constraints.
-    Standard role/content chat format.
+    JSON/XML/YAML schema compliance with optional reasoning traces.
+    Messages use standard role/content format with system, user, assistant roles.
+    Assistant messages may have a reasoning_content field containing schema
+    validation reasoning — included as <think>...</think> in the response.
     """
     if logger is None:
         logger = module_logger
 
-    messages = _extract_standard_chat_messages(
-        sample.get("messages", []), index, dataset_name, logger,
-    )
-    if messages is None:
+    messages_raw = sample.get("messages", [])
+    if not messages_raw:
+        logger.warning(f"{dataset_name}[{index}]: empty messages field")
         return None
 
-    return DialogueData(messages=messages)
+    system = None
+    messages = []
+
+    for msg in messages_raw:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+
+        if role == "system":
+            system = content
+            continue
+
+        if not content:
+            continue
+
+        if role == "user":
+            messages.append({"user": content})
+        elif role == "assistant":
+            reasoning = msg.get("reasoning_content")
+            if reasoning:
+                content = f"<think> {reasoning}\n</think>\n\n{content}"
+            messages.append({"assistant": content})
+        else:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{role}', skipping turn"
+            )
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in messages")
+        return None
+
+    return DialogueData(messages=messages, system=system)
 
 
 def preprocess_tulu3_if_parts(
@@ -680,7 +714,7 @@ def preprocess_samsum_parts(
 # Map dataset names to v2 preprocessing functions
 DIALOGUE_PREPROCESS_FUNCS = {
     "openthoughts3": preprocess_openthoughts3_parts,
-    "crab-sft": preprocess_crab_sft_parts,
+    "nemotron-structured-outputs": preprocess_nemotron_structured_outputs_parts,
     "tulu3-if": preprocess_tulu3_if_parts,
     "toolace": preprocess_toolace_parts,
     "hermes-function-calling": preprocess_hermes_function_calling_parts,

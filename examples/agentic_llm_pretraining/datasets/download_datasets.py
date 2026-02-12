@@ -3,8 +3,8 @@
 Download datasets from metadata JSON file.
 
 Usage (from repo root):
-    python -m examples.agentic_llm_pretraining.datasets.download_datasets --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json
-    python -m examples.agentic_llm_pretraining.datasets.download_datasets --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json --output ../data/inspect
+    python -m examples.agentic_llm_pretraining.datasets.download_datasets --metadata examples/agentic_llm_pretraining/datasets/v1/inspect_metadata.json
+    python -m examples.agentic_llm_pretraining.datasets.download_datasets --metadata examples/agentic_llm_pretraining/datasets/v2/inspect_metadata.json --output ../data/inspection-v2
 """
 
 import argparse

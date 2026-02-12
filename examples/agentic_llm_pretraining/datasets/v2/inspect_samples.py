@@ -99,6 +99,66 @@ def load_jsonl_samples(
     return samples
 
 
+def _truncate_text(
+    text: str,
+    max_length: int,
+    tail_length: int,
+    context_length: int = 80,
+) -> str:
+    """
+    Truncate long text, showing start, end, and context around </think> boundary.
+
+    For texts containing <think>...</think>, shows additional context around the
+    </think> tag so the transition from reasoning to response is visible.
+
+    :param text: Full text to truncate.
+    :param max_length: Characters to show from the start.
+    :param tail_length: Characters to show from the end.
+    :param context_length: Characters to show before/after </think>.
+
+    :return: Truncated text with markers.
+    """
+    if len(text) <= max_length + tail_length:
+        return text
+
+    think_close_pos = text.find("</think>")
+
+    # No </think> or it falls within the already-visible start/end regions
+    if (
+        think_close_pos == -1
+        or think_close_pos < max_length
+        or think_close_pos + len("</think>") > len(text) - tail_length
+    ):
+        truncated_chars = len(text) - max_length - tail_length
+        return (
+            text[:max_length] +
+            f"\n... [truncated, {truncated_chars} chars] ...\n" +
+            text[-tail_length:]
+        )
+
+    # Show: start ... context around </think> ... end
+    think_tag_end = think_close_pos + len("</think>")
+    ctx_before = max(max_length, think_close_pos - context_length)
+    ctx_after = min(len(text) - tail_length, think_tag_end + context_length)
+
+    gap1 = ctx_before - max_length
+    gap2 = (len(text) - tail_length) - ctx_after
+
+    parts = [text[:max_length]]
+
+    if gap1 > 0:
+        parts.append(f"\n... [truncated, {gap1} chars] ...\n")
+
+    parts.append(text[ctx_before:ctx_after])
+
+    if gap2 > 0:
+        parts.append(f"\n... [truncated, {gap2} chars] ...\n")
+
+    parts.append(text[-tail_length:])
+
+    return "".join(parts)
+
+
 def format_part_for_display(
     part: dict[str, str],
     max_length: int = 500,
@@ -119,14 +179,7 @@ def format_part_for_display(
     type_label = TYPE_LABELS.get(part_type, f"[{part_type.upper()}]")
     is_masked = PART_MASK_RULES.get(part_type, False)
 
-    # Truncate if needed, showing both start and end
-    if len(text) > max_length + tail_length:
-        truncated_chars = len(text) - max_length - tail_length
-        text = (
-            text[:max_length] +
-            f"\n... [truncated, {truncated_chars} chars] ...\n" +
-            text[-tail_length:]
-        )
+    text = _truncate_text(text, max_length, tail_length)
 
     return type_label, text, is_masked
 

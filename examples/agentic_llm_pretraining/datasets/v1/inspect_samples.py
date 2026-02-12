@@ -5,11 +5,11 @@ Inspect random samples from downloaded datasets.
 Usage (from repo root):
     python -m examples.agentic_llm_pretraining.datasets.inspect_samples \
         --data-dir ../data/agentic_llm_pretraining \
-        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json
+        --metadata examples/agentic_llm_pretraining/datasets/v1/inspect_metadata.json
 
     python -m examples.agentic_llm_pretraining.datasets.inspect_samples \
         --data-dir ../data/agentic_llm_pretraining \
-        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json \
+        --metadata examples/agentic_llm_pretraining/datasets/v1/inspect_metadata.json \
         --datasets fineweb-edu wikipedia --num-samples 5
 """
 
