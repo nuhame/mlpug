@@ -112,6 +112,46 @@ def filter_stackexchange(
 CODE_CONTESTS_TARGET_LANGUAGES = {2, 3, 4}  # C++, Python3, Java
 
 
+def filter_openthoughts3(
+    sample: dict,
+    require_think_close: bool = True,
+    max_response_chars: int = 64000,
+    **kwargs,
+) -> bool:
+    """
+    Filter OpenThoughts3 samples for complete reasoning traces.
+
+    Checks assistant (gpt) responses in the conversations field:
+    - require_think_close: skip samples where <think> is present but </think> is
+        missing (likely truncated during generation).
+    - max_response_chars: skip samples where any assistant response exceeds
+        the character limit. Default 64K chars accommodates future context
+        extension to 32K tokens.
+
+    :param sample: Sample dict from dataset.
+    :param require_think_close: Require closing </think> tag (default: True).
+    :param max_response_chars: Max chars per assistant response, 0 to disable
+        (default: 64000).
+
+    :return: True to keep, False to discard.
+    """
+    conversations = sample.get("conversations", [])
+
+    for conv in conversations:
+        if conv.get("from") != "gpt":
+            continue
+
+        value = conv.get("value", "")
+
+        if require_think_close and "<think>" in value and "</think>" not in value:
+            return False
+
+        if max_response_chars > 0 and len(value) > max_response_chars:
+            return False
+
+    return True
+
+
 def filter_code_contests(
     sample: dict,
     require_languages: set = None,

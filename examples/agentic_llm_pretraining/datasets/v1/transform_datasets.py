@@ -6,10 +6,10 @@ Output format: {"source": "...", "index": N, "text": "..."}
 
 Usage (from repo root):
     python -m examples.agentic_llm_pretraining.datasets.v1.transform_datasets \
-        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json
+        --metadata examples/agentic_llm_pretraining/datasets/v1/inspect_metadata.json
 
     python -m examples.agentic_llm_pretraining.datasets.v1.transform_datasets \
-        --metadata examples/agentic_llm_pretraining/datasets/inspect_metadata.json \
+        --metadata examples/agentic_llm_pretraining/datasets/v1/inspect_metadata.json \
         --datasets gsm8k soda \
         --num-samples 100 \
         --output-dir ../data/transforms
