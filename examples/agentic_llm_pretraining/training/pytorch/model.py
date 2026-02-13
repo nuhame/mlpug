@@ -42,22 +42,33 @@ class NTPTrainModel(nn.Module):
 
     def forward(
         self,
-        batch_data: torch.Tensor,
+        batch_data: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         evaluate_settings: dict[str, Any] | None = None,
         inference_mode: bool | None = None,
     ) -> dict[str, Any]:
         """
         Forward pass computing NTP loss.
 
-        :param batch_data: Token IDs tensor of shape (batch_size, context_length).
+        :param batch_data: Either a token IDs tensor of shape (batch_size, context_length),
+            or a tuple of (input_ids, labels) tensors for loss-masked training.
+            When a single tensor, it is used as both input_ids and labels.
+            When a tuple, labels should contain -100 at positions excluded from loss.
         :param evaluate_settings: Optional evaluation settings (unused, for MLPug compatibility).
         :param inference_mode: Optional inference mode flag (unused, for MLPug compatibility).
 
         :return: Dict with 'loss', 'num_samples', and 'auxiliary_results' (None).
         """
-        # Move to device and convert to long for embedding layer compatibility
-        # (PyTorch embeddings require Long/Int, not unsigned types like uint32)
-        input_ids = batch_data.to(self.device).long()
+        # Unpack batch_data: either a single tensor or (input_ids, labels) tuple.
+        # When a tuple, the collate function has already converted to long (int64).
+        if isinstance(batch_data, tuple):
+            input_ids, labels = batch_data
+            input_ids = input_ids.to(self.device)
+            labels = labels.to(self.device)
+        else:
+            # Move to device and convert to long for embedding layer compatibility
+            # (PyTorch embeddings require Long/Int, not unsigned types like uint32)
+            input_ids = batch_data.to(self.device).long()
+            labels = input_ids
 
         # NTP: predict next token, labels are shifted input_ids
         # HuggingFace CausalLM handles the shift internally:
@@ -65,7 +76,7 @@ class NTPTrainModel(nn.Module):
         # - loss is computed against labels at positions 1..N
         outputs = self.model(
             input_ids=input_ids,
-            labels=input_ids,
+            labels=labels,
             # use_cache must be False when using gradient checkpointing
             # (cached KV values interfere with recomputation)
             use_cache=not self._activation_checkpointing,
