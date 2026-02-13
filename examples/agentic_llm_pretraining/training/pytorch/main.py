@@ -1,22 +1,27 @@
 """
-NTP (Next-Token Prediction) training entry point for PyTorch.
+Shared NTP training entry point logic for PyTorch.
 
-This script trains a language model from scratch using Next-Token Prediction.
-It is designed to be run with torchrun for distributed training:
+Contains the main training function parameterized by the training process class.
+Version-specific entry points (v1/train.py, v2/train.py) inject the appropriate
+NTPTrainingProcess subclass.
 
-    # Single GPU
-    python -m examples.agentic_llm_pretraining.training.pytorch.train \\
+Designed to be run with torchrun for distributed training:
+
+    # Single GPU (v1)
+    python -m examples.agentic_llm_pretraining.training.pytorch.v1.train \\
         --train-data-path /path/to/tokenized/train
 
-    # Multi-GPU with torchrun
+    # Multi-GPU with torchrun (v2)
     torchrun --nproc_per_node=4 \\
-        -m examples.agentic_llm_pretraining.training.pytorch.train \\
+        -m examples.agentic_llm_pretraining.training.pytorch.v2.train \\
         --train-data-path /path/to/tokenized/train
 
 Environment variables (set by torchrun):
     - RANK or LOCAL_RANK: Device rank
     - WORLD_SIZE: Total number of devices
 """
+from typing import Type
+
 import os
 
 from basics.logging import get_logger
@@ -51,8 +56,13 @@ def get_rank_and_world_size() -> tuple[int, int]:
     return rank, world_size
 
 
-def main() -> None:
-    """Main entry point for NTP training."""
+def main(process_class: Type[NTPTrainingProcess] = NTPTrainingProcess) -> None:
+    """
+    Main entry point for NTP training.
+
+    :param process_class: Training process class to instantiate.
+        Defaults to NTPTrainingProcess (v1). V2 passes NTPTrainingProcessV2.
+    """
     # Setup logging
     mlp.logging.use_fancy_colors()
 
@@ -69,6 +79,7 @@ def main() -> None:
 
     # Only log config on primary device
     if rank == 0:
+        module_logger.info(f"Training process: {process_class.__name__}")
         describe_config(**config, logger=module_logger)
 
     # use_loss_scaling is derived from use_mixed_precision
@@ -115,7 +126,7 @@ def main() -> None:
     config.pop("num_devices", None)
 
     # Create and setup training process
-    training_process = NTPTrainingProcess(
+    training_process = process_class(
         rank=rank,
         num_devices=world_size,
         lr_scheduler_config=lr_scheduler_config,
@@ -126,7 +137,3 @@ def main() -> None:
 
     training_process.setup()
     training_process.start()
-
-
-if __name__ == "__main__":
-    main()

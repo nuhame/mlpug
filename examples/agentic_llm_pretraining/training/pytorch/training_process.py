@@ -8,7 +8,7 @@ This module expects tokenized and indexed data created using Data Forager.
 See examples/agentic_llm_pretraining/datasets/tokenize_dataset.py for creating
 the required tokenized datasets.
 """
-from typing import Tuple
+from typing import Callable, Tuple
 
 import math
 from functools import partial
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 from torch.nn import Module
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset as TorchDataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from transformers import AutoConfig, AutoModelForCausalLM, PreTrainedModel
 
@@ -37,15 +37,11 @@ from mlpug.lr_scheduler_configs import LRSchedulerConfig, CosineDecayConfig
 from mlpug.trainers import ModelWrapperFunc
 from mlpug.trainers.callbacks.callback import Callback
 
-from data_forager.datasets.common import SubsampledDataset
-from data_forager.datasets.tokens import TokensDataset
+from data_forager.datasets.common import Dataset as ForagerDataset, SubsampledDataset
 
-from examples.agentic_llm_pretraining.datasets.loading import (
-    load_tokens_dataset,
-    get_sample_properties,
-)
+from examples.agentic_llm_pretraining.datasets.loading import load_tokens_dataset
 from examples.agentic_llm_pretraining.models.qwen3 import add_mlp_dropout_to_qwen3
-from examples.agentic_llm_pretraining.training.pytorch.datasets import PyTorchTokensDataset
+from examples.agentic_llm_pretraining.training.pytorch.datasets import PyTorchForagerDataset
 from examples.agentic_llm_pretraining.training.pytorch.model import NTPTrainModel
 
 
@@ -185,31 +181,26 @@ class NTPTrainingProcess(TrainingProcess):
         """
         Load tokenized datasets from Data Forager and create DataLoaders.
 
+        Uses hookable methods that subclasses can override:
+        - ``_load_dataset``: Load and wrap a Forager dataset as a PyTorch dataset.
+        - ``_get_sample_properties``: Extract context length and token dtype from a dataset.
+        - ``_get_collate_fn``: Provide a custom collation function for the DataLoader.
+
         :return: (training_dataloader, validation_dataloader)
         """
         # Load training dataset
         self._log.info(f"Loading training data from: {self._train_data_path}")
-        train_tokens_dataset = load_tokens_dataset(self._train_data_path)
-        train_tokens_dataset = self._apply_subsampling(
-            train_tokens_dataset, self._train_fraction, "training"
-        )
-
-        train_dataset = PyTorchTokensDataset(train_tokens_dataset)
+        train_dataset = self._load_dataset(self._train_data_path, "training")
         self._log.info(f"  Training samples: {len(train_dataset):,}")
 
         # Get sample properties from first dataset
-        self._context_length, self._token_dtype = get_sample_properties(train_tokens_dataset)
+        self._context_length, self._token_dtype = self._get_sample_properties(train_dataset)
 
         # Load validation dataset if provided
         val_dataset = None
         if self._val_data_path:
             self._log.info(f"Loading validation data from: {self._val_data_path}")
-            val_tokens_dataset = load_tokens_dataset(self._val_data_path)
-            val_tokens_dataset = self._apply_subsampling(
-                val_tokens_dataset, self._val_fraction, "validation"
-            )
-
-            val_dataset = PyTorchTokensDataset(val_tokens_dataset)
+            val_dataset = self._load_dataset(self._val_data_path, "validation")
             self._log.info(f"  Validation samples: {len(val_dataset):,}")
 
         # Create samplers for distributed training
@@ -228,6 +219,8 @@ class NTPTrainingProcess(TrainingProcess):
                     shuffle=True,  # Shuffle for representative batch-level sliding window metrics
                 )
 
+        collate_fn = self._get_collate_fn()
+
         # Create DataLoaders
         train_loader = DataLoader(
             train_dataset,
@@ -237,6 +230,7 @@ class NTPTrainingProcess(TrainingProcess):
             num_workers=self._num_dataloader_workers,
             pin_memory=True,
             drop_last=True,  # Ensure consistent batch sizes for torch.compile
+            collate_fn=collate_fn,
         )
 
         val_loader = None
@@ -249,6 +243,7 @@ class NTPTrainingProcess(TrainingProcess):
                 num_workers=self._num_dataloader_workers,
                 pin_memory=True,
                 drop_last=True,
+                collate_fn=collate_fn,
             )
 
         self._log.info(f"Context length: {self._context_length}")
@@ -517,12 +512,58 @@ class NTPTrainingProcess(TrainingProcess):
     # Helper methods
     # -------------------------------------------------------------------------
 
+    def _load_dataset(self, path: str, name: str) -> TorchDataset:
+        """
+        Load a Forager dataset and wrap it as a PyTorch dataset.
+
+        Applies subsampling if configured. Override in subclasses to load
+        different dataset types (e.g., TokensWithAuxDataset for v2).
+
+        :param path: Path to tokenized data directory containing a Data Forager index.
+        :param name: Dataset name for logging (e.g., "training", "validation").
+
+        :return: PyTorch-compatible dataset.
+        """
+        fraction = self._train_fraction if name == "training" else self._val_fraction
+
+        tokens_dataset = load_tokens_dataset(path)
+        tokens_dataset = self._apply_subsampling(tokens_dataset, fraction, name)
+
+        return PyTorchForagerDataset[np.ndarray](
+            tokens_dataset, copy_sample_func=lambda s: s.copy(),
+        )
+
+    def _get_sample_properties(self, dataset: TorchDataset) -> tuple[int, np.dtype]:
+        """
+        Extract context length and token dtype from a dataset.
+
+        Override in subclasses that return different sample formats
+        (e.g., dicts instead of arrays).
+
+        :param dataset: PyTorch dataset to inspect.
+
+        :return: Tuple of (context_length, token_dtype).
+        """
+        sample = dataset[0]
+        return len(sample), sample.dtype
+
+    def _get_collate_fn(self) -> Callable | None:
+        """
+        Return a collation function for the DataLoader, or None for default collation.
+
+        Override in subclasses to provide custom collation (e.g., loss mask
+        application in v2).
+
+        :return: Collate function, or None.
+        """
+        return None
+
     def _apply_subsampling(
         self,
-        dataset: TokensDataset,
+        dataset: ForagerDataset,
         fraction: float | None,
         name: str,
-    ) -> TokensDataset | SubsampledDataset:
+    ) -> ForagerDataset | SubsampledDataset:
         """
         Apply subsampling to a dataset if fraction is specified.
 
