@@ -504,8 +504,8 @@
     "acquisition_config": {
       "path": "open-thoughts/OpenThoughts3-1.2M",
       "split": "train",
-      "keep_probability": 0.3,
-      "target_count": 75000
+      "keep_probability": 0.02,
+      "target_count": 5000
     },
     "filter_func": "filter_openthoughts3",
     "filter_config": {
