@@ -103,6 +103,29 @@ def create_arg_parser(
     )
 
     parser.add_argument(
+        "--model-checkpoint",
+        type=str,
+        required=False,
+        default=None,
+        help=(
+            "Path to MLPug .pt checkpoint file to load model weights from before training. "
+            "Only model weights are loaded (no optimizer or scheduler state). "
+            "Use this to continue training from a pre-trained checkpoint with a fresh "
+            "optimizer and LR schedule."
+        ),
+    )
+
+    parser.add_argument(
+        "--apply-loss-mask",
+        action="store_true",
+        help=(
+            "Apply loss masking from auxiliary data (v2 training only). "
+            "When set, masked positions (system/user prompts) are excluded from loss. "
+            "When not set, all tokens are trained on. Has no effect in v1 training."
+        ),
+    )
+
+    parser.add_argument(
         "--checkpoint-dir",
         type=str,
         required=False,
@@ -203,6 +226,8 @@ def describe_config(
     train_fraction: float | None,
     val_fraction: float | None,
     model_name: str,
+    model_checkpoint: str | None,
+    apply_loss_mask: bool,
     attn_dropout: float,
     mlp_dropout: float,
     checkpoint_dir: str,
@@ -228,6 +253,8 @@ def describe_config(
     :param train_fraction: Fraction of training data to use.
     :param val_fraction: Fraction of validation data to use.
     :param model_name: HuggingFace model name.
+    :param model_checkpoint: Path to checkpoint for model weight initialization.
+    :param apply_loss_mask: Whether to apply loss masking (v2 only).
     :param attn_dropout: Attention dropout rate (Qwen3 built-in).
     :param mlp_dropout: MLP dropout rate (wrapper).
     :param checkpoint_dir: Directory for checkpoints.
@@ -254,6 +281,8 @@ def describe_config(
     logger.info(f"  train_fraction: {train_fraction}")
     logger.info(f"  val_fraction: {val_fraction}")
     logger.info(f"  model_name: {model_name}")
+    logger.info(f"  model_checkpoint: {model_checkpoint}")
+    logger.info(f"  apply_loss_mask: {apply_loss_mask}")
     logger.info(f"  attn_dropout: {attn_dropout}")
     logger.info(f"  mlp_dropout: {mlp_dropout}")
     logger.info(f"  checkpoint_dir: {checkpoint_dir}")
