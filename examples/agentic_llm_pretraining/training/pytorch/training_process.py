@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch.nn import Module
 from torch.utils.data import Dataset as TorchDataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -132,6 +133,7 @@ class NTPTrainingProcess(TrainingProcess):
         train_fraction: float | None = None,
         val_fraction: float | None = None,
         model_name: str = DEFAULT_MODEL_NAME,
+        model_checkpoint: str | None = None,
         attn_dropout: float = 0.0,
         mlp_dropout: float = 0.0,
         use_liger_kernel: bool = True,
@@ -160,6 +162,7 @@ class NTPTrainingProcess(TrainingProcess):
         self._train_fraction = train_fraction
         self._val_fraction = val_fraction
         self._model_name = model_name
+        self._model_checkpoint = model_checkpoint
         self._attn_dropout = attn_dropout
         self._mlp_dropout = mlp_dropout
         self._use_liger_kernel = use_liger_kernel
@@ -294,6 +297,26 @@ class NTPTrainingProcess(TrainingProcess):
         # Apply MLP dropout via wrapper
         if self._mlp_dropout > 0:
             model = add_mlp_dropout_to_qwen3(model, dropout_rate=self._mlp_dropout)
+
+        # Load pre-trained weights from checkpoint if provided
+        if self._model_checkpoint is not None:
+            self._log.info(f"Loading model weights from checkpoint: {self._model_checkpoint}")
+            # weights_only=False needed because MLPug checkpoints contain pickled objects
+            # (e.g., MicroBatchResults in manager_state). Safe for our own checkpoints.
+            checkpoint = torch.load(
+                self._model_checkpoint, map_location="cpu", weights_only=False,
+            )
+
+            if isinstance(checkpoint, dict) and 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            else:
+                state_dict = checkpoint
+
+            model.load_state_dict(state_dict)
+            self._log.info("Model weights loaded successfully")
+
+            # Free checkpoint memory
+            del checkpoint, state_dict
 
         self._log.info(f"Model config:\n"
                        f"  hidden_size: {config.hidden_size}\n"
