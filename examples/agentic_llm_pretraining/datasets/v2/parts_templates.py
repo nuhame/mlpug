@@ -39,8 +39,15 @@ class SplitTemplate(TemplateBase):
 
 @dataclass
 class DialogueTemplate(TemplateBase):
-    """Marker for dialogue datasets (uses format_chat_parts instead of templates)."""
-    pass
+    """
+    Marker for dialogue datasets (uses format_chat_parts instead of templates).
+
+    :param expects_thinking: If True, assistant responses may contain
+        <think>...</think> reasoning traces that should be extracted into
+        separate "thinking" parts. If False (default), an empty
+        <think></think> block is added to the masked prompt.
+    """
+    expects_thinking: bool = False
 
 
 # =============================================================================
@@ -191,10 +198,13 @@ RAGBENCH_TEMPLATE = SplitTemplate(
 # Dialogue template (marker for dialogue datasets)
 # =============================================================================
 
-# Shared instance for all dialogue datasets
+# Shared instance for non-thinking dialogue datasets
 # Note: empathetic-dialogues and samsum append tasks after dialogue,
 # handled via suffix_prompt/suffix_response in their preprocessing functions.
 DIALOGUE_TEMPLATE = DialogueTemplate()
+
+# For datasets with <think>...</think> reasoning traces (openthoughts3, nemotron)
+DIALOGUE_THINKING_TEMPLATE = DialogueTemplate(expects_thinking=True)
 
 # =============================================================================
 # Registry
@@ -232,8 +242,8 @@ TEMPLATES: dict[str, TemplateBase] = {
     "linux-command": LINUX_COMMAND_TEMPLATE,
     "glaive-code-assistant": GLAIVE_CODE_ASSISTANT_TEMPLATE,
     # Dialogue templates (role-based masking via format_chat_parts)
-    "openthoughts3": DIALOGUE_TEMPLATE,
-    "nemotron-structured-outputs": DIALOGUE_TEMPLATE,
+    "openthoughts3": DIALOGUE_THINKING_TEMPLATE,
+    "nemotron-structured-outputs": DIALOGUE_THINKING_TEMPLATE,
     "tulu3-if": DIALOGUE_TEMPLATE,
     "toolace": DIALOGUE_TEMPLATE,
     "hermes-function-calling": DIALOGUE_TEMPLATE,
