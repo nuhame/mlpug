@@ -8,7 +8,9 @@ Output format: list of Part objects with type and text fields.
 Three dataset types are supported:
 1. Text datasets: All tokens trained on (type="text")
 2. Split template datasets: Prompt masked, response trained
-3. Dialogue datasets: Role-based masking (system/user/tool masked, assistant trained)
+3. Dialogue datasets: Role-based masking with Qwen3-compatible thinking control.
+   System/user/tool messages are masked. Assistant messages are split into a masked
+   prompt cue (including empty or filled <think> block) and trained response/thinking.
 """
 
 import logging
@@ -55,6 +57,7 @@ class Part:
 def format_chat_parts(
     messages: list[dict],
     system: Optional[str] = None,
+    expects_thinking: bool = False,
 ) -> list[Part]:
     """
     Format messages into Qwen3 chat format as typed parts.
@@ -64,11 +67,21 @@ def format_chat_parts(
     - {"assistant": "response text"}
     - {"tool": "tool result"}
 
-    Parts are formatted such that when concatenated, they match the output
-    of v1's format_chat() which uses "\\n".join(parts).
+    Assistant messages are split into prompt cue + response for proper masking:
+    - The ``<|im_start|>assistant\\n`` prefix is masked (prompt)
+    - For thinking datasets: ``<think>\\n`` is added to the prompt cue, thinking
+      content becomes ``Part(type="thinking")``, answer becomes ``Part(type="response")``
+    - For non-thinking datasets: an empty ``<think>\\n\\n</think>\\n\\n`` block is
+      appended to the prompt cue (masked)
+
+    This follows the Qwen3 thinking control convention where ``<think>`` blocks
+    are always present (empty or filled) and controlled via the prompt.
 
     :param messages: List of message dicts with role as key.
     :param system: Optional system prompt.
+    :param expects_thinking: If True, extract ``<think>`` content from
+        assistant messages into separate thinking parts. If False, add
+        empty ``<think>`` blocks to the masked prompt.
 
     :return: List of Part objects with appropriate types.
 
@@ -94,21 +107,85 @@ def format_chat_parts(
         content = msg[role]
         # Add \n prefix if not first part (matches v1's "\n".join behavior)
         prefix = "\n" if parts else ""
-        formatted_text = f"{prefix}<|im_start|>{role}\n{content}<|im_end|>"
 
-        # Map role to part type for loss masking
-        if role == "user":
-            part_type = "prompt"
-        elif role == "assistant":
-            part_type = "response"
-        elif role == "tool":
-            part_type = "prompt"  # Tool results are like user input
+        if role == "assistant":
+            _format_assistant_parts(
+                content, prefix, expects_thinking, parts,
+            )
         else:
-            part_type = "text"
-
-        parts.append(Part(type=part_type, text=formatted_text))
+            # User and tool messages are masked prompts
+            formatted_text = f"{prefix}<|im_start|>{role}\n{content}<|im_end|>"
+            part_type = "prompt" if role in ("user", "tool") else "text"
+            parts.append(Part(type=part_type, text=formatted_text))
 
     return parts
+
+
+def _format_assistant_parts(
+    content: str,
+    prefix: str,
+    expects_thinking: bool,
+    parts: list[Part],
+    logger: Optional[logging.Logger] = None,
+) -> None:
+    """
+    Format an assistant message into prompt cue + thinking/response parts.
+
+    The ``<|im_start|>assistant\\n`` prefix is always masked as part of the
+    prompt. Thinking control follows the Qwen3 convention:
+
+    - Thinking dataset with ``<think>`` content: prompt cue includes
+      ``<think>\\n``, thinking content is trained, answer is trained.
+    - Non-thinking dataset (or no ``<think>`` in content): prompt cue
+      includes empty ``<think>\\n\\n</think>\\n\\n`` block, response is trained.
+
+    Normalized output format for thinking samples::
+
+        <|im_start|>assistant\\n<think>\\n
+        {thinking_content}\\n</think>\\n
+        \\n{answer}<|im_end|>
+
+    :param content: The assistant message content.
+    :param prefix: Newline prefix for non-first parts.
+    :param expects_thinking: Whether this dataset has thinking traces.
+    :param parts: List to append parts to (modified in place).
+    :param logger: Optional logger. Falls back to module logger if None.
+    """
+    if logger is None:
+        logger = module_logger
+
+    cue = f"{prefix}<|im_start|>assistant\n"
+    content = content.strip()
+
+    if expects_thinking and content.startswith("<think>"):
+        # Extract thinking content and answer
+        think_close_tag = "</think>"
+        think_end = content.find(think_close_tag)
+        if think_end == -1:
+            logger.warning(
+                "No closing </think> tag found in thinking content — "
+                "treating entire content as thinking"
+            )
+            thinking_text = content[len("<think>"):].strip("\n ")
+            parts.append(Part(type="prompt", text=cue + "<think>\n"))
+            parts.append(Part(type="thinking", text=thinking_text + "\n</think>\n"))
+            parts.append(Part(type="response", text="<|im_end|>"))
+            return
+
+        # Normalize: strip whitespace between <think> and content,
+        # and between </think> and answer. Handles both "<think>\n..."
+        # (openthoughts3) and "<think> ..." (nemotron) variants.
+        thinking_text = content[len("<think>"):think_end].strip("\n ")
+        answer_text = content[think_end + len(think_close_tag):].strip("\n ")
+
+        parts.append(Part(type="prompt", text=cue + "<think>\n"))
+        parts.append(Part(type="thinking", text=thinking_text + "\n</think>\n"))
+        parts.append(Part(type="response", text="\n" + answer_text + "<|im_end|>"))
+    else:
+        # Non-thinking: add empty think block to masked prompt
+        cue += "<think>\n\n</think>\n\n"
+        parts.append(Part(type="prompt", text=cue))
+        parts.append(Part(type="response", text=content + "<|im_end|>"))
 
 
 # =============================================================================
@@ -151,19 +228,24 @@ def apply_split_template(fields: dict, template: SplitTemplate) -> list[Part]:
     ]
 
 
-def apply_dialogue_data(dialogue_data: DialogueData) -> list[Part]:
+def apply_dialogue_data(
+    dialogue_data: DialogueData,
+    expects_thinking: bool = False,
+) -> list[Part]:
     """
     Convert DialogueData to parts using chat formatting.
 
     Handles optional suffix task (prompt + response appended after dialogue).
 
     :param dialogue_data: DialogueData with messages, system, and optional suffix.
+    :param expects_thinking: Whether this dataset has thinking traces.
 
     :return: List of Part objects.
     """
     parts = format_chat_parts(
         messages=dialogue_data.messages,
         system=dialogue_data.system,
+        expects_thinking=expects_thinking,
     )
 
     # Add suffix task if present
@@ -245,7 +327,10 @@ def transform_samples_to_parts(
 
             # Convert to parts based on template type
             if isinstance(template, DialogueTemplate):
-                parts = apply_dialogue_data(preprocessed)
+                parts = apply_dialogue_data(
+                    preprocessed,
+                    expects_thinking=template.expects_thinking,
+                )
             elif isinstance(template, TextTemplate):
                 parts = apply_text_template(preprocessed, template)
             elif isinstance(template, SplitTemplate):
