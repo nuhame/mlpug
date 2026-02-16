@@ -1,5 +1,5 @@
 {
-  "_comment": "V2 dataset metadata: v1 datasets (unchanged) + 6 new v2 datasets. V1 budget ~1.54B tokens. V2 additions are on top (~estimated 228M tokens before split). Exact v2 token counts to be determined after tokenization.",
+  "_comment": "V2.1 dataset metadata: v1 datasets + 6 new v2 datasets + rebalancing. Reduced glaive-function-calling (112K→12K), openmath-instruct-1 (483K→80K), openmath-instruct-2 (262K→50K) for better diversity. Estimated ~1.47B tokens after tokenization.",
 
   "fineweb-edu": {
     "description": "Educational web content scored 1-5",
@@ -140,7 +140,7 @@
     "acquisition_config": {
       "path": "nvidia/OpenMathInstruct-1",
       "split": "train",
-      "target_count": 482677
+      "target_count": 80000
     },
     "filter_func": "filter_openmath_instruct_1",
     "filter_config": {"is_correct": true},
@@ -157,8 +157,8 @@
     "acquisition_config": {
       "path": "nvidia/OpenMathInstruct-2",
       "split": "train",
-      "keep_probability": 0.02,
-      "target_count": 262060
+      "keep_probability": 0.004,
+      "target_count": 50000
     },
     "filter_func": null,
     "filter_config": null,
@@ -313,7 +313,7 @@
     "acquisition_config": {
       "path": "glaiveai/glaive-function-calling-v2",
       "split": "train",
-      "target_count": 112960
+      "target_count": 12000
     },
     "filter_func": null,
     "filter_config": null,
