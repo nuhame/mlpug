@@ -1220,6 +1220,165 @@ def preprocess_glaive_code_assistant(
 
 
 # =============================================================================
+# Reasoning Trace Preprocessing
+# =============================================================================
+
+
+def preprocess_openthoughts3(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess OpenThoughts3-1.2M sample.
+
+    Maps human→user, gpt→assistant. GPT responses contain <think>...</think>
+    reasoning traces followed by the final answer. Formats as Qwen3 chat.
+    """
+    if logger is None:
+        logger = module_logger
+
+    conversations = sample.get("conversations", [])
+
+    if not conversations:
+        logger.warning(f"{dataset_name}[{index}]: empty conversations field")
+        return None
+
+    role_mapping = {
+        "human": "user",
+        "gpt": "assistant",
+    }
+
+    messages = []
+    for conv in conversations:
+        from_role = conv.get("from", "")
+        value = conv.get("value", "")
+
+        if not value:
+            continue
+
+        qwen_role = role_mapping.get(from_role)
+        if qwen_role is None:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{from_role}', skipping turn"
+            )
+            continue
+
+        messages.append({qwen_role: value})
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in conversations")
+        return None
+
+    text = format_chat(messages)
+
+    return {"text": text}
+
+
+def preprocess_nemotron_structured_outputs(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess Nemotron-Instruction-Following-Chat-v1 structured_outputs sample.
+
+    JSON/XML/YAML schema compliance with optional reasoning traces.
+    Messages use standard role/content format with system, user, assistant roles.
+    Assistant messages may have a reasoning_content field containing schema
+    validation reasoning — included as <think>...</think> in the response.
+    Formats as Qwen3 chat.
+    """
+    if logger is None:
+        logger = module_logger
+
+    messages_raw = sample.get("messages", [])
+    if not messages_raw:
+        logger.warning(f"{dataset_name}[{index}]: empty messages field")
+        return None
+
+    system = None
+    messages = []
+
+    for msg in messages_raw:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+
+        if role == "system":
+            system = content
+            continue
+
+        if not content:
+            continue
+
+        if role == "user":
+            messages.append({"user": content})
+        elif role == "assistant":
+            reasoning = msg.get("reasoning_content")
+            if reasoning:
+                content = f"<think> {reasoning}\n</think>\n\n{content}"
+            messages.append({"assistant": content})
+        else:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{role}', skipping turn"
+            )
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in messages")
+        return None
+
+    text = format_chat(messages, system=system)
+
+    return {"text": text}
+
+
+def preprocess_tulu3_if(
+    sample: dict,
+    index: int,
+    dataset_name: str,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """
+    Preprocess tulu-3-sft-personas-instruction-following sample.
+
+    Single-turn IFEval-style verifiable constraint satisfaction.
+    Standard content/role chat format. Formats as Qwen3 chat.
+    """
+    if logger is None:
+        logger = module_logger
+
+    messages_raw = sample.get("messages", [])
+    if not messages_raw:
+        logger.warning(f"{dataset_name}[{index}]: empty messages field")
+        return None
+
+    messages = []
+    for msg in messages_raw:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+
+        if not content:
+            continue
+
+        if role in ("user", "assistant"):
+            messages.append({role: content})
+        else:
+            logger.warning(
+                f"{dataset_name}[{index}]: unknown role '{role}', skipping turn"
+            )
+
+    if not messages:
+        logger.warning(f"{dataset_name}[{index}]: no valid turns in messages")
+        return None
+
+    text = format_chat(messages)
+
+    return {"text": text}
+
+
+# =============================================================================
 # RAG Preprocessing
 # =============================================================================
 

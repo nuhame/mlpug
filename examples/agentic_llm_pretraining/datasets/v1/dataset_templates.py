@@ -133,6 +133,13 @@ Retrieved documents:
 Answer: {response}
 """
 
+# --- Scripting ---
+NL2SH_ALFA_TEMPLATE = "Task: {nl}\n\nBash command: {bash}"
+
+LINUX_COMMAND_TEMPLATE = "Task: {input}\n\nLinux command: {output}"
+
+GLAIVE_CODE_ASSISTANT_TEMPLATE = "{question}\n\nSolution:\n{answer}"
+
 
 # =============================================================================
 # Registry
@@ -173,4 +180,13 @@ TEMPLATES = {
     # RAG
     "rag-dataset-12000": RAG_DATASET_TEMPLATE,
     "ragbench-hotpotqa": RAGBENCH_TEMPLATE,
+    # --- V2 datasets (v1-compatible templates) ---
+    # Scripting (text templates — concatenation of prompt + response)
+    "nl2sh-alfa": NL2SH_ALFA_TEMPLATE,
+    "linux-command": LINUX_COMMAND_TEMPLATE,
+    "glaive-code-assistant": GLAIVE_CODE_ASSISTANT_TEMPLATE,
+    # Reasoning/Instruction (chat-formatted via preprocess)
+    "openthoughts3": PASSTHROUGH_TEMPLATE,
+    "nemotron-structured-outputs": PASSTHROUGH_TEMPLATE,
+    "tulu3-if": PASSTHROUGH_TEMPLATE,
 }
