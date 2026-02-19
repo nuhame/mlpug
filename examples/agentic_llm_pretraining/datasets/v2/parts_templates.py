@@ -45,9 +45,15 @@ class DialogueTemplate(TemplateBase):
     :param expects_thinking: If True, assistant responses may contain
         <think>...</think> reasoning traces that should be extracted into
         separate "thinking" parts. If False (default), an empty
-        <think></think> block is added to the masked prompt.
+        <think></think> block is added to the masked prompt (unless
+        add_empty_think_block is False).
+    :param add_empty_think_block: If True (default), non-thinking assistant
+        messages get an empty <think></think> block in the masked prompt.
+        If False, no think block is added. Only relevant when
+        expects_thinking is False.
     """
     expects_thinking: bool = False
+    add_empty_think_block: bool = True
 
 
 # =============================================================================

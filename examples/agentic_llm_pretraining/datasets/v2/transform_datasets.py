@@ -60,12 +60,14 @@ DEFAULT_MAX_MASKED_CHARS = 8000
 
 def describe_config(
     max_masked_chars: int,
+    no_think_blocks: bool,
     **kwargs,
 ) -> None:
     """
     Log v2-specific configuration, then delegate to base describe_config.
 
     :param max_masked_chars: Max chars for any single masked part. 0 disables filtering.
+    :param no_think_blocks: Whether empty think blocks are disabled.
     :param kwargs: Passed through to base describe_config.
     """
     describe_config_base(**kwargs)
@@ -73,6 +75,8 @@ def describe_config(
         module_logger.info(f"  max_masked_chars: {max_masked_chars}")
     else:
         module_logger.info(f"  max_masked_chars: disabled")
+    if no_think_blocks:
+        module_logger.info(f"  no_think_blocks: True (empty <think> blocks disabled)")
 
 
 def get_preprocess_func(
@@ -245,10 +249,26 @@ def main():
             f"(default: {DEFAULT_MAX_MASKED_CHARS}). Set to 0 to disable."
         ),
     )
+    parser.add_argument(
+        "--no-think-blocks",
+        action="store_true",
+        help=(
+            "Disable empty <think> blocks for non-thinking dialogue datasets. "
+            "Used for ablation studies to isolate thinking control effects."
+        ),
+    )
     args = parser.parse_args()
+
+    # Apply --no-think-blocks: disable empty think blocks on all DialogueTemplates
+    if args.no_think_blocks:
+        for template in TEMPLATES.values():
+            if isinstance(template, DialogueTemplate) and not template.expects_thinking:
+                template.add_empty_think_block = False
+        module_logger.info("Empty <think> blocks disabled for non-thinking dialogue datasets")
 
     describe_config(
         max_masked_chars=args.max_masked_chars,
+        no_think_blocks=args.no_think_blocks,
         metadata=args.metadata,
         data_dir=args.data_dir,
         output_dir=args.output_dir,
