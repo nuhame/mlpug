@@ -125,6 +125,11 @@ def main(process_class: Type[NTPTrainingProcess] = NTPTrainingProcess) -> None:
     config.pop("distributed", None)
     config.pop("num_devices", None)
 
+    # TODO: Move --apply-loss-mask to v2-specific arg parser instead of shared args.
+    #  Currently it's in shared_args.py but only NTPTrainingProcessV2 accepts it.
+    if process_class is NTPTrainingProcess:
+        config.pop("apply_loss_mask", None)
+
     # Create and setup training process
     training_process = process_class(
         rank=rank,
