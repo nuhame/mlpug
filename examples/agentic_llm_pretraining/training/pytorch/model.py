@@ -9,6 +9,9 @@ import torch
 import torch.nn as nn
 from torch.nn import Module
 
+# Label value that HuggingFace CrossEntropyLoss (and Liger Kernel) ignores
+IGNORE_INDEX = -100
+
 
 class NTPTrainModel(nn.Module):
     """
@@ -16,6 +19,16 @@ class NTPTrainModel(nn.Module):
 
     Wraps a causal language model and computes cross-entropy loss for
     next-token prediction. The model handles the label shifting internally.
+
+    Supports two input modes:
+
+    1. Plain tensor (v1): input_ids used as both input and labels.
+    2. Tuple (v2): (input_ids, loss_mask) where loss_mask is optional.
+       When loss_mask is provided, labels are derived from input_ids inside
+       the compiled graph by cloning and masking. When loss_mask is None,
+       labels = input_ids (same as v1). This ensures torch.compile + Liger
+       FLCE compatibility by keeping labels derived from input_ids rather
+       than as an independent tensor input.
 
     :param model: Causal language model (e.g., Qwen3ForCausalLM). Must support
         forward(input_ids, labels, use_cache) and return an object with .loss attribute.
@@ -42,30 +55,41 @@ class NTPTrainModel(nn.Module):
 
     def forward(
         self,
-        batch_data: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        batch_data: torch.Tensor | tuple[torch.Tensor, torch.Tensor | None],
         evaluate_settings: dict[str, Any] | None = None,
         inference_mode: bool | None = None,
     ) -> dict[str, Any]:
         """
         Forward pass computing NTP loss.
 
-        :param batch_data: Either a token IDs tensor of shape (batch_size, context_length),
-            or a tuple of (input_ids, labels) tensors for loss-masked training.
+        :param batch_data: Either a token IDs tensor of shape
+            (batch_size, context_length), or a tuple of (input_ids, loss_mask).
             When a single tensor, it is used as both input_ids and labels.
-            When a tuple, labels should contain -100 at positions excluded from loss.
-        :param evaluate_settings: Optional evaluation settings (unused, for MLPug compatibility).
-        :param inference_mode: Optional inference mode flag (unused, for MLPug compatibility).
+            When a tuple with loss_mask, labels are derived by cloning
+            input_ids and setting masked positions to -100.
+            When a tuple with loss_mask=None, labels = input_ids.
+        :param evaluate_settings: Optional evaluation settings
+            (unused, for MLPug compatibility).
+        :param inference_mode: Optional inference mode flag
+            (unused, for MLPug compatibility).
 
         :return: Dict with 'loss', 'num_samples', and 'auxiliary_results' (None).
         """
-        # Unpack batch_data: either a single tensor or (input_ids, labels) tuple.
-        # When a tuple, the collate function has already converted to long (int64).
         if isinstance(batch_data, tuple):
-            input_ids, labels = batch_data
+            input_ids, loss_mask = batch_data
             input_ids = input_ids.to(self.device)
-            labels = labels.to(self.device)
+
+            if loss_mask is not None:
+                # Derive labels inside the compiled graph: clone input_ids
+                # and mask positions. This keeps labels traceable from
+                # input_ids for AOTAutograd compatibility with Liger FLCE.
+                loss_mask = loss_mask.to(self.device)
+                labels = input_ids.clone()
+                labels.masked_fill_(loss_mask == 1, IGNORE_INDEX)
+            else:
+                labels = input_ids
         else:
-            # Move to device and convert to long for embedding layer compatibility
+            # V1 path: plain tensor, convert to long for embedding layer
             # (PyTorch embeddings require Long/Int, not unsigned types like uint32)
             input_ids = batch_data.to(self.device).long()
             labels = input_ids

@@ -25,52 +25,47 @@ from examples.agentic_llm_pretraining.training.pytorch.training_process import (
 )
 
 
-# Label value that HuggingFace CrossEntropyLoss (and Liger Kernel) ignores
-IGNORE_INDEX = -100
-
-
 def loss_mask_collate_fn(
     samples: list[Dict[str, np.ndarray]],
     apply_loss_mask: bool = True,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
-    Collate samples with loss masks into (input_ids, labels) tensors.
+    Collate samples into (input_ids, loss_mask) tensors for NTP training.
 
-    Stacks token arrays into input_ids, creates labels. When apply_loss_mask
-    is True, masked positions get -100 (excluded from loss). When False, all
-    tokens are trained on (labels are a copy of tokens).
+    Always returns a tuple. When apply_loss_mask is True, loss_mask is included
+    so the model can derive labels inside the compiled graph (clone input_ids,
+    then mask). When False, loss_mask is None and the model uses
+    labels = input_ids directly.
+
+    This design avoids passing pre-constructed labels as an independent tensor
+    input to the compiled model, which causes torch.compile + Liger FLCE
+    compatibility issues with AOTAutograd.
 
     Loss mask convention: 1 = masked (excluded from loss),
     0 = trained (included in loss).
 
     :param samples: List of dicts with "tokens" and "loss_mask" numpy arrays.
-    :param apply_loss_mask: Whether to apply loss masking. When False,
-        all tokens are trained on regardless of the loss mask.
+    :param apply_loss_mask: Whether to include the loss mask. When False,
+        loss_mask is None.
 
-    :return: Tuple of (input_ids, labels) tensors, both shape (batch_size, context_length).
+    :return: Tuple of (input_ids, loss_mask). loss_mask is None when
+        apply_loss_mask is False.
     """
     tokens_list = []
-    labels_list = []
 
+    if apply_loss_mask:
+        mask_list = []
+        for sample in samples:
+            tokens_list.append(torch.from_numpy(sample["tokens"]).long())
+            mask_list.append(torch.from_numpy(sample["loss_mask"]))
+
+        return torch.stack(tokens_list), torch.stack(mask_list)
+
+    # No masking: return (input_ids, None) — model uses labels = input_ids
     for sample in samples:
-        # Convert to long (int64) upfront — required for embedding layer and
-        # for masked fill (uint32 doesn't support it). This moves the dtype
-        # conversion from the model to the DataLoader workers.
-        tokens = torch.from_numpy(sample["tokens"]).long()
+        tokens_list.append(torch.from_numpy(sample["tokens"]).long())
 
-        # Labels start as a copy of tokens; optionally mask positions
-        labels = tokens.clone()
-        if apply_loss_mask:
-            loss_mask = sample["loss_mask"]
-            labels[loss_mask == 1] = IGNORE_INDEX
-
-        tokens_list.append(tokens)
-        labels_list.append(labels)
-
-    input_ids = torch.stack(tokens_list)
-    labels = torch.stack(labels_list)
-
-    return input_ids, labels
+    return torch.stack(tokens_list), None
 
 
 class NTPTrainingProcessV2(NTPTrainingProcess):
@@ -129,6 +124,6 @@ class NTPTrainingProcessV2(NTPTrainingProcess):
         """
         Return the collation function with loss mask setting applied.
 
-        :return: Collate function that produces (input_ids, labels) tuples.
+        :return: Collate function that produces (input_ids, loss_mask) tuples.
         """
         return partial(loss_mask_collate_fn, apply_loss_mask=self._apply_loss_mask)
