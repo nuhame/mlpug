@@ -115,6 +115,7 @@ def evaluate_hf_model(
     num_fewshot: Optional[int] = None,
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
+    use_vllm: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -130,6 +131,7 @@ def evaluate_hf_model(
     :param num_fewshot: Number of few-shot examples (None = use task default).
     :param limit: Limit number of samples per task (for quick testing).
     :param output_path: Optional path to save results JSON file.
+    :param use_vllm: If True, use vLLM backend for faster generation.
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -145,17 +147,24 @@ def evaluate_hf_model(
             "lm-evaluation-harness not installed. Install with: pip install lm-eval"
         )
 
+    if use_vllm:
+        model_type = "vllm"
+        model_args = f"pretrained={model_path},dtype={dtype}"
+    else:
+        model_type = "hf"
+        model_args = f"pretrained={model_path},device={device},dtype={dtype}"
+
     logger.info(f"Running lm-evaluation-harness on tasks: {tasks}")
-    logger.info(f"Model: {model_path}")
-    logger.info(f"Batch size: {batch_size}, Device: {device}, dtype: {dtype}")
+    logger.info(f"Model: {model_path} (backend: {model_type})")
+    logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
     if limit:
         logger.info(f"Sample limit per task: {limit}")
 
     # Run evaluation
     # confirm_run_unsafe_code=True needed for code evaluation tasks (humaneval, mbpp)
     results = simple_evaluate(
-        model="hf",
-        model_args=f"pretrained={model_path},device={device},dtype={dtype}",
+        model=model_type,
+        model_args=model_args,
         tasks=tasks,
         batch_size=batch_size,
         num_fewshot=num_fewshot,
@@ -185,14 +194,15 @@ def evaluate_hf_model_distributed(
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
     dtype: str = "bfloat16",
+    use_vllm: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
     Evaluate a HuggingFace model using lm-evaluation-harness with multi-GPU support.
 
     For single GPU (num_gpus=1), uses the in-process evaluate_hf_model().
-    For multiple GPUs, launches accelerate as a subprocess to distribute
-    evaluation across all GPUs using data parallelism.
+    For multiple GPUs with HF backend, launches accelerate as a subprocess.
+    For vLLM backend, uses vLLM's built-in tensor parallelism (no accelerate).
 
     :param model_path: Path to HuggingFace model directory or model name.
     :param tasks: List of benchmark task names.
@@ -202,6 +212,7 @@ def evaluate_hf_model_distributed(
     :param limit: Limit number of samples per task (for quick testing).
     :param output_path: Optional path to save results JSON file.
     :param dtype: Model dtype for loading (default: bfloat16).
+    :param use_vllm: If True, use vLLM backend for faster generation.
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -209,8 +220,9 @@ def evaluate_hf_model_distributed(
     if logger is None:
         logger = module_logger
 
-    if num_gpus == 1:
-        # Single GPU: use in-process evaluation
+    if use_vllm or num_gpus == 1:
+        # vLLM: always use in-process (vLLM handles parallelism via tensor_parallel_size)
+        # Single GPU HF: use in-process evaluation
         return evaluate_hf_model(
             model_path=model_path,
             tasks=tasks,
@@ -220,6 +232,7 @@ def evaluate_hf_model_distributed(
             num_fewshot=num_fewshot,
             limit=limit,
             output_path=output_path,
+            use_vllm=use_vllm,
             logger=logger,
         )
 
@@ -327,6 +340,7 @@ def evaluate_checkpoint(
     output_path: Optional[str] = None,
     keep_temp_model: bool = False,
     temp_model_dir: Optional[str] = None,
+    use_vllm: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -348,6 +362,7 @@ def evaluate_checkpoint(
     :param output_path: Path to save results JSON file.
     :param keep_temp_model: If True, don't delete temporary model directory (only used with checkpoint_path).
     :param temp_model_dir: Custom directory for temporary model (only used with checkpoint_path).
+    :param use_vllm: If True, use vLLM backend for faster generation.
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
@@ -374,6 +389,7 @@ def evaluate_checkpoint(
             num_fewshot=num_fewshot,
             limit=limit,
             output_path=output_path,
+            use_vllm=use_vllm,
             logger=logger,
         )
 
@@ -420,6 +436,7 @@ def evaluate_checkpoint(
             num_fewshot=num_fewshot,
             limit=limit,
             output_path=output_path,
+            use_vllm=use_vllm,
             logger=logger,
         )
 
