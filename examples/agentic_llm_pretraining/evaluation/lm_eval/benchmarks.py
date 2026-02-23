@@ -59,6 +59,27 @@ from examples.agentic_llm_pretraining.evaluation.checkpoint import (
 module_logger = get_logger(os.path.basename(__file__))
 
 
+# Metrics to search for in lm-eval results, in order of preference.
+# Must cover all benchmark types we use:
+#   acc_norm: arc_easy, arc_challenge, hellaswag
+#   acc: boolq, winogrande, race
+#   exact_match: gsm8k, minerva_math, triviaqa, nq_open
+#   mc2: truthfulqa_mc2
+#   f1: drop
+#   inst_level_loose_acc: ifeval (instruction-level, lenient)
+#   prompt_level_strict_acc: ifeval (prompt-level, strict)
+#   pass_at_1: humaneval, mbpp (code generation)
+_PREFERRED_METRICS = [
+    'acc_norm',
+    'acc',
+    'exact_match',
+    'mc2',
+    'f1',
+    'inst_level_loose_acc',
+    'prompt_level_strict_acc',
+    'pass_at_1',
+]
+
 # Default benchmarks for quick evaluation
 # These are common benchmarks available in lm-evaluation-harness
 DEFAULT_BENCHMARKS = [
@@ -519,7 +540,7 @@ def _log_results_summary(results: dict, logger: logging.Logger) -> None:
         # Try metrics in order of preference
         found_key = None
         found_value = None
-        for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
+        for metric in _PREFERRED_METRICS:
             found_key, found_value = _find_metric_key(task_results, metric)
             if found_key is not None:
                 break
@@ -548,7 +569,7 @@ def get_results_summary(results: dict) -> dict:
 
     for task_name, task_results in results['results'].items():
         # Get the main accuracy metric
-        for metric in ['acc_norm', 'acc', 'exact_match', 'mc2']:
+        for metric in _PREFERRED_METRICS:
             found_key, found_value = _find_metric_key(task_results, metric)
             if found_key is not None:
                 summary[task_name] = {
