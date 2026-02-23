@@ -201,7 +201,14 @@ def main() -> None:
         # Convert model name to safe filename (e.g., "Qwen/Qwen3-1.7B-Base" -> "Qwen--Qwen3-1.7B-Base")
         output_name = args.hf_model.replace("/", "--")
 
-    output_path = Path(output_dir) / f"{output_name}-eval-results.json"
+    # Include task names in filename to prevent overwrites when running
+    # different task sets on the same checkpoint to the same output dir
+    tasks_suffix = "-".join(sorted(tasks))
+    # Truncate if too long (e.g., 13 benchmarks), use hash instead
+    if len(tasks_suffix) > 80:
+        import hashlib
+        tasks_suffix = hashlib.md5(tasks_suffix.encode()).hexdigest()[:12]
+    output_path = Path(output_dir) / f"{output_name}-eval-{tasks_suffix}-results.json"
 
     describe_config(
         checkpoint=args.checkpoint,
