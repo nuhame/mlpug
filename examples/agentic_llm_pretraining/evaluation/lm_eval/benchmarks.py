@@ -63,9 +63,11 @@ module_logger = get_logger(os.path.basename(__file__))
 # Must cover all benchmark types we use:
 #   acc_norm: arc_easy, arc_challenge, hellaswag
 #   acc: boolq, winogrande, race
-#   exact_match: gsm8k, minerva_math, triviaqa, nq_open
+#   exact_match: gsm8k, minerva_math
 #   mc2: truthfulqa_mc2
-#   f1: drop
+#   f1: drop, squadv2, coqa
+#   exact: squadv2 (exact match variant)
+#   em: coqa (exact match variant)
 #   inst_level_loose_acc: ifeval (instruction-level, lenient)
 #   prompt_level_strict_acc: ifeval (prompt-level, strict)
 #   pass_at_1: humaneval, mbpp (code generation)
@@ -75,6 +77,8 @@ _PREFERRED_METRICS = [
     'exact_match',
     'mc2',
     'f1',
+    'exact',
+    'em',
     'inst_level_loose_acc',
     'prompt_level_strict_acc',
     'pass_at_1',
