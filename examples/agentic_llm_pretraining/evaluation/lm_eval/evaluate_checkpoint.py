@@ -125,6 +125,13 @@ def create_arg_parser() -> argparse.ArgumentParser:
         help="Limit samples per task (for quick testing)",
     )
 
+    # Inference backend
+    parser.add_argument(
+        "--use-vllm",
+        action="store_true",
+        help="Use vLLM backend for faster generation (requires: pip install vllm)",
+    )
+
     # Output
     parser.add_argument(
         "--output-dir",
@@ -146,6 +153,7 @@ def describe_config(
     dtype: str,
     num_fewshot: int | None,
     limit: int | None,
+    use_vllm: bool,
     output_dir: str | None,
     logger=None,
 ) -> None:
@@ -163,6 +171,7 @@ def describe_config(
     logger.info(f"  dtype: {dtype}")
     logger.info(f"  num_fewshot: {num_fewshot}")
     logger.info(f"  limit: {limit}")
+    logger.info(f"  use_vllm: {use_vllm}")
     logger.info(f"  output_dir: {output_dir}")
 
 
@@ -220,6 +229,7 @@ def main() -> None:
         dtype=args.dtype,
         num_fewshot=args.num_fewshot,
         limit=args.limit,
+        use_vllm=args.use_vllm,
         output_dir=output_dir,
         logger=module_logger,
     )
@@ -236,6 +246,7 @@ def main() -> None:
         num_fewshot=args.num_fewshot,
         limit=args.limit,
         output_path=str(output_path),
+        use_vllm=args.use_vllm,
         logger=module_logger,
     )
 
