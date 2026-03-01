@@ -38,7 +38,7 @@ from pathlib import Path
 
 from basics.logging import get_logger
 
-from examples.agentic_llm_pretraining.evaluation.checkpoint import (
+from examples.agentic_llm_pretraining.checkpoint import (
     convert_checkpoint_to_hf,
 )
 
