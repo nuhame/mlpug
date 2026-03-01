@@ -46,7 +46,7 @@ CLI:
         --checkpoint /path/to/checkpoint.pt
 """
 # Re-export checkpoint utilities for convenience
-from examples.agentic_llm_pretraining.evaluation.checkpoint import (
+from examples.agentic_llm_pretraining.checkpoint import (
     load_model_from_checkpoint,
     save_model_as_hf,
     convert_checkpoint_to_hf,

@@ -51,7 +51,7 @@ import torch
 
 from basics.logging import get_logger
 
-from examples.agentic_llm_pretraining.evaluation.checkpoint import (
+from examples.agentic_llm_pretraining.checkpoint import (
     load_model_from_checkpoint,
     save_model_as_hf,
 )
