@@ -116,6 +116,7 @@ def evaluate_hf_model(
     limit: Optional[int] = None,
     output_path: Optional[str] = None,
     use_vllm: bool = False,
+    gen_kwargs: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -132,6 +133,8 @@ def evaluate_hf_model(
     :param limit: Limit number of samples per task (for quick testing).
     :param output_path: Optional path to save results JSON file.
     :param use_vllm: If True, use vLLM backend for faster generation.
+    :param gen_kwargs: Generation kwargs string for lm-eval
+        (e.g., "temperature=0.8,top_p=0.95").
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -157,6 +160,8 @@ def evaluate_hf_model(
     logger.info(f"Running lm-evaluation-harness on tasks: {tasks}")
     logger.info(f"Model: {model_path} (backend: {model_type})")
     logger.info(f"Batch size: {batch_size}, dtype: {dtype}")
+    if gen_kwargs:
+        logger.info(f"Generation kwargs: {gen_kwargs}")
     if limit:
         logger.info(f"Sample limit per task: {limit}")
 
@@ -171,6 +176,7 @@ def evaluate_hf_model(
         limit=limit,
         log_samples=False,
         confirm_run_unsafe_code=True,
+        gen_kwargs=gen_kwargs,
     )
 
     logger.info("Evaluation complete")
@@ -195,6 +201,7 @@ def evaluate_hf_model_distributed(
     output_path: Optional[str] = None,
     dtype: str = "bfloat16",
     use_vllm: bool = False,
+    gen_kwargs: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -213,6 +220,8 @@ def evaluate_hf_model_distributed(
     :param output_path: Optional path to save results JSON file.
     :param dtype: Model dtype for loading (default: bfloat16).
     :param use_vllm: If True, use vLLM backend for faster generation.
+    :param gen_kwargs: Generation kwargs string for lm-eval
+        (e.g., "temperature=0.8,top_p=0.95").
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -233,6 +242,7 @@ def evaluate_hf_model_distributed(
             limit=limit,
             output_path=output_path,
             use_vllm=use_vllm,
+            gen_kwargs=gen_kwargs,
             logger=logger,
         )
 
@@ -267,6 +277,9 @@ def evaluate_hf_model_distributed(
 
     if limit is not None:
         cmd.extend(["--limit", str(limit)])
+
+    if gen_kwargs is not None:
+        cmd.extend(["--gen_kwargs", gen_kwargs])
 
     logger.info(f"Command: {' '.join(cmd)}")
 
@@ -341,6 +354,7 @@ def evaluate_checkpoint(
     keep_temp_model: bool = False,
     temp_model_dir: Optional[str] = None,
     use_vllm: bool = False,
+    gen_kwargs: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -363,6 +377,8 @@ def evaluate_checkpoint(
     :param keep_temp_model: If True, don't delete temporary model directory (only used with checkpoint_path).
     :param temp_model_dir: Custom directory for temporary model (only used with checkpoint_path).
     :param use_vllm: If True, use vLLM backend for faster generation.
+    :param gen_kwargs: Generation kwargs string for lm-eval
+        (e.g., "temperature=0.8,top_p=0.95").
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
@@ -390,6 +406,7 @@ def evaluate_checkpoint(
             limit=limit,
             output_path=output_path,
             use_vllm=use_vllm,
+            gen_kwargs=gen_kwargs,
             logger=logger,
         )
 
@@ -437,6 +454,7 @@ def evaluate_checkpoint(
             limit=limit,
             output_path=output_path,
             use_vllm=use_vllm,
+            gen_kwargs=gen_kwargs,
             logger=logger,
         )
 

@@ -132,6 +132,20 @@ def create_arg_parser() -> argparse.ArgumentParser:
         help="Use vLLM backend for faster generation (requires: pip install vllm)",
     )
 
+    # Generation parameters
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Sampling temperature for generation tasks (e.g., 0.8 for pass@k)",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="Nucleus sampling top-p for generation tasks (e.g., 0.95)",
+    )
+
     # Output
     parser.add_argument(
         "--output-dir",
@@ -154,6 +168,8 @@ def describe_config(
     num_fewshot: int | None,
     limit: int | None,
     use_vllm: bool,
+    temperature: float | None,
+    top_p: float | None,
     output_dir: str | None,
     logger=None,
 ) -> None:
@@ -172,6 +188,8 @@ def describe_config(
     logger.info(f"  num_fewshot: {num_fewshot}")
     logger.info(f"  limit: {limit}")
     logger.info(f"  use_vllm: {use_vllm}")
+    logger.info(f"  temperature: {temperature}")
+    logger.info(f"  top_p: {top_p}")
     logger.info(f"  output_dir: {output_dir}")
 
 
@@ -219,6 +237,14 @@ def main() -> None:
         tasks_suffix = hashlib.md5(tasks_suffix.encode()).hexdigest()[:12]
     output_path = Path(output_dir) / f"{output_name}-eval-{tasks_suffix}-results.json"
 
+    # Build gen_kwargs string from explicit CLI flags
+    gen_kwargs_parts = []
+    if args.temperature is not None:
+        gen_kwargs_parts.append(f"temperature={args.temperature}")
+    if args.top_p is not None:
+        gen_kwargs_parts.append(f"top_p={args.top_p}")
+    gen_kwargs = ",".join(gen_kwargs_parts) if gen_kwargs_parts else None
+
     describe_config(
         checkpoint=args.checkpoint,
         hf_model=args.hf_model,
@@ -230,6 +256,8 @@ def main() -> None:
         num_fewshot=args.num_fewshot,
         limit=args.limit,
         use_vllm=args.use_vllm,
+        temperature=args.temperature,
+        top_p=args.top_p,
         output_dir=output_dir,
         logger=module_logger,
     )
@@ -247,6 +275,7 @@ def main() -> None:
         limit=args.limit,
         output_path=str(output_path),
         use_vllm=args.use_vllm,
+        gen_kwargs=gen_kwargs,
         logger=module_logger,
     )
 
