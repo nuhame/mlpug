@@ -1,0 +1,31 @@
+# Custom humaneval task for pass@k evaluation with k up to 256.
+#
+# Usage: Copy this file to lm-eval's humaneval task directory:
+#   cp humaneval_pass_at_k.yaml $(python -c "import lm_eval; print(lm_eval.__path__[0])")/tasks/humaneval/
+#
+# Then run:
+#   python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
+#       --checkpoint /path/to/checkpoint.pt \
+#       --tasks humaneval_pass_at_k \
+#       --use-vllm
+#
+# Temperature can be overridden via --temperature flag.
+include: humaneval.yaml
+task: humaneval_pass_at_k
+repeats: 256
+metric_list:
+  - metric: !function utils.pass_at_k
+    aggregation: mean
+    higher_is_better: true
+    k: [1,8,32,64,128,256]
+generation_kwargs:
+  until:
+    - "\nclass"
+    - "\ndef"
+    - "\n#"
+    - "\nif"
+    - "\nprint"
+  max_gen_toks: 1024
+  do_sample: true
+  temperature: 0.6
+  top_p: 0.95
