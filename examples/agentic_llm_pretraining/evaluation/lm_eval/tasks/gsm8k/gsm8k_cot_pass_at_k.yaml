@@ -1,0 +1,35 @@
+# Custom gsm8k-cot task for pass@k evaluation with k up to 256.
+#
+# Usage: Copy this file AND utils.py to lm-eval's gsm8k task directory:
+#   LM_EVAL_PATH=$(python -c "import lm_eval; print(lm_eval.__path__[0])")
+#   cp gsm8k_cot_pass_at_k.yaml ${LM_EVAL_PATH}/tasks/gsm8k/
+#   cp utils.py ${LM_EVAL_PATH}/tasks/gsm8k/
+#
+# Then run:
+#   python -m examples.agentic_llm_pretraining.evaluation.lm_eval.evaluate_checkpoint \
+#       --checkpoint /path/to/checkpoint.pt \
+#       --tasks gsm8k_cot_pass_at_k \
+#       --use-vllm
+#
+# Temperature can be overridden via --temperature flag.
+include: gsm8k-cot.yaml
+task: gsm8k_cot_pass_at_k
+repeats: 256
+metric_list:
+  - metric: !function utils.pass_at_k
+    aggregation: mean
+    higher_is_better: true
+    k: [1, 8, 32, 64, 128, 256]
+generation_kwargs:
+  until:
+    - "Q:"
+    - </s>
+    - <|im_end|>
+  do_sample: true
+  temperature: 0.6
+  top_p: 0.95
+filter_list:
+  - name: "pass_at_k"
+    filter:
+      - function: "regex"
+        regex_pattern: "The answer is (\\-?[0-9\\.\\,]*[0-9]+)"
