@@ -146,6 +146,13 @@ def create_arg_parser() -> argparse.ArgumentParser:
         help="Nucleus sampling top-p for generation tasks (e.g., 0.95)",
     )
 
+    # Logging
+    parser.add_argument(
+        "--log-samples",
+        action="store_true",
+        help="Log per-sample inputs/outputs in results JSON (useful for inspecting model behavior)",
+    )
+
     # Output
     parser.add_argument(
         "--output-dir",
@@ -170,6 +177,7 @@ def describe_config(
     use_vllm: bool,
     temperature: float | None,
     top_p: float | None,
+    log_samples: bool,
     output_dir: str | None,
     logger=None,
 ) -> None:
@@ -190,6 +198,7 @@ def describe_config(
     logger.info(f"  use_vllm: {use_vllm}")
     logger.info(f"  temperature: {temperature}")
     logger.info(f"  top_p: {top_p}")
+    logger.info(f"  log_samples: {log_samples}")
     logger.info(f"  output_dir: {output_dir}")
 
 
@@ -258,6 +267,7 @@ def main() -> None:
         use_vllm=args.use_vllm,
         temperature=args.temperature,
         top_p=args.top_p,
+        log_samples=args.log_samples,
         output_dir=output_dir,
         logger=module_logger,
     )
@@ -276,6 +286,7 @@ def main() -> None:
         output_path=str(output_path),
         use_vllm=args.use_vllm,
         gen_kwargs=gen_kwargs,
+        log_samples=args.log_samples,
         logger=module_logger,
     )
 

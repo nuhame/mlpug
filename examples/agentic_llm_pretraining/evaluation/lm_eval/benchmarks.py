@@ -117,6 +117,7 @@ def evaluate_hf_model(
     output_path: Optional[str] = None,
     use_vllm: bool = False,
     gen_kwargs: Optional[str] = None,
+    log_samples: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -135,6 +136,8 @@ def evaluate_hf_model(
     :param use_vllm: If True, use vLLM backend for faster generation.
     :param gen_kwargs: Generation kwargs string for lm-eval
         (e.g., "temperature=0.8,top_p=0.95").
+    :param log_samples: If True, include per-sample inputs/outputs in
+        results. Useful for inspecting model behavior.
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -174,7 +177,7 @@ def evaluate_hf_model(
         batch_size=batch_size,
         num_fewshot=num_fewshot,
         limit=limit,
-        log_samples=False,
+        log_samples=log_samples,
         confirm_run_unsafe_code=True,
         gen_kwargs=gen_kwargs,
     )
@@ -202,6 +205,7 @@ def evaluate_hf_model_distributed(
     dtype: str = "bfloat16",
     use_vllm: bool = False,
     gen_kwargs: Optional[str] = None,
+    log_samples: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -222,6 +226,8 @@ def evaluate_hf_model_distributed(
     :param use_vllm: If True, use vLLM backend for faster generation.
     :param gen_kwargs: Generation kwargs string for lm-eval
         (e.g., "temperature=0.8,top_p=0.95").
+    :param log_samples: If True, include per-sample inputs/outputs in
+        results. Useful for inspecting model behavior.
     :param logger: Optional logger for status messages.
 
     :return: Dictionary with evaluation results.
@@ -243,6 +249,7 @@ def evaluate_hf_model_distributed(
             output_path=output_path,
             use_vllm=use_vllm,
             gen_kwargs=gen_kwargs,
+            log_samples=log_samples,
             logger=logger,
         )
 
@@ -280,6 +287,9 @@ def evaluate_hf_model_distributed(
 
     if gen_kwargs is not None:
         cmd.extend(["--gen_kwargs", gen_kwargs])
+
+    if log_samples:
+        cmd.append("--log_samples")
 
     logger.info(f"Command: {' '.join(cmd)}")
 
@@ -355,6 +365,7 @@ def evaluate_checkpoint(
     temp_model_dir: Optional[str] = None,
     use_vllm: bool = False,
     gen_kwargs: Optional[str] = None,
+    log_samples: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """
@@ -379,6 +390,8 @@ def evaluate_checkpoint(
     :param use_vllm: If True, use vLLM backend for faster generation.
     :param gen_kwargs: Generation kwargs string for lm-eval
         (e.g., "temperature=0.8,top_p=0.95").
+    :param log_samples: If True, include per-sample inputs/outputs in
+        results. Useful for inspecting model behavior.
     :param logger: Optional logger.
 
     :return: Dictionary with evaluation results.
@@ -407,6 +420,7 @@ def evaluate_checkpoint(
             output_path=output_path,
             use_vllm=use_vllm,
             gen_kwargs=gen_kwargs,
+            log_samples=log_samples,
             logger=logger,
         )
 
@@ -455,6 +469,7 @@ def evaluate_checkpoint(
             output_path=output_path,
             use_vllm=use_vllm,
             gen_kwargs=gen_kwargs,
+            log_samples=log_samples,
             logger=logger,
         )
 
