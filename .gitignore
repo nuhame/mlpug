@@ -137,3 +137,6 @@ CLAUDE.md
 
 # Private docs
 docs/private/
+
+# Temporary dataset files (should never be committed)
+mlpug-datasets-temp/
