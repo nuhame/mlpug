@@ -134,6 +134,7 @@ CLAUDE.local.md
 .claude/
 
 CLAUDE.md
+.collab-config
 
 # Private docs
 docs/private/
